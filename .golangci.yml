@@ -1,0 +1,29 @@
+run:
+  timeout: 5m
+  issues-exit-code: 1
+  tests: true
+
+linters-settings:
+  gocyclo:
+    min-complexity: 15
+  gosec:
+    excludes:
+      - G115 # this is just too poorly implemented to be useful.
+
+linters:
+  enable:
+    - gocritic
+    - gocyclo
+    - gofmt
+    - goimports
+    - revive
+    - gosimple
+    - govet
+    - ineffassign
+    - misspell
+    - copyloopvar
+    - staticcheck
+    - typecheck
+    - unconvert
+    - unused
+    - gosec

@@ -1,0 +1,14 @@
+name: go-macos
+
+on:   
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    uses: cloudengio/.github/.github/workflows/go-test-multimod.yml@main
