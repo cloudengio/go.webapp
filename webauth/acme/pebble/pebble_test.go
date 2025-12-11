@@ -6,8 +6,6 @@ package pebble_test
 
 import (
 	"context"
-	"fmt"
-	"os"
 	"path/filepath"
 	"reflect"
 	"slices"
@@ -18,18 +16,7 @@ import (
 
 	"cloudeng.io/os/executil"
 	"cloudeng.io/webapp/webauth/acme/pebble"
-	"cloudeng.io/webapp/webauth/acme/pebble/pebbletest"
 )
-
-func TestMain(m *testing.M) {
-	cfg := pebble.NewConfig()
-	addrs := pebbletest.IsListening(cfg.Address, cfg.ManagementAddress)
-	if len(addrs) > 0 {
-		fmt.Fprintf(os.Stderr, "pebble server already listening on addresses %v", addrs)
-		os.Exit(1)
-	}
-	os.Exit(m.Run())
-}
 
 type output struct {
 	mu  sync.Mutex
