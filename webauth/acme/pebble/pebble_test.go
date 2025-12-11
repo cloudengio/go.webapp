@@ -44,7 +44,7 @@ func (o *output) Close() error {
 }
 
 func TestPebble(t *testing.T) {
-	t.Skip()
+
 	ctx := t.Context()
 	tmpDir := t.TempDir()
 
@@ -57,6 +57,8 @@ func TestPebble(t *testing.T) {
 	defer ensureStopped(t, p, out)
 
 	cfg := pebble.NewConfig()
+	testConnectToPort(t, cfg.ManagementAddress)
+	testConnectToPort(t, cfg.Address)
 
 	cfgFile, err := cfg.CreateCertsAndUpdateConfig(ctx, tmpDir)
 	if err != nil {
@@ -112,7 +114,6 @@ func TestPebble_RealServer(t *testing.T) {
 	out := &output{}
 
 	cfg := pebble.NewConfig()
-
 	testConnectToPort(t, cfg.ManagementAddress)
 	testConnectToPort(t, cfg.Address)
 
