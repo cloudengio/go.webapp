@@ -6,9 +6,6 @@ package pebble_test
 
 import (
 	"context"
-	"net"
-	"os"
-	"os/exec"
 	"path/filepath"
 	"reflect"
 	"slices"
@@ -44,7 +41,6 @@ func (o *output) Close() error {
 }
 
 func TestPebble(t *testing.T) {
-
 	ctx := t.Context()
 	tmpDir := t.TempDir()
 
@@ -57,8 +53,6 @@ func TestPebble(t *testing.T) {
 	defer ensureStopped(t, p, out)
 
 	cfg := pebble.NewConfig()
-	testConnectToPort(t, cfg.ManagementAddress)
-	testConnectToPort(t, cfg.Address)
 
 	cfgFile, err := cfg.CreateCertsAndUpdateConfig(ctx, tmpDir)
 	if err != nil {
@@ -93,18 +87,6 @@ func ensureStopped(t *testing.T, p *pebble.T, out *output) {
 	}
 }
 
-func testConnectToPort(t *testing.T, address string) {
-	conn, err := net.Dial("tcp", address)
-	if err == nil {
-		conn.Close()
-		cmd := exec.Command("netstat", "-nv", "-p", "tcp")
-		cmd.Stderr = os.Stderr
-		cmd.Stdout = os.Stdout
-		cmd.Run()
-		t.Fatalf("expected no server to be listening on %s", address)
-	}
-}
-
 func TestPebble_RealServer(t *testing.T) {
 	ctx := context.Background()
 
@@ -114,8 +96,6 @@ func TestPebble_RealServer(t *testing.T) {
 	out := &output{}
 
 	cfg := pebble.NewConfig()
-	testConnectToPort(t, cfg.ManagementAddress)
-	testConnectToPort(t, cfg.Address)
 
 	cfgFile, err := cfg.CreateCertsAndUpdateConfig(ctx, tmpDir)
 	if err != nil {

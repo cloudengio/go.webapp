@@ -33,7 +33,7 @@ func TestACMEClient_FullFlow(t *testing.T) {
 	pebbleServer, pebbleCfg, _, pebbleCacheDir, pebbleTestDir := pebbletest.Start(ctx, t, tmpDir)
 	defer func() {
 		then := time.Now()
-		if err := pebbleServer.EnsureStopped(ctx, time.Second*5); err != nil {
+		if err := pebbleServer.EnsureStopped(context.Background(), time.Second*5); err != nil {
 			t.Errorf("failed to stop pebble server after %v: %v", time.Since(then), err)
 		}
 	}()
@@ -78,9 +78,6 @@ func TestACMEClient_FullFlow(t *testing.T) {
 	// Start the client to refresh certs.
 
 	client := acme.NewClient(mgr, time.Minute, "pebble-test.example.com")
-	if err != nil {
-		t.Fatalf("failed to create acme client: %v", err)
-	}
 	stopAcmeClient, err := client.Start(ctx)
 	if err != nil {
 		t.Fatalf("failed to start acme client: %v", err)

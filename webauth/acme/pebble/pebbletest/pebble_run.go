@@ -135,18 +135,3 @@ func getCerts(t Testing, certPath string) (*x509.Certificate, *x509.CertPool) {
 	}
 	return leafCert, intermediates
 }
-
-/*
-// IsListening checks which of the specified addresses are listening
-// and returns a slice of those that are.
-func IsListening(ctx context.Context, addresses ...string) []string {
-	for _, address := range addresses {
-		conn, err := net.Dial("tcp", address)
-		if err == nil {
-			conn.Close()
-			return append(addresses, address)
-		}
-	}
-	return nil
-}
-*/

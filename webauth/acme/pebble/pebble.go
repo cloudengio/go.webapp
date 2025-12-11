@@ -158,43 +158,6 @@ func (p *T) EnsureStopped(ctx context.Context, waitFor time.Duration) error {
 	return executil.SignalAndWait(ctx, waitFor, p.cmd, os.Interrupt, syscall.SIGINT, syscall.SIGKILL)
 }
 
-/*
-func (p *T) ensureNotListenting(ctx context.Context, address string, waitFor time.Duration) error {
-	deadline := time.Now().Add(waitFor)
-	for {
-		dialer := net.Dialer{
-			Timeout: time.Millisecond,
-		}
-		conn, err := dialer.Dial("tcp", address)
-		if err == nil {
-			conn.Close()
-			if time.Now().After(deadline) {
-				return fmt.Errorf("address %s still listening after %v", address, waitFor)
-			}
-			continue
-		}
-		return nil
-	}
-}
-
-// EnsureNotListening ensures that the pebble instance is no longer
-// listening on the supplied addresses.
-
-func (p *T) EnsureNotListening(ctx context.Context, waitFor time.Duration, addresses ...string) error {
-	deadline := time.Now().Add(waitFor)
-	for {
-		listening := IsListening(ctx, address)
-		if len(listening) == 0 {
-			return nil
-		}
-		if time.Now().After(deadline) {
-			return fmt.Errorf("address %s still listening after %v", address, waitFor)
-		}
-		time.Sleep(100 * time.Millisecond)
-	}
-}
-*/
-
 // Config represents the configuration for a pebble instance
 // that's relevant to using it for testing clients.
 type Config struct {
