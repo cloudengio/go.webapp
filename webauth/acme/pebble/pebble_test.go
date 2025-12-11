@@ -7,6 +7,8 @@ package pebble_test
 import (
 	"context"
 	"net"
+	"os"
+	"os/exec"
 	"path/filepath"
 	"reflect"
 	"slices"
@@ -92,9 +94,12 @@ func testConnectToPort(t *testing.T, address string) {
 	conn, err := net.Dial("tcp", address)
 	if err == nil {
 		conn.Close()
-		t.Fatalf("a server is already listening on %s: %v", address, err)
+		cmd := exec.Command("netstat", "-nv", "-p", "tcp")
+		cmd.Stderr = os.Stderr
+		cmd.Stdout = os.Stdout
+		cmd.Run()
+		t.Fatalf("expected no server to be listening on %s", address)
 	}
-
 }
 
 func TestPebble_RealServer(t *testing.T) {
@@ -104,7 +109,6 @@ func TestPebble_RealServer(t *testing.T) {
 
 	p := pebble.New("pebble")
 	out := &output{}
-	defer ensureStopped(t, p, out)
 
 	cfg := pebble.NewConfig()
 
@@ -120,6 +124,8 @@ func TestPebble_RealServer(t *testing.T) {
 		t.Logf("pebble log output: %s\n", out.String())
 		t.Fatalf("failed to start pebble: %v", err)
 	}
+	defer ensureStopped(t, p, out)
+
 	if err := p.WaitForReady(ctx); err != nil {
 		t.Logf("pebble log output: %s\n", out.String())
 		t.Fatalf("WaitForReady: %v", err)
