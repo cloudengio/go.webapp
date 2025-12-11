@@ -7,9 +7,7 @@ package main
 import (
 	"context"
 	"errors"
-	"os"
 
-	"cloudeng.io/cmdutil"
 	"cloudeng.io/cmdutil/subcmd"
 )
 
@@ -38,13 +36,5 @@ var errInterrupt = errors.New("interrupt")
 
 func main() {
 	ctx := context.Background()
-	ctx, cancel := context.WithCancelCause(ctx)
-	cmdutil.HandleSignals(func() { cancel(errInterrupt) }, os.Interrupt)
-	err := cli().Dispatch(ctx)
-	if context.Cause(ctx) == errInterrupt {
-		cmdutil.Exit("%v", errInterrupt)
-	}
-	if err != nil {
-		cmdutil.Exit("%v", err)
-	}
+	subcmd.Dispatch(ctx, cli())
 }
