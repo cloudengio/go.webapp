@@ -93,7 +93,7 @@ func (revokeCmd) revokeUsingKey(ctx context.Context, flags any, args []string) e
 	}
 
 	var revocationKey crypto.Signer
-	if cl.UseAccountKey {
+	if !cl.UseAccountKey {
 		revocationKey = certKey
 	}
 	err = client.RevokeCert(ctx, revocationKey, leafDER, reason)

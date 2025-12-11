@@ -89,7 +89,7 @@ func certPool(pemFile string) (*x509.CertPool, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to read CA file %q: %w", pemFile, err)
 	}
-	// Append our cert to the system pool
+	// Append the custom certs to the system pool
 	if ok := rootCAs.AppendCertsFromPEM(certs); !ok {
 		return nil, fmt.Errorf("no certs appended from %q", pemFile)
 	}

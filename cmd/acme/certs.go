@@ -91,15 +91,3 @@ func putCert(ctx context.Context, values any, args []string) error {
 	}
 	return store.Put(ctx, file, buf)
 }
-
-/*
-https://acme-staging-v02.api.letsencrypt.org/directory
-hjttps://acme-v02.api.letsencrypt.org/directory
-
-
-https://letsencrypt.org/certs/isrgrootx1.pem
-https://letsencrypt.org/certs/isrg-root-x2.pem
-
-https://letsencrypt.org/certs/staging/letsencrypt-stg-root-x1.pem
-https://letsencrypt.org/certs/staging/letsencrypt-stg-root-x2.pem
-*/

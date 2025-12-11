@@ -39,7 +39,7 @@ func (testRedirectCmd) redirect(ctx context.Context, values any, _ []string) err
 
 	if err := webapp.RedirectPort80(ctx,
 		webapp.RedirectToHTTPSPort(cfg.Address),
-		webapp.RedirectToHTTPSPort(cl.AcmeClientHost)); err != nil {
+		webapp.RedirectAcmeHTTP01(cl.AcmeClientHost)); err != nil {
 		return err
 	}
 

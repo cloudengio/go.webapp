@@ -123,8 +123,7 @@ func RedirectHandler(redirects ...Redirect) http.Handler {
 }
 
 // RedirectPort80 starts an http.Server that will redirect port 80 to the
-// specified supplied https port. If acmeRedirect is specified then
-// acme HTTP-01 challenges will be redirected to that URL.
+// specified redirect targets.
 // The server will run in the background until the supplied context
 // is canceled.
 func RedirectPort80(ctx context.Context, redirects ...Redirect) error {

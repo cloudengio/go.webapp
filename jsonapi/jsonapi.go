@@ -51,7 +51,6 @@ func (ep Endpoint[Req, Resp]) WriteResponse(rw http.ResponseWriter, resp Resp) e
 		WriteErrorMsg(rw, "failed to encode response", http.StatusInternalServerError)
 		return fmt.Errorf("failed to encode response: %w", err)
 	}
-	rw.WriteHeader(http.StatusOK)
 	return nil
 }
 
