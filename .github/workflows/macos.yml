@@ -1,0 +1,22 @@
+name: go-macos
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    uses: cloudengio/.github/.github/workflows/go-test-multimod.yml@main
+    with:
+      #runner: | # use for self-hosted runners
+      #  [ "self-hosted", "mm1-vm1" ]
+      runner: |
+        [ "macos-latest" ]
+      go-versions: |
+        [ "1.25.x" ]
+      with-webapp: true

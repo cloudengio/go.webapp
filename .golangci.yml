@@ -1,0 +1,52 @@
+version: "2"
+run:
+  issues-exit-code: 1
+  tests: true
+linters:
+  enable:
+    - copyloopvar
+    - errcheck
+    - gocritic
+    - gocyclo
+    - gocognit
+    - gosec
+    - govet
+    - ineffassign
+    - misspell
+    - revive
+    - staticcheck
+    - unconvert
+    - unused 
+  settings:
+    gocyclo:
+      min-complexity: 15
+    gocognit:
+      min-complexity: 30
+    gosec:
+      excludes:
+        - G115
+  exclusions:
+    generated: lax
+    presets:
+      - comments
+      - common-false-positives
+      - legacy
+      - std-error-handling
+    paths:
+      - third_party$
+      - builtin$
+      - examples$
+formatters:
+  enable:
+    - gofmt
+    - goimports
+  exclusions:
+    generated: lax
+    paths:
+      - third_party$
+      - builtin$
+      - examples$
+    rules:
+      - linter: revive
+        path: 'cmdutil/*'
+        text: 'var-naming: avoid package names that conflict with Go standard library package names'
