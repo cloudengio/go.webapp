@@ -6,9 +6,10 @@ package pebble_test
 
 import (
 	"context"
+	"net"
 	"path/filepath"
 	"reflect"
-	"sort"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -41,7 +42,7 @@ func (o *output) Close() error {
 }
 
 func TestPebble(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	tmpDir := t.TempDir()
 
 	mockPebblePath, err := executil.GoBuild(ctx, filepath.Join(tmpDir, "pebble"), "./testdata/pebble-mock")
@@ -87,6 +88,15 @@ func ensureStopped(t *testing.T, p *pebble.T, out *output) {
 	}
 }
 
+func testConnectToPort(t *testing.T, address string) {
+	conn, err := net.Dial("tcp", address)
+	if err == nil {
+		conn.Close()
+		t.Fatalf("a server is already listening on %s: %v", address, err)
+	}
+
+}
+
 func TestPebble_RealServer(t *testing.T) {
 	ctx := context.Background()
 
@@ -97,6 +107,9 @@ func TestPebble_RealServer(t *testing.T) {
 	defer ensureStopped(t, p, out)
 
 	cfg := pebble.NewConfig()
+
+	testConnectToPort(t, cfg.ManagementAddress)
+	testConnectToPort(t, cfg.Address)
 
 	cfgFile, err := cfg.CreateCertsAndUpdateConfig(ctx, tmpDir)
 	if err != nil {
@@ -133,8 +146,8 @@ func TestPossibleValidityPeriods(t *testing.T) {
 	}
 
 	// Sort both slices to ensure comparison is order-independent.
-	sort.Slice(periods, func(i, j int) bool { return periods[i] < periods[j] })
-	sort.Slice(expected, func(i, j int) bool { return expected[i] < expected[j] })
+	slices.Sort(periods)
+	slices.Sort(expected)
 
 	if !reflect.DeepEqual(periods, expected) {
 		t.Errorf("got %v, want %v", periods, expected)
