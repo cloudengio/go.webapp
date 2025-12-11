@@ -85,7 +85,7 @@ func (p *T) Start(ctx context.Context, dir, cfg string, forward io.WriteCloser) 
 	if err := p.cmd.Start(); err != nil {
 		return fmt.Errorf("failed to start pebble: %w", err)
 	}
-	fmt.Printf(".... started pebble with pid %d\n", p.cmd.Process.Pid)
+	fmt.Printf(".... started %s pebble with pid %d\n", pebblePath, p.cmd.Process.Pid)
 	return nil
 }
 

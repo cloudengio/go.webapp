@@ -47,7 +47,7 @@ func TestPebble(t *testing.T) {
 	ctx := t.Context()
 	tmpDir := t.TempDir()
 
-	mockPebblePath, err := executil.GoBuild(ctx, filepath.Join(tmpDir, "pebble"), "./testdata/pebble-mock")
+	mockPebblePath, err := executil.GoBuild(ctx, filepath.Join(tmpDir, "pebble-mock"), "./testdata/pebble-mock")
 	if err != nil {
 		t.Fatalf("failed to build mock pebble: %v", err)
 	}
