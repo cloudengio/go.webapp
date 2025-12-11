@@ -9,6 +9,7 @@ import (
 	"crypto/x509"
 	"encoding/pem"
 	"fmt"
+	"net"
 	"os"
 	"path/filepath"
 	"sync"
@@ -134,4 +135,22 @@ func getCerts(t Testing, certPath string) (*x509.Certificate, *x509.CertPool) {
 		t.Fatalf("failed to find leaf certificate in %v", certPath)
 	}
 	return leafCert, intermediates
+}
+
+// IsListening checks which of the specified addresses are listening
+// and returns a slice of those that are.
+func IsListening(addresses ...string) []string {
+	dialer := &net.Dialer{
+		Timeout: 100 * time.Millisecond,
+	}
+	listening := []string{}
+	for _, address := range addresses {
+		conn, err := dialer.Dial("tcp", address)
+		if err != nil {
+			continue
+		}
+		conn.Close()
+		listening = append(listening, address)
+	}
+	return listening
 }
