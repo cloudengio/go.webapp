@@ -17,10 +17,7 @@ jobs:
         [ "ubuntu-latest" ]
       go-versions: |
         [ "1.25.x" ]
-      with-webapp: false
-      with-pebble: false
-      with-chrome: true
-      with-mkcert: true
+      with-webapp: true
 
   lint:
     uses: cloudengio/.github/.github/workflows/go-lint-multimod.yml@main

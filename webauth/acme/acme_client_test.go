@@ -32,8 +32,9 @@ func TestACMEClient_FullFlow(t *testing.T) {
 	// Start a pebble server.
 	pebbleServer, pebbleCfg, _, pebbleCacheDir, pebbleTestDir := pebbletest.Start(ctx, t, tmpDir)
 	defer func() {
-		if err := pebbleServer.EnsureStopped(ctx, time.Second); err != nil {
-			t.Errorf("failed to stop pebble server: %v", err)
+		then := time.Now()
+		if err := pebbleServer.EnsureStopped(ctx, time.Second*5); err != nil {
+			t.Errorf("failed to stop pebble server after %v: %v", time.Since(then), err)
 		}
 	}()
 	certDir := filepath.Join(pebbleCacheDir, "certs")
