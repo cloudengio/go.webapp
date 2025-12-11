@@ -6,6 +6,7 @@ package pebble_test
 
 import (
 	"context"
+	"fmt"
 	"net"
 	"os"
 	"os/exec"
@@ -20,6 +21,33 @@ import (
 	"cloudeng.io/os/executil"
 	"cloudeng.io/webapp/webauth/acme/pebble"
 )
+
+func testConnectToPortMain(address string) error {
+	conn, err := net.Dial("tcp", address)
+	if err == nil {
+		conn.Close()
+		cmd := exec.Command("netstat", "-nv", "-p", "tcp")
+		cmd.Stderr = os.Stderr
+		cmd.Stdout = os.Stdout
+		cmd.Run()
+		return fmt.Errorf("expected no server to be listening on %s", address)
+	}
+	fmt.Printf("no server listening on %s\n", address)
+	return nil
+}
+
+func TestMain(m *testing.M) {
+	cfg := pebble.NewConfig()
+	if err := testConnectToPortMain(cfg.Address); err != nil {
+		fmt.Fprintf(os.Stderr, "port %s already in use: %v\n", cfg.Address, err)
+		os.Exit(1)
+	}
+	if err := testConnectToPortMain(cfg.ManagementAddress); err != nil {
+		fmt.Fprintf(os.Stderr, "port %s already in use: %v\n", cfg.ManagementAddress, err)
+		os.Exit(1)
+	}
+	os.Exit(m.Run())
+}
 
 type output struct {
 	mu  sync.Mutex
