@@ -112,11 +112,11 @@ func TestPebble_RealServer(t *testing.T) {
 		t.Fatalf("WaitForReady: %v", err)
 	}
 
-	for range 2 {
+	for attempt := range 2 {
 		if _, err := cfg.GetIssuingCA(ctx, 0); err != nil {
-			// Fix for linux CI runners wjere ipv6 does not seem to work.
+			// Fix for linux CI runners where ipv6 does not seem to work.
 			if !strings.Contains(err.Error(), "dial tcp [::1]:15000: connect: connection refused") {
-				t.Logf("pebble log output: %s\n", out.String())
+				t.Logf("attempt %d: pebble log output: %s\n", attempt, out.String())
 				t.Fatalf("GetIssuingCA: %v", err)
 			}
 		}
