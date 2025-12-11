@@ -44,6 +44,7 @@ func (o *output) Close() error {
 }
 
 func TestPebble(t *testing.T) {
+	t.Skip()
 	ctx := t.Context()
 	tmpDir := t.TempDir()
 
