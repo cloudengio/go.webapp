@@ -39,11 +39,11 @@ func testConnectToPortMain(address string) error {
 func TestMain(m *testing.M) {
 	cfg := pebble.NewConfig()
 	if err := testConnectToPortMain(cfg.Address); err != nil {
-		fmt.Fprintf(os.Stderr, "port %s already in use: %v\n", cfg.Address, err)
+		fmt.Fprintf(os.Stderr, "TestMain: .... port %s already in use: %v\n", cfg.Address, err)
 		os.Exit(1)
 	}
 	if err := testConnectToPortMain(cfg.ManagementAddress); err != nil {
-		fmt.Fprintf(os.Stderr, "port %s already in use: %v\n", cfg.ManagementAddress, err)
+		fmt.Fprintf(os.Stderr, "TestMain: .... port %s already in use: %v\n", cfg.ManagementAddress, err)
 		os.Exit(1)
 	}
 	os.Exit(m.Run())
