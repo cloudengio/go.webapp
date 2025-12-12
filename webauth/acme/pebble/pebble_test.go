@@ -16,7 +16,6 @@ import (
 
 	"cloudeng.io/os/executil"
 	"cloudeng.io/webapp/webauth/acme/pebble"
-	"cloudeng.io/webapp/webauth/acme/pebble/pebbletest"
 )
 
 type output struct {
@@ -115,7 +114,6 @@ func TestPebble_RealServer(t *testing.T) {
 		t.Logf("pebble log output: %s\n", out.String())
 		t.Fatalf("WaitForReady: %v", err)
 	}
-	pebbletest.WaitForConnection(ctx, t, cfg.Address)
 
 	for attempt := range 2 {
 		if _, err := cfg.GetIssuingCA(ctx, 0); err != nil {

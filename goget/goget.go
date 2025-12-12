@@ -114,7 +114,7 @@ func NewHandler(specs []Spec) (*Handler, error) {
 func (s Spec) validate() (Spec, error) {
 	u, err := url.Parse(s.RepoURL)
 	if err != nil {
-		return s, fmt.Errorf("%s: invalid repo URL%w", s, err)
+		return s, fmt.Errorf("%s: invalid repo URL: %w", s, err)
 	}
 	if u.Scheme != "https" && u.Scheme != "http" && u.Scheme != "ssh" && u.Scheme != "git" {
 		return s, fmt.Errorf("%s: invalid scheme for repo URL %s", s, u.Scheme)
@@ -125,15 +125,12 @@ func (s Spec) validate() (Spec, error) {
 	if len(u.Query()) != 0 {
 		return s, fmt.Errorf("%s: repo URL must not contain query parameters", s)
 	}
-	supportedVCS := map[string]bool{
-		"git": true,
-		"hg":  true,
-		"svn": true,
-		"bzr": true,
-	}
-	if !supportedVCS[s.VCS] {
+	switch s.VCS {
+	case "git", "hg", "svn", "bzr":
+	default:
 		return s, fmt.Errorf("%s: unsupported VCS %q", s, s.VCS)
 	}
+
 	hasSlash := strings.HasSuffix(s.ImportPath, "/")
 	if !hasSlash {
 		s.importPathWithSlash = s.ImportPath + "/"
