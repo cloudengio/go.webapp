@@ -31,7 +31,7 @@ func TestGoGetHandler(t *testing.T) {
 		req := httptest.NewRequest("GET", "http://example.com/mod?go-get=1", nil)
 		w := httptest.NewRecorder()
 		nextCalled := false
-		next := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		next := http.HandlerFunc(func(_ http.ResponseWriter, _ *http.Request) {
 			nextCalled = true
 		})
 
@@ -47,7 +47,7 @@ func TestGoGetHandler(t *testing.T) {
 		req := httptest.NewRequest("GET", "http://example.com/mod", nil)
 		w := httptest.NewRecorder()
 		nextCalled := false
-		next := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		next := http.HandlerFunc(func(_ http.ResponseWriter, _ *http.Request) {
 			nextCalled = true
 		})
 
@@ -61,7 +61,7 @@ func TestGoGetHandler(t *testing.T) {
 		req := httptest.NewRequest("GET", "http://example.com/other?go-get=1", nil)
 		w := httptest.NewRecorder()
 		nextCalled := false
-		next := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		next := http.HandlerFunc(func(_ http.ResponseWriter, _ *http.Request) {
 			nextCalled = true
 		})
 
