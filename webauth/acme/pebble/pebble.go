@@ -36,7 +36,8 @@ type serverOptions struct {
 type ConfigOption func(*configOption)
 
 type configOption struct {
-	validityPeriod time.Duration
+	validityPeriod             time.Duration
+	managementPort, serverPort int
 }
 
 // WithValidityPeriod returns a ConfigOption that sets the validity period
@@ -44,6 +45,15 @@ type configOption struct {
 func WithValidityPeriod(secs int) ConfigOption {
 	return func(o *configOption) {
 		o.validityPeriod = time.Duration(secs) * time.Second
+	}
+}
+
+// WithAlternatePorts returns a ConfigOption that sets alternate ports
+// for the pebble management and server ports.
+func WithAlternatePorts(managementPort, serverPort int) ConfigOption {
+	return func(o *configOption) {
+		o.managementPort = managementPort
+		o.serverPort = serverPort
 	}
 }
 
@@ -227,7 +237,13 @@ func NewConfig(opt ...ConfigOption) Config {
 	cfg.TLSPort = 5001
 	cfg.TestCertBase = filepath.Join("test", "certs")
 	cfg.Address = "localhost:14000"
+	if cfg.opts.serverPort != 0 {
+		cfg.Address = fmt.Sprintf("localhost:%d", cfg.opts.serverPort)
+	}
 	cfg.ManagementAddress = "localhost:15000"
+	if cfg.opts.managementPort != 0 {
+		cfg.ManagementAddress = fmt.Sprintf("localhost:%d", cfg.opts.managementPort)
+	}
 	u := url.URL{
 		Scheme: "https",
 		Host:   cfg.ManagementAddress,
@@ -294,6 +310,10 @@ func (pc *Config) CreateCertsAndUpdateConfig(ctx context.Context, outputDir stri
 	}
 	ncfg["pebble"]["certificate"] = filepath.Join(pc.TestCertBase, "localhost", "cert.pem")
 	ncfg["pebble"]["privateKey"] = filepath.Join(pc.TestCertBase, "localhost", "key.pem")
+	ncfg["pebble"]["httpPort"] = pc.HTTPPort
+	ncfg["pebble"]["tlsPort"] = pc.TLSPort
+	ncfg["pebble"]["listenAddress"] = pc.Address
+	ncfg["pebble"]["managementListenAddress"] = pc.ManagementAddress
 	cfgData, err := json.MarshalIndent(ncfg, "", "  ")
 	if err != nil {
 		return "", fmt.Errorf("failed to marshal updated pebble config: %v", err)

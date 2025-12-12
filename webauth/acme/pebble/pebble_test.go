@@ -8,7 +8,7 @@ import (
 	"context"
 	"path/filepath"
 	"reflect"
-	"sort"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -41,10 +41,10 @@ func (o *output) Close() error {
 }
 
 func TestPebble(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	tmpDir := t.TempDir()
 
-	mockPebblePath, err := executil.GoBuild(ctx, filepath.Join(tmpDir, "pebble"), "./testdata/pebble-mock")
+	mockPebblePath, err := executil.GoBuild(ctx, filepath.Join(tmpDir, "pebble-mock"), "./testdata/pebble-mock")
 	if err != nil {
 		t.Fatalf("failed to build mock pebble: %v", err)
 	}
@@ -94,9 +94,10 @@ func TestPebble_RealServer(t *testing.T) {
 
 	p := pebble.New("pebble")
 	out := &output{}
-	defer ensureStopped(t, p, out)
 
-	cfg := pebble.NewConfig()
+	cfg := pebble.NewConfig(
+		pebble.WithAlternatePorts(15001, 14001),
+	)
 
 	cfgFile, err := cfg.CreateCertsAndUpdateConfig(ctx, tmpDir)
 	if err != nil {
@@ -107,16 +108,18 @@ func TestPebble_RealServer(t *testing.T) {
 		t.Logf("pebble log output: %s\n", out.String())
 		t.Fatalf("failed to start pebble: %v", err)
 	}
+	defer ensureStopped(t, p, out)
+
 	if err := p.WaitForReady(ctx); err != nil {
 		t.Logf("pebble log output: %s\n", out.String())
 		t.Fatalf("WaitForReady: %v", err)
 	}
 
-	for range 2 {
+	for attempt := range 2 {
 		if _, err := cfg.GetIssuingCA(ctx, 0); err != nil {
-			// Fix for linux CI runners wjere ipv6 does not seem to work.
+			// Fix for linux CI runners where ipv6 does not seem to work.
 			if !strings.Contains(err.Error(), "dial tcp [::1]:15000: connect: connection refused") {
-				t.Logf("pebble log output: %s\n", out.String())
+				t.Logf("attempt %d: pebble log output: %s\n", attempt, out.String())
 				t.Fatalf("GetIssuingCA: %v", err)
 			}
 		}
@@ -133,8 +136,8 @@ func TestPossibleValidityPeriods(t *testing.T) {
 	}
 
 	// Sort both slices to ensure comparison is order-independent.
-	sort.Slice(periods, func(i, j int) bool { return periods[i] < periods[j] })
-	sort.Slice(expected, func(i, j int) bool { return expected[i] < expected[j] })
+	slices.Sort(periods)
+	slices.Sort(expected)
 
 	if !reflect.DeepEqual(periods, expected) {
 		t.Errorf("got %v, want %v", periods, expected)

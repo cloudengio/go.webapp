@@ -6,7 +6,7 @@ replace cloudeng.io/webapp => ../..
 
 require (
 	cloudeng.io/cmdutil v0.0.0-20251210231338-d661eee74313
-	cloudeng.io/webapp v0.0.0-20251211174705-0b32c31eaa87
+	cloudeng.io/webapp v0.0.0-20251211202122-3206a59d8279
 	github.com/go-chi/chi/v5 v5.2.3
 )
 
