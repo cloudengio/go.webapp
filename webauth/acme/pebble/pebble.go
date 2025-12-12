@@ -310,6 +310,10 @@ func (pc *Config) CreateCertsAndUpdateConfig(ctx context.Context, outputDir stri
 	}
 	ncfg["pebble"]["certificate"] = filepath.Join(pc.TestCertBase, "localhost", "cert.pem")
 	ncfg["pebble"]["privateKey"] = filepath.Join(pc.TestCertBase, "localhost", "key.pem")
+	ncfg["pebble"]["httpPort"] = pc.HTTPPort
+	ncfg["pebble"]["tlsPort"] = pc.TLSPort
+	ncfg["pebble"]["listenAddress"] = pc.Address
+	ncfg["pebble"]["managementListenAddress"] = pc.ManagementAddress
 	cfgData, err := json.MarshalIndent(ncfg, "", "  ")
 	if err != nil {
 		return "", fmt.Errorf("failed to marshal updated pebble config: %v", err)

@@ -124,6 +124,7 @@ func TestPebble_RealServer(t *testing.T) {
 			}
 		}
 	}
+	t.Fail()
 }
 
 func TestPossibleValidityPeriods(t *testing.T) {
