@@ -70,6 +70,9 @@ func Start(ctx context.Context, t Testing, tmpDir string, configOpts ...pebble.C
 	if err := pebbleServer.WaitForReady(ctx); err != nil {
 		t.Fatalf("pebble not ready: %v\n%s", err, out.String())
 	}
+
+	WaitForConnection(ctx, t, cfg.Address)
+
 	t.Logf("cert cache dir: %s", pebbleCacheDir)
 	t.Logf("pebble dir: %s", pebbleTestDir)
 	return pebbleServer, cfg, out, pebbleCacheDir, pebbleTestDir
@@ -140,9 +143,7 @@ func getCerts(t Testing, certPath string) (*x509.Certificate, *x509.CertPool) {
 // WaitForConnection waits until a TCP connection can be established to the specified address.
 func WaitForConnection(ctx context.Context, t Testing, address string) {
 	t.Helper()
-	dialer := &net.Dialer{
-		Timeout: 100 * time.Millisecond,
-	}
+	dialer := &net.Dialer{}
 	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
 	ticker := time.NewTicker(250 * time.Millisecond)
@@ -152,7 +153,9 @@ func WaitForConnection(ctx context.Context, t Testing, address string) {
 		case <-ctx.Done():
 			t.Fatalf("timed out waiting for connection to %v: %v", address, ctx.Err())
 		case <-ticker.C:
-			conn, err := dialer.DialContext(ctx, "tcp", address)
+			dialCtx, cancelDial := context.WithTimeout(ctx, 100*time.Millisecond)
+			conn, err := dialer.DialContext(dialCtx, "tcp", address)
+			cancelDial()
 			if err != nil {
 				t.Logf("waiting for connection to %v: %v", address, err)
 				continue
