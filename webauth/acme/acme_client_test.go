@@ -76,7 +76,6 @@ func TestACMEClient_FullFlow(t *testing.T) {
 	}()
 
 	// Start the client to refresh certs.
-
 	client := acme.NewClient(mgr, time.Minute, "pebble-test.example.com")
 	stopAcmeClient, err := client.Start(ctx)
 	if err != nil {

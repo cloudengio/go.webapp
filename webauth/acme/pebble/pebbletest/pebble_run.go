@@ -70,6 +70,9 @@ func Start(ctx context.Context, t Testing, tmpDir string, configOpts ...pebble.C
 	if err := pebbleServer.WaitForReady(ctx); err != nil {
 		t.Fatalf("pebble not ready: %v\n%s", err, out.String())
 	}
+
+	WaitForConnection(ctx, t, cfg.Address)
+
 	t.Logf("cert cache dir: %s", pebbleCacheDir)
 	t.Logf("pebble dir: %s", pebbleTestDir)
 	return pebbleServer, cfg, out, pebbleCacheDir, pebbleTestDir
