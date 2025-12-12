@@ -137,20 +137,29 @@ func getCerts(t Testing, certPath string) (*x509.Certificate, *x509.CertPool) {
 	return leafCert, intermediates
 }
 
-// IsListening checks which of the specified addresses are listening
-// and returns a slice of those that are.
-func IsListening(addresses ...string) []string {
+// WaitForConnection waits until a TCP connection can be established to the specified address.
+func WaitForConnection(ctx context.Context, t Testing, address string) {
+	t.Helper()
 	dialer := &net.Dialer{
 		Timeout: 100 * time.Millisecond,
 	}
-	listening := []string{}
-	for _, address := range addresses {
-		conn, err := dialer.Dial("tcp", address)
-		if err != nil {
-			continue
+	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+	ticker := time.NewTicker(250 * time.Millisecond)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			t.Fatalf("timed out waiting for connection to %v: %v", address, ctx.Err())
+		case <-ticker.C:
+			conn, err := dialer.DialContext(ctx, "tcp", address)
+			if err != nil {
+				t.Logf("waiting for connection to %v: %v", address, err)
+				continue
+			}
+			conn.Close()
+			t.Logf("connected to %v", address)
+			return
 		}
-		conn.Close()
-		listening = append(listening, address)
 	}
-	return listening
 }

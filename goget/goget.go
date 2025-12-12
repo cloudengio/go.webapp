@@ -61,7 +61,6 @@ func (h *Handler) GoGetHandler(next http.Handler) http.Handler {
 		}
 		importPath := r.Host + r.URL.Path
 		for _, config := range h.specs {
-			fmt.Printf("matching: %s: %#v\n", importPath, config)
 			if importPath == config.ImportPath || strings.HasPrefix(importPath, config.importPathWithSlash) {
 				w.Header().Set("Content-Type", "text/html; charset=utf-8")
 				err := metaTemplate.Execute(w, config)
@@ -72,7 +71,6 @@ func (h *Handler) GoGetHandler(next http.Handler) http.Handler {
 						"error", err)
 					http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 				}
-				fmt.Printf("matched go-get spec for import path %q: %s\n", importPath, config)
 				return
 			}
 		}
@@ -107,7 +105,6 @@ func NewHandler(specs []Spec) (*Handler, error) {
 			return nil, err
 		}
 		specs[i] = ns
-		fmt.Printf("loaded go-get spec: %#v\n", specs[i])
 	}
 	return &Handler{
 		specs: specs,
