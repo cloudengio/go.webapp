@@ -5,12 +5,15 @@
 package goget
 
 import (
+	"fmt"
 	"html/template"
 	"io/fs"
 	"net/http"
+	"net/url"
 	"strings"
 
-	"github.com/stretchr/testify/assert/yaml"
+	"cloudeng.io/logging/ctxlog"
+	"gopkg.in/yaml.v3"
 )
 
 var metaTemplate = template.Must(template.New("go-import").Parse(`<!DOCTYPE html>
@@ -29,33 +32,51 @@ var metaTemplate = template.Must(template.New("go-import").Parse(`<!DOCTYPE html
 // system, and the URL, separated by spaces. See Finding a repository for a module
 // path for details.
 type Spec struct {
-	ImportPath string `yaml:"import"`
-	VCS        string `yaml:"vcs"`
-	RepoURL    string `yaml:"repo"`
+	ImportPath          string `yaml:"import"`
+	VCS                 string `yaml:"vcs"`
+	RepoURL             string `yaml:"repo"`
+	importPathWithSlash string
+}
+
+func (s Spec) String() string {
+	return fmt.Sprintf("%s %s %s", s.ImportPath, s.VCS, s.RepoURL)
 }
 
 // Handler implements an HTTP handler that serves go-get meta tags
 // based on the supplied specifications.
 type Handler struct {
-	Specs []Spec
+	specs []Spec
 }
 
+// GoGetHandler returns an http.Handler that serves go-get meta tags
+// for requests that include the "go-get=1" query parameter and match
+// one of the defined specifications. If the query parameter is not present,
+// the request is passed to the next handler. A 404 is returned if no
+// specification matches.
 func (h *Handler) GoGetHandler(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.FormValue("go-get") == "1" {
-			for _, config := range h.Specs {
-				// Check if the requested URL path matches the vanity import path
-				if strings.HasPrefix(r.Host+r.URL.Path, config.ImportPath) {
-					w.Header().Set("Content-Type", "text/html; charset=utf-8")
-					err := metaTemplate.Execute(w, config)
-					if err != nil {
-						http.Error(w, "Internal Server Error", http.StatusInternalServerError)
-					}
-					return
+		if r.FormValue("go-get") != "1" {
+			next.ServeHTTP(w, r)
+			return
+		}
+		importPath := r.Host + r.URL.Path
+		for _, config := range h.specs {
+			fmt.Printf("matching: %s: %#v\n", importPath, config)
+			if importPath == config.ImportPath || strings.HasPrefix(importPath, config.importPathWithSlash) {
+				w.Header().Set("Content-Type", "text/html; charset=utf-8")
+				err := metaTemplate.Execute(w, config)
+				if err != nil {
+					ctxlog.Error(r.Context(),
+						"failed to execute template",
+						"request", r.URL.String(),
+						"error", err)
+					http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 				}
+				fmt.Printf("matched go-get spec for import path %q: %s\n", importPath, config)
+				return
 			}
 		}
-		next.ServeHTTP(w, r)
+		http.NotFound(w, r)
 	})
 }
 
@@ -76,7 +97,52 @@ func NewHandlerFromFS(fsys fs.ReadFileFS, path string) (*Handler, error) {
 	if err != nil {
 		return nil, err
 	}
+	return NewHandler(parsedSpecs)
+}
+
+func NewHandler(specs []Spec) (*Handler, error) {
+	for i := range specs {
+		ns, err := specs[i].validate()
+		if err != nil {
+			return nil, err
+		}
+		specs[i] = ns
+		fmt.Printf("loaded go-get spec: %#v\n", specs[i])
+	}
 	return &Handler{
-		Specs: parsedSpecs,
+		specs: specs,
 	}, nil
+}
+
+func (s Spec) validate() (Spec, error) {
+	u, err := url.Parse(s.RepoURL)
+	if err != nil {
+		return s, fmt.Errorf("%s: invalid repo URL%w", s, err)
+	}
+	if u.Scheme != "https" && u.Scheme != "http" && u.Scheme != "ssh" && u.Scheme != "git" {
+		return s, fmt.Errorf("%s: invalid scheme for repo URL %s", s, u.Scheme)
+	}
+	if len(u.Host) == 0 {
+		return s, fmt.Errorf("%s: no host in repo URL", s)
+	}
+	if len(u.Query()) != 0 {
+		return s, fmt.Errorf("%s: repo URL must not contain query parameters", s)
+	}
+	supportedVCS := map[string]bool{
+		"git": true,
+		"hg":  true,
+		"svn": true,
+		"bzr": true,
+	}
+	if !supportedVCS[s.VCS] {
+		return s, fmt.Errorf("%s: unsupported VCS %q", s, s.VCS)
+	}
+	hasSlash := strings.HasSuffix(s.ImportPath, "/")
+	if !hasSlash {
+		s.importPathWithSlash = s.ImportPath + "/"
+	} else {
+		s.importPathWithSlash = s.ImportPath
+		s.ImportPath = strings.TrimSuffix(s.ImportPath, "/")
+	}
+	return s, nil
 }
