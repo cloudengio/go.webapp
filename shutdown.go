@@ -185,8 +185,10 @@ func ping(ctx context.Context, interval time.Duration, addr string) error {
 		ctxlog.Logger(ctx).Info("ping: server", "addr", addr)
 		_, err := net.DialTimeout("tcp", addr, time.Second)
 		if err == nil {
+			ctxlog.Logger(ctx).Info("ping: server", "addr", addr, "status", "available")
 			return nil
 		}
+		ctxlog.Logger(ctx).Debug("ping: server not available yet", "addr", addr, "error", err.Error())
 		if errors.Is(err, context.Canceled) {
 			return err
 		}
