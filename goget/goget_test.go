@@ -133,10 +133,6 @@ func TestGoGetHandler(t *testing.T) {
 		assert.Equal(t, http.StatusOK, w.Code)
 		body := w.Body.String()
 		assert.Contains(t, body, `<meta name="go-import" content="example.com/monorepo git https://github.com/example/monorepo /v2">`)
-		assert.Contains(t, body, "example.com/monorepo")
-		assert.Contains(t, body, "git")
-		assert.Contains(t, body, "https://github.com/example/monorepo")
-		assert.Contains(t, body, "/v2")
 	})
 
 }
