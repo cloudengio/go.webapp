@@ -19,7 +19,7 @@ import (
 var metaTemplate = template.Must(template.New("go-import").Parse(`<!DOCTYPE html>
 <html>
 <head>
-    <meta name="go-import" content="{{.ImportPath}} {{.VCS}} {{.RepoURL}}">
+    <meta name="go-import" content="{{.ImportPath}} {{.VCS}} {{.RepoURL}}{{if .SubDirectory}} {{.SubDirectory}}{{end}}">
 </head>
 <body>
     <a href="{{.RepoURL}}">Redirecting to source repository...</a>
@@ -27,7 +27,7 @@ var metaTemplate = template.Must(template.New("go-import").Parse(`<!DOCTYPE html
 </html>`))
 
 // Spec represents a go-get meta tag specification.
-// Fromhttps://go.dev/ref/mod#serving-from-proxy
+// From https://go.dev/ref/mod#serving-from-proxy
 // "The tag’s content must contain the repository root path, the version control
 // system, and the URL, separated by spaces. See Finding a repository for a module
 // path for details.
@@ -35,6 +35,7 @@ type Spec struct {
 	ImportPath          string `yaml:"import"`
 	VCS                 string `yaml:"vcs"`
 	RepoURL             string `yaml:"repo"`
+	SubDirectory        string `yaml:"subdir,omitempty"` // optional subdirectory within the repository supported by go 1.25 and later
 	importPathWithSlash string
 }
 
@@ -126,6 +127,8 @@ func (s Spec) validate() (Spec, error) {
 		return s, fmt.Errorf("%s: repo URL must not contain query parameters", s)
 	}
 	switch s.VCS {
+	case "":
+		s.VCS = "git"
 	case "git", "hg", "svn", "bzr":
 	default:
 		return s, fmt.Errorf("%s: unsupported VCS %q", s, s.VCS)

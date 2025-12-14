@@ -107,6 +107,34 @@ func TestGoGetHandler(t *testing.T) {
 		assert.Equal(t, http.StatusNotFound, w.Result().StatusCode)
 	})
 
+	// 6. Match with SubDirectory
+	t.Run("Match_WithSubDirectory", func(t *testing.T) {
+		specsWithSubdir := []Spec{
+			{
+				ImportPath:   "example.com/monorepo",
+				VCS:          "git",
+				RepoURL:      "https://github.com/example/monorepo",
+				SubDirectory: "/v2",
+			},
+		}
+		hWithSubdir, err := NewHandler(specsWithSubdir)
+		require.NoError(t, err)
+
+		req := httptest.NewRequest("GET", "http://example.com/monorepo?go-get=1", nil)
+		w := httptest.NewRecorder()
+		nextCalled := false
+		next := http.HandlerFunc(func(_ http.ResponseWriter, _ *http.Request) {
+			nextCalled = true
+		})
+
+		hWithSubdir.GoGetHandler(next).ServeHTTP(w, req)
+
+		assert.False(t, nextCalled)
+		assert.Equal(t, http.StatusOK, w.Code)
+		body := w.Body.String()
+		assert.Contains(t, body, `<meta name="go-import" content="example.com/monorepo git https://github.com/example/monorepo /v2">`)
+	})
+
 }
 
 func TestNewHandlerFromFS(t *testing.T) {
