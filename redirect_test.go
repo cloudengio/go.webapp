@@ -411,7 +411,7 @@ func TestRedirectHandlerIPv6Host(t *testing.T) {
 	}
 }
 
-func TestRedirectHandlerMultipleRedirectsFirstMatch(t *testing.T) {
+func TestRedirectHandlerMultipleRedirectsLongestMatch(t *testing.T) {
 	redirects := []webapp.Redirect{
 		{
 			Prefix: "/api",
