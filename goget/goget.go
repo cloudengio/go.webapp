@@ -32,10 +32,10 @@ var metaTemplate = template.Must(template.New("go-import").Parse(`<!DOCTYPE html
 // system, and the URL, separated by spaces. See Finding a repository for a module
 // path for details.
 type Spec struct {
-	ImportPath          string `yaml:"import"`
-	VCS                 string `yaml:"vcs"`
-	RepoURL             string `yaml:"repo"`
-	SubDirectory        string `yaml:"subdir,omitempty"` // optional subdirectory within the repository supported by go 1.25 and later
+	ImportPath          string `yaml:"import" cmd:"import path"`
+	VCS                 string `yaml:"vcs" cmd:"version control system, e.g. git, hg, svn, bzr"`
+	RepoURL             string `yaml:"repo" cmd:"repository URL"`
+	SubDirectory        string `yaml:"subdir,omitempty" cmd:"subdirectory within the repository"` // optional subdirectory within the repository supported by go 1.25 and later
 	importPathWithSlash string
 }
 

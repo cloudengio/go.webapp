@@ -9,7 +9,6 @@ import (
 	"net"
 	"net/http"
 	"net/url"
-	"slices"
 	"strings"
 	"time"
 
@@ -27,49 +26,19 @@ type Redirect struct {
 	Target RedirectTarget
 }
 
-// redirectHandler is an http.Handler that will redirect requests
-// based on the defined Redirects. If no redirect matches the
-// defaultTarget is used. An empty Prefix or Target is treated as "/".
-type redirectHandler struct {
-	redirects []Redirect
-}
-
 // newRedirectHandler creates a RedirectHandler that will redirect
-// requests based on the supplied redirects. If no redirect matches
-// the defaultTarget is used. The redirects are sorted in order of
-// decreasing prefix length so that more specific prefixes are matched
-// first. If the defaultTarget is empty then no match results in
-// a redirect to the same host as the request but to port 443.
+// requests based on the supplied redirects.
 func newRedirectHandler(redirects ...Redirect) http.Handler {
-	rh := redirectHandler{
-		redirects: slices.Clone(redirects),
+	mux := http.NewServeMux()
+	for _, r := range redirects {
+		p := strings.TrimSuffix(r.Prefix, "/") + "/"
+		mux.HandleFunc(p, func(w http.ResponseWriter, req *http.Request) {
+			t, c := r.Target(req)
+			http.Redirect(w, req, t, c)
+			ctxlog.Info(req.Context(), "redirecting request", "from", req.URL.String(), "to", t, "code", c)
+		})
 	}
-	slices.SortFunc(rh.redirects, func(a, b Redirect) int {
-		return strings.Compare(b.Prefix, a.Prefix)
-	})
-	for i, r := range rh.redirects {
-		if r.Prefix == "" {
-			r.Prefix = "/"
-		}
-		if r.Target == nil {
-			r.Target = func(*http.Request) (string, int) {
-				return "/", http.StatusMovedPermanently
-			}
-		}
-		rh.redirects[i] = r
-	}
-	return rh
-}
-
-func (rh redirectHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	for _, redirect := range rh.redirects {
-		if strings.HasPrefix(r.URL.Path, redirect.Prefix) {
-			t, c := redirect.Target(r)
-			http.Redirect(w, r, t, c)
-			return
-		}
-	}
-	http.Error(w, "not found", http.StatusNotFound)
+	return mux
 }
 
 func challengeRewrite(host string, r *http.Request) string {
@@ -138,4 +107,12 @@ func RedirectPort80(ctx context.Context, redirects ...Redirect) error {
 		}
 	}()
 	return nil
+}
+
+// LiteralRedirectTarget returns a RedirectTarget that always
+// redirects to the specified URL with the specified status code.
+func LiteralRedirectTarget(to string, code int) RedirectTarget {
+	return func(_ *http.Request) (string, int) {
+		return to, code
+	}
 }
