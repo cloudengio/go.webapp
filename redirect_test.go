@@ -17,6 +17,7 @@ import (
 
 	"cloudeng.io/logging/ctxlog"
 	"cloudeng.io/webapp"
+	"github.com/stretchr/testify/assert"
 )
 
 func TestRedirectHandler(t *testing.T) {
@@ -249,13 +250,8 @@ func TestLiteralRedirectTarget(t *testing.T) {
 			handler := webapp.RedirectHandler(redirects...)
 			handler.ServeHTTP(rr, req)
 
-			if got, want := rr.Code, tc.expectedStatusCode; got != want {
-				t.Errorf("got status code %v, want %v", got, want)
-			}
-
-			if got, want := rr.Header().Get("Location"), tc.expectedLocation; got != want {
-				t.Errorf("got location %q, want %q", got, want)
-			}
+			assert.Equal(t, tc.expectedStatusCode, rr.Code)
+			assert.Equal(t, tc.expectedLocation, rr.Header().Get("Location"))
 		})
 	}
 }

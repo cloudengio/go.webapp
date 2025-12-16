@@ -10,6 +10,7 @@ import (
 	"io/fs"
 	"net/http"
 	"net/url"
+	"slices"
 	"strings"
 
 	"cloudeng.io/logging/ctxlog"
@@ -99,6 +100,8 @@ func NewHandlerFromFS(fsys fs.ReadFileFS, path string) (*Handler, error) {
 	return NewHandler(parsedSpecs)
 }
 
+// NewHandler creates a new Handler instance for the provided
+// specifications.
 func NewHandler(specs []Spec) (*Handler, error) {
 	for i := range specs {
 		ns, err := specs[i].validate()
@@ -107,6 +110,11 @@ func NewHandler(specs []Spec) (*Handler, error) {
 		}
 		specs[i] = ns
 	}
+	// Sort specs by import path length in descending order to ensure
+	// that the longest prefix is matched first.
+	slices.SortFunc(specs, func(a, b Spec) int {
+		return len(b.ImportPath) - len(a.ImportPath)
+	})
 	return &Handler{
 		specs: specs,
 	}, nil

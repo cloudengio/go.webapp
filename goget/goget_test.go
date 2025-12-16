@@ -494,7 +494,7 @@ func TestGoGetHandlerEdgeCases(t *testing.T) {
 		assert.Equal(t, http.StatusNotFound, w.Code)
 	})
 
-	t.Run("MultipleSpecs_FirstMatch", func(t *testing.T) {
+	t.Run("MultipleSpecs_LongestMatch", func(t *testing.T) {
 		specs := []Spec{
 			{
 				ImportPath: "example.com/pkg",
@@ -517,9 +517,9 @@ func TestGoGetHandlerEdgeCases(t *testing.T) {
 		h.GoGetHandler(next).ServeHTTP(w, req)
 
 		assert.Equal(t, http.StatusOK, w.Code)
-		// Should match the first spec since it's a prefix match
+		// Should match the most specific spec (longest prefix).
 		body := w.Body.String()
-		assert.Contains(t, body, "example.com/pkg git https://github.com/user/pkg")
+		assert.Contains(t, body, "example.com/pkg/sub git https://github.com/user/sub")
 	})
 
 	t.Run("EmptyQueryValue", func(t *testing.T) {
