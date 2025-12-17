@@ -17,15 +17,11 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-var metaTemplate = template.Must(template.New("go-import").Parse(`<!DOCTYPE html>
+var metaTemplate = template.Must(template.New("go-import").Parse(`
 <html>
 <head>
     <meta name="go-import" content="{{.ImportPath}} {{.VCS}} {{.RepoURL}}{{if .SubDirectory}} {{.SubDirectory}}{{end}}">
-</head>
-<body>
-    <a href="{{.RepoURL}}">Redirecting to source repository...</a>
-</body>
-</html>`))
+</head></html>`))
 
 // Spec represents a go-get meta tag specification.
 // From https://go.dev/ref/mod#serving-from-proxy
