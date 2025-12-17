@@ -10,21 +10,18 @@ import (
 	"io/fs"
 	"net/http"
 	"net/url"
+	"slices"
 	"strings"
 
 	"cloudeng.io/logging/ctxlog"
 	"gopkg.in/yaml.v3"
 )
 
-var metaTemplate = template.Must(template.New("go-import").Parse(`<!DOCTYPE html>
+var metaTemplate = template.Must(template.New("go-import").Parse(`
 <html>
 <head>
     <meta name="go-import" content="{{.ImportPath}} {{.VCS}} {{.RepoURL}}{{if .SubDirectory}} {{.SubDirectory}}{{end}}">
-</head>
-<body>
-    <a href="{{.RepoURL}}">Redirecting to source repository...</a>
-</body>
-</html>`))
+</head></html>`))
 
 // Spec represents a go-get meta tag specification.
 // From https://go.dev/ref/mod#serving-from-proxy
@@ -32,10 +29,10 @@ var metaTemplate = template.Must(template.New("go-import").Parse(`<!DOCTYPE html
 // system, and the URL, separated by spaces. See Finding a repository for a module
 // path for details.
 type Spec struct {
-	ImportPath          string `yaml:"import"`
-	VCS                 string `yaml:"vcs"`
-	RepoURL             string `yaml:"repo"`
-	SubDirectory        string `yaml:"subdir,omitempty"` // optional subdirectory within the repository supported by go 1.25 and later
+	ImportPath          string `yaml:"import" cmd:"import path"`
+	VCS                 string `yaml:"vcs" cmd:"version control system, e.g. git, hg, svn, bzr"`
+	RepoURL             string `yaml:"repo" cmd:"repository URL"`
+	SubDirectory        string `yaml:"subdir,omitempty" cmd:"subdirectory within the repository"` // optional subdirectory within the repository supported by go 1.25 and later
 	importPathWithSlash string
 }
 
@@ -99,6 +96,8 @@ func NewHandlerFromFS(fsys fs.ReadFileFS, path string) (*Handler, error) {
 	return NewHandler(parsedSpecs)
 }
 
+// NewHandler creates a new Handler instance for the provided
+// specifications.
 func NewHandler(specs []Spec) (*Handler, error) {
 	for i := range specs {
 		ns, err := specs[i].validate()
@@ -107,6 +106,11 @@ func NewHandler(specs []Spec) (*Handler, error) {
 		}
 		specs[i] = ns
 	}
+	// Sort specs by import path length in descending order to ensure
+	// that the longest prefix is matched first.
+	slices.SortFunc(specs, func(a, b Spec) int {
+		return len(b.ImportPath) - len(a.ImportPath)
+	})
 	return &Handler{
 		specs: specs,
 	}, nil
