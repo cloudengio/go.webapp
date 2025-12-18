@@ -15,6 +15,14 @@ import (
 	"cloudeng.io/logging/ctxlog"
 )
 
+// RedirectMux is an interface that can be used to register handlers for
+// redirects. It is provided for use with other middleware packages that
+// expect an http.Handler.
+type RedirectMux interface {
+	HandleFunc(pattern string, handler func(w http.ResponseWriter, req *http.Request))
+	ServeHTTP(w http.ResponseWriter, r *http.Request)
+}
+
 // RedirectTarget is a function that given an http.Request returns
 // the target URL for the redirect and the HTTP status code to use.
 // The request and in particular the Request.URL should not be modified
@@ -24,25 +32,40 @@ type RedirectTarget func(*http.Request) (string, int)
 // Redirect defines a URL path prefix which will be redirected to
 // the specified target.
 type Redirect struct {
-	Prefix      string         // slash terminated prefix of the URL path to redirect
+	Prefix      string         // prefix to match assuming http.ServeMux rules and registers the handler for both the prefix and prefix/.
 	Description string         // description of the redirect, only used for logging
 	Target      RedirectTarget // function that returns the target URL and HTTP status code
+	Log         bool           // if true then log the redirect
+}
+
+// Handler returns a function that will redirect requests using
+// the Target function to determine the target URL and HTTP status code
+// and will log the redirect. It is provided for use with other middleware
+// packages that expect an http.Handler.
+func (r Redirect) Handler() http.HandlerFunc {
+	return func(w http.ResponseWriter, req *http.Request) {
+		ru := req.URL.String() // just in case r.Target changes it.
+		t, c := r.Target(req)
+		if r.Log {
+			ctxlog.Info(req.Context(), "redirecting request", "from", ru, "to", t, "ecode", c, "requestor", req.RemoteAddr, "description", r.Description)
+		}
+		http.Redirect(w, req, t, c)
+	}
 }
 
 // newRedirectHandler creates a RedirectHandler that will redirect
 // requests based on the supplied redirects.
-func newRedirectHandler(redirects ...Redirect) http.Handler {
-	mux := http.NewServeMux()
+func newRedirectHandler(mux RedirectMux, redirects ...Redirect) {
 	for _, r := range redirects {
-		p := strings.TrimSuffix(r.Prefix, "/") + "/"
-		mux.HandleFunc(p, func(w http.ResponseWriter, req *http.Request) {
-			ru := req.URL.String() // just in case Target changes it.
-			t, c := r.Target(req)
-			ctxlog.Info(req.Context(), "redirecting request", "from", ru, "to", t, "code", c, "requestor", req.RemoteAddr, "description", r.Description)
-			http.Redirect(w, req, t, c)
-		})
+		handler := r.Handler()
+		p := strings.TrimSuffix(r.Prefix, "/")
+		if p == "" || p == "/" {
+			mux.HandleFunc("/", handler)
+		} else {
+			mux.HandleFunc(p, handler)
+			mux.HandleFunc(p+"/", handler)
+		}
 	}
-	return mux
 }
 
 func challengeRewrite(host string, r *http.Request) string {
@@ -59,6 +82,7 @@ func challengeRewrite(host string, r *http.Request) string {
 func RedirectAcmeHTTP01(host string) Redirect {
 	return Redirect{
 		Prefix:      "/.well-known/acme-challenge/",
+		Log:         true,
 		Description: "redirecting ACME HTTP-01 challenge",
 		Target: func(r *http.Request) (string, int) {
 			return challengeRewrite(host, r), http.StatusTemporaryRedirect
@@ -91,8 +115,10 @@ func RedirectToHTTPSPort(addr string) Redirect {
 	}
 }
 
-func RedirectHandler(redirects ...Redirect) http.Handler {
-	return newRedirectHandler(redirects...)
+// RegisterRedirects registers the specified redirects with the
+// specified RedirectMux.
+func RegisterRedirects(mux RedirectMux, redirects ...Redirect) {
+	newRedirectHandler(mux, redirects...)
 }
 
 // RedirectPort80 starts an http.Server that will redirect port 80 to the
@@ -100,8 +126,9 @@ func RedirectHandler(redirects ...Redirect) http.Handler {
 // The server will run in the background until the supplied context
 // is canceled.
 func RedirectPort80(ctx context.Context, redirects ...Redirect) error {
-	rh := newRedirectHandler(redirects...)
-	ln, srv, err := NewHTTPServer(ctx, ":80", rh)
+	mux := http.NewServeMux()
+	newRedirectHandler(mux, redirects...)
+	ln, srv, err := NewHTTPServer(ctx, ":80", mux)
 	if err != nil {
 		return err
 	}

@@ -121,8 +121,9 @@ func TestRedirectHandler(t *testing.T) {
 			req = req.WithContext(ctx)
 			rr := httptest.NewRecorder()
 
-			handler := webapp.RedirectHandler(tc.redirects...)
-			handler.ServeHTTP(rr, req)
+			mux := http.NewServeMux()
+			webapp.RegisterRedirects(mux, tc.redirects...)
+			mux.ServeHTTP(rr, req)
 
 			if status := rr.Code; status != tc.expectedStatusCode {
 				t.Errorf("%v: handler returned wrong status code: got %v want %v",
@@ -248,8 +249,9 @@ func TestLiteralRedirectTarget(t *testing.T) {
 			req := httptest.NewRequest("GET", tc.requestURL, nil)
 			rr := httptest.NewRecorder()
 
-			handler := webapp.RedirectHandler(redirects...)
-			handler.ServeHTTP(rr, req)
+			mux := http.NewServeMux()
+			webapp.RegisterRedirects(mux, redirects...)
+			mux.ServeHTTP(rr, req)
 
 			assert.Equal(t, tc.expectedStatusCode, rr.Code)
 			assert.Equal(t, tc.expectedLocation, rr.Header().Get("Location"))
@@ -268,8 +270,9 @@ func TestRedirectHandlerEmptyPrefix(t *testing.T) {
 	req := httptest.NewRequest("GET", "http://test.com/path", nil)
 	rr := httptest.NewRecorder()
 
-	handler := webapp.RedirectHandler(redirects...)
-	handler.ServeHTTP(rr, req)
+	mux := http.NewServeMux()
+	webapp.RegisterRedirects(mux, redirects...)
+	mux.ServeHTTP(rr, req)
 
 	if got, want := rr.Code, http.StatusMovedPermanently; got != want {
 		t.Errorf("got status %v, want %v", got, want)
@@ -287,8 +290,9 @@ func TestRedirectHandlerPrefixWithoutTrailingSlash(t *testing.T) {
 	req := httptest.NewRequest("GET", "http://test.com/docs/page", nil)
 	rr := httptest.NewRecorder()
 
-	handler := webapp.RedirectHandler(redirects...)
-	handler.ServeHTTP(rr, req)
+	mux := http.NewServeMux()
+	webapp.RegisterRedirects(mux, redirects...)
+	mux.ServeHTTP(rr, req)
 
 	if got, want := rr.Code, http.StatusMovedPermanently; got != want {
 		t.Errorf("got status %v, want %v", got, want)
@@ -309,8 +313,9 @@ func TestRedirectHandlerPrefixWithTrailingSlash(t *testing.T) {
 	req := httptest.NewRequest("GET", "http://test.com/api/v1/endpoint", nil)
 	rr := httptest.NewRecorder()
 
-	handler := webapp.RedirectHandler(redirects...)
-	handler.ServeHTTP(rr, req)
+	mux := http.NewServeMux()
+	webapp.RegisterRedirects(mux, redirects...)
+	mux.ServeHTTP(rr, req)
 
 	if got, want := rr.Code, http.StatusMovedPermanently; got != want {
 		t.Errorf("got status %v, want %v", got, want)
@@ -325,8 +330,9 @@ func TestRedirectHandlerRequestWithQueryString(t *testing.T) {
 	req := httptest.NewRequest("GET", "http://example.com/path?foo=bar&baz=qux", nil)
 	rr := httptest.NewRecorder()
 
-	handler := webapp.RedirectHandler(redirects...)
-	handler.ServeHTTP(rr, req)
+	mux := http.NewServeMux()
+	webapp.RegisterRedirects(mux, redirects...)
+	mux.ServeHTTP(rr, req)
 
 	if got, want := rr.Code, http.StatusMovedPermanently; got != want {
 		t.Errorf("got status %v, want %v", got, want)
@@ -344,8 +350,9 @@ func TestRedirectHandlerRequestWithFragment(t *testing.T) {
 	req := httptest.NewRequest("GET", "http://example.com/path#section", nil)
 	rr := httptest.NewRecorder()
 
-	handler := webapp.RedirectHandler(redirects...)
-	handler.ServeHTTP(rr, req)
+	mux := http.NewServeMux()
+	webapp.RegisterRedirects(mux, redirects...)
+	mux.ServeHTTP(rr, req)
 
 	if got, want := rr.Code, http.StatusMovedPermanently; got != want {
 		t.Errorf("got status %v, want %v", got, want)
@@ -365,8 +372,9 @@ func TestRedirectHandlerRootPathRedirect(t *testing.T) {
 	req := httptest.NewRequest("GET", "http://example.com/", nil)
 	rr := httptest.NewRecorder()
 
-	handler := webapp.RedirectHandler(redirects...)
-	handler.ServeHTTP(rr, req)
+	mux := http.NewServeMux()
+	webapp.RegisterRedirects(mux, redirects...)
+	mux.ServeHTTP(rr, req)
 
 	if got, want := rr.Code, http.StatusMovedPermanently; got != want {
 		t.Errorf("got status %v, want %v", got, want)
@@ -384,8 +392,9 @@ func TestRedirectHandlerEmptyPathRedirect(t *testing.T) {
 	req := httptest.NewRequest("GET", "http://example.com", nil)
 	rr := httptest.NewRecorder()
 
-	handler := webapp.RedirectHandler(redirects...)
-	handler.ServeHTTP(rr, req)
+	mux := http.NewServeMux()
+	webapp.RegisterRedirects(mux, redirects...)
+	mux.ServeHTTP(rr, req)
 
 	if got, want := rr.Code, http.StatusMovedPermanently; got != want {
 		t.Errorf("got status %v, want %v", got, want)
@@ -400,8 +409,9 @@ func TestRedirectHandlerIPv6Host(t *testing.T) {
 	req := httptest.NewRequest("GET", "http://[::1]/path", nil)
 	rr := httptest.NewRecorder()
 
-	handler := webapp.RedirectHandler(redirects...)
-	handler.ServeHTTP(rr, req)
+	mux := http.NewServeMux()
+	webapp.RegisterRedirects(mux, redirects...)
+	mux.ServeHTTP(rr, req)
 
 	if got, want := rr.Code, http.StatusMovedPermanently; got != want {
 		t.Errorf("got status %v, want %v", got, want)
@@ -427,8 +437,9 @@ func TestRedirectHandlerMultipleRedirectsLongestMatch(t *testing.T) {
 	req := httptest.NewRequest("GET", "http://test.com/api/endpoint", nil)
 	rr := httptest.NewRecorder()
 
-	handler := webapp.RedirectHandler(redirects...)
-	handler.ServeHTTP(rr, req)
+	mux := http.NewServeMux()
+	webapp.RegisterRedirects(mux, redirects...)
+	mux.ServeHTTP(rr, req)
 
 	if got, want := rr.Code, http.StatusMovedPermanently; got != want {
 		t.Errorf("got status %v, want %v", got, want)
@@ -442,8 +453,9 @@ func TestRedirectHandlerNoRedirectsConfigured(t *testing.T) {
 	req := httptest.NewRequest("GET", "http://test.com/path", nil)
 	rr := httptest.NewRecorder()
 
-	handler := webapp.RedirectHandler()
-	handler.ServeHTTP(rr, req)
+	mux := http.NewServeMux()
+	webapp.RegisterRedirects(mux)
+	mux.ServeHTTP(rr, req)
 
 	if got, want := rr.Code, http.StatusNotFound; got != want {
 		t.Errorf("got status %v, want %v", got, want)
@@ -458,8 +470,9 @@ func TestRedirectHandlerHostWithExplicitPort(t *testing.T) {
 	req := httptest.NewRequest("GET", "http://test.com:8080/path", nil)
 	rr := httptest.NewRecorder()
 
-	handler := webapp.RedirectHandler(redirects...)
-	handler.ServeHTTP(rr, req)
+	mux := http.NewServeMux()
+	webapp.RegisterRedirects(mux, redirects...)
+	mux.ServeHTTP(rr, req)
 
 	if got, want := rr.Code, http.StatusMovedPermanently; got != want {
 		t.Errorf("got status %v, want %v", got, want)
@@ -477,8 +490,9 @@ func TestRedirectHandlerFullHostWithPort(t *testing.T) {
 	req := httptest.NewRequest("GET", "http://oldhost.com/path", nil)
 	rr := httptest.NewRecorder()
 
-	handler := webapp.RedirectHandler(redirects...)
-	handler.ServeHTTP(rr, req)
+	mux := http.NewServeMux()
+	webapp.RegisterRedirects(mux, redirects...)
+	mux.ServeHTTP(rr, req)
 
 	if got, want := rr.Code, http.StatusMovedPermanently; got != want {
 		t.Errorf("got status %v, want %v", got, want)
@@ -495,8 +509,9 @@ func TestRedirectAcmeHTTP01(t *testing.T) {
 		req := httptest.NewRequest("GET", "http://example.com/.well-known/acme-challenge/token123", nil)
 		rr := httptest.NewRecorder()
 
-		handler := webapp.RedirectHandler(redirect)
-		handler.ServeHTTP(rr, req)
+		mux := http.NewServeMux()
+		webapp.RegisterRedirects(mux, redirect)
+		mux.ServeHTTP(rr, req)
 
 		if got, want := rr.Code, http.StatusTemporaryRedirect; got != want {
 			t.Errorf("got status %v, want %v", got, want)
@@ -512,8 +527,9 @@ func TestRedirectAcmeHTTP01(t *testing.T) {
 		req := httptest.NewRequest("GET", "http://example.com/.well-known/acme-challenge/token456", nil)
 		rr := httptest.NewRecorder()
 
-		handler := webapp.RedirectHandler(redirect)
-		handler.ServeHTTP(rr, req)
+		mux := http.NewServeMux()
+		webapp.RegisterRedirects(mux, redirect)
+		mux.ServeHTTP(rr, req)
 
 		if got, want := rr.Code, http.StatusTemporaryRedirect; got != want {
 			t.Errorf("got status %v, want %v", got, want)
@@ -529,8 +545,9 @@ func TestRedirectAcmeHTTP01(t *testing.T) {
 		req := httptest.NewRequest("GET", "http://example.com/other/path", nil)
 		rr := httptest.NewRecorder()
 
-		handler := webapp.RedirectHandler(redirect)
-		handler.ServeHTTP(rr, req)
+		mux := http.NewServeMux()
+		webapp.RegisterRedirects(mux, redirect)
+		mux.ServeHTTP(rr, req)
 
 		if got, want := rr.Code, http.StatusNotFound; got != want {
 			t.Errorf("got status %v, want %v", got, want)
