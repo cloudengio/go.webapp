@@ -60,7 +60,7 @@ func TestRedirectHandler(t *testing.T) {
 			},
 			expectedStatusCode: http.StatusTemporaryRedirect,
 			expectedLocation:   "http://acme-handler.example.com/.well-known/acme-challenge/some-token",
-			expectedLog:        `level=INFO msg="redirecting acme challenge" redirect=http://acme-handler.example.com/.well-known/acme-challenge/some-token`,
+			expectedLog:        `redirecting ACME HTTP-01 challenge`,
 		},
 		{
 			name:   "Standard redirect when ACME is configured",
@@ -96,7 +96,7 @@ func TestRedirectHandler(t *testing.T) {
 				{
 					Prefix: "/",
 					Target: func(_ *http.Request) (string, int) {
-						return "https://catchall.com", http.StatusMovedPermanently
+						return "http://catchall.com", http.StatusMovedPermanently
 					},
 				},
 				{
@@ -125,18 +125,19 @@ func TestRedirectHandler(t *testing.T) {
 			handler.ServeHTTP(rr, req)
 
 			if status := rr.Code; status != tc.expectedStatusCode {
-				t.Errorf("handler returned wrong status code: got %v want %v",
-					status, tc.expectedStatusCode)
+				t.Errorf("%v: handler returned wrong status code: got %v want %v",
+					tc.name, status, tc.expectedStatusCode)
 			}
 
 			if location := rr.Header().Get("Location"); location != tc.expectedLocation {
-				t.Errorf("handler returned wrong redirect location: got %q want %q",
-					location, tc.expectedLocation)
+				t.Logf("log output:\n%s", logBuf.String())
+				t.Errorf("%v: handler returned wrong redirect location: got %q want %q",
+					tc.name, location, tc.expectedLocation)
 			}
 
 			if len(tc.expectedLog) > 0 {
 				if got := strings.TrimSpace(logBuf.String()); !strings.Contains(got, tc.expectedLog) {
-					t.Errorf("log output missing expected string:\n  got: %v\n want: %v", got, tc.expectedLog)
+					t.Errorf("%v: log output missing expected string:\n  got: %v\n want: %v", tc.name, got, tc.expectedLog)
 				}
 			}
 		})

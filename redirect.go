@@ -17,13 +17,16 @@ import (
 
 // RedirectTarget is a function that given an http.Request returns
 // the target URL for the redirect and the HTTP status code to use.
+// The request and in particular the Request.URL should not be modified
+// by RedirectTarget.
 type RedirectTarget func(*http.Request) (string, int)
 
 // Redirect defines a URL path prefix which will be redirected to
 // the specified target.
 type Redirect struct {
-	Prefix string
-	Target RedirectTarget
+	Prefix      string         // slash terminated prefix of the URL path to redirect
+	Description string         // description of the redirect, only used for logging
+	Target      RedirectTarget // function that returns the target URL and HTTP status code
 }
 
 // newRedirectHandler creates a RedirectHandler that will redirect
@@ -33,9 +36,10 @@ func newRedirectHandler(redirects ...Redirect) http.Handler {
 	for _, r := range redirects {
 		p := strings.TrimSuffix(r.Prefix, "/") + "/"
 		mux.HandleFunc(p, func(w http.ResponseWriter, req *http.Request) {
+			ru := req.URL.String() // just in case Target changes it.
 			t, c := r.Target(req)
+			ctxlog.Info(req.Context(), "redirecting request", "from", ru, "to", t, "code", c, "requestor", req.RemoteAddr, "description", r.Description)
 			http.Redirect(w, req, t, c)
-			ctxlog.Info(req.Context(), "redirecting request", "from", req.URL.String(), "to", t, "code", c)
 		})
 	}
 	return mux
@@ -47,16 +51,15 @@ func challengeRewrite(host string, r *http.Request) string {
 		Host:   host,
 		Path:   r.URL.Path,
 	}
-	target := nrl.String()
-	ctxlog.Info(r.Context(), "redirecting acme challenge", "redirect", target)
-	return target
+	return nrl.String()
 }
 
 // RedirectAcmeHTTP01 returns a Redirect that will redirect
 // ACME HTTP-01 challenges to the specified host.
 func RedirectAcmeHTTP01(host string) Redirect {
 	return Redirect{
-		Prefix: "/.well-known/acme-challenge/",
+		Prefix:      "/.well-known/acme-challenge/",
+		Description: "redirecting ACME HTTP-01 challenge",
 		Target: func(r *http.Request) (string, int) {
 			return challengeRewrite(host, r), http.StatusTemporaryRedirect
 		},
@@ -73,13 +76,14 @@ func RedirectToHTTPSPort(addr string) Redirect {
 		port = "443"
 	}
 	return Redirect{
-		Prefix: "/",
+		Prefix:      "/",
+		Description: "redirect to https",
 		Target: func(r *http.Request) (string, int) {
 			h, _ := SplitHostPort(r.Host)
 			if len(h) == 0 {
 				h = host
 			}
-			u := r.URL
+			u := *r.URL
 			u.Host = net.JoinHostPort(h, port)
 			u.Scheme = "https"
 			return u.String(), http.StatusMovedPermanently
