@@ -90,5 +90,5 @@ func (t TLSTest) verify(ctx context.Context, spec TLSSpec) error {
 	if len(port) == 0 {
 		port = "443"
 	}
-	return validator.Validate(ctx, spec.Host, spec.Port)
+	return validator.Validate(ctx, spec.Host, port)
 }

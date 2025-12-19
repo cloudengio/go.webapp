@@ -23,7 +23,7 @@ func TestVerifyRedirect(t *testing.T) {
 
 	// Important: Configure client to NOT follow redirects so we can verify the 3xx response.
 	client := srv.Client()
-	client.CheckRedirect = func(req *http.Request, via []*http.Request) error {
+	client.CheckRedirect = func(_ *http.Request, _ []*http.Request) error {
 		return http.ErrUseLastResponse
 	}
 

@@ -25,10 +25,10 @@ func TestVerifyGoGet(t *testing.T) {
 
 func mod1Handler(w http.ResponseWriter, r *http.Request) {
 	if r.FormValue("go-get") == "1" {
-		w.Write([]byte(`<html><head><meta name="go-import" content="example.com/mod git https://github.com/example/mod"></head></html>`))
+		w.Write([]byte(`<html><head><meta name="go-import" content="example.com/mod git https://github.com/example/mod"></head></html>`)) //nolint:errcheck
 		return
 	}
-	w.Write([]byte("ok"))
+	w.Write([]byte("ok")) //nolint:errcheck
 }
 
 func TestVerifyGoGet_Local(t *testing.T) {
@@ -66,8 +66,8 @@ func TestVerifyGoGet_Local(t *testing.T) {
 
 	t.Run("Error_MissingMeta", func(t *testing.T) {
 		// Handler that returns 200 but no meta tag
-		mux.HandleFunc("/nometa", func(w http.ResponseWriter, r *http.Request) {
-			w.Write([]byte("<html><body>No meta tag here</body></html>"))
+		mux.HandleFunc("/nometa", func(w http.ResponseWriter, _ *http.Request) {
+			w.Write([]byte("<html><body>No meta tag here</body></html>")) //nolint:errcheck
 		})
 		spec := goget.Spec{
 			ImportPath: strings.TrimPrefix(tlsServer.URL, "https://") + "/nometa",
