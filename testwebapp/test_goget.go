@@ -70,14 +70,14 @@ func verify(req *http.Request, client *http.Client, expected goget.Spec) error {
 	}
 	bodyStr := string(body)
 	if !strings.Contains(bodyStr, `<meta name="go-import" content="`) {
-		return fmt.Errorf("go-get meta tag not found: %v: %w", bodyStr, ErrGoGetNotFound)
+		return fmt.Errorf("%v: %w", bodyStr, ErrGoGetNotFound)
 	}
 	// Depending on the webserver, the meta tag may be self-closing or not.
 	expectedTag := fmt.Sprintf(`<meta name="go-import" content="%s">`, expected.Content)
 	expectedTagSlash := fmt.Sprintf(`<meta name="go-import" content="%s"/>`, expected.Content)
 	if !strings.Contains(bodyStr, expectedTagSlash) &&
 		!strings.Contains(bodyStr, expectedTag) {
-		return fmt.Errorf("go-get meta tag content mismatch: %v: %w", bodyStr, ErrGoGetContentMismatch)
+		return fmt.Errorf("%v: %w", bodyStr, ErrGoGetContentMismatch)
 	}
 	return nil
 }
