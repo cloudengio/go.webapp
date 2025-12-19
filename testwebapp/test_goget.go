@@ -55,7 +55,7 @@ func (g GoGetTest) verify(ctx context.Context, expected goget.Spec) error {
 func verify(req *http.Request, client *http.Client, expected goget.Spec) error {
 	resp, err := client.Do(req)
 	if err != nil {
-		return ErrGoGetUnexpectedError
+		return fmt.Errorf("error: %v: %w", err, ErrGoGetUnexpectedError)
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
@@ -66,18 +66,18 @@ func verify(req *http.Request, client *http.Client, expected goget.Spec) error {
 	}
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return ErrGoGetUnexpectedError
+		return fmt.Errorf("error: %v: %w", err, ErrGoGetUnexpectedError)
 	}
 	bodyStr := string(body)
 	if !strings.Contains(bodyStr, `<meta name="go-import" content="`) {
-		return ErrGoGetNotFound
+		return fmt.Errorf("go-get meta tag not found: %v: %w", bodyStr, ErrGoGetNotFound)
 	}
 	// Depending on the webserver, the meta tag may be self-closing or not.
 	expectedTag := fmt.Sprintf(`<meta name="go-import" content="%s">`, expected.Content)
 	expectedTagSlash := fmt.Sprintf(`<meta name="go-import" content="%s"/>`, expected.Content)
 	if !strings.Contains(bodyStr, expectedTagSlash) &&
 		!strings.Contains(bodyStr, expectedTag) {
-		return ErrGoGetContentMismatch
+		return fmt.Errorf("go-get meta tag content mismatch: %v: %w", bodyStr, ErrGoGetContentMismatch)
 	}
 	return nil
 }

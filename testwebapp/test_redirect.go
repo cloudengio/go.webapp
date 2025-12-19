@@ -50,18 +50,18 @@ func (r RedirectTest) Run(ctx context.Context) error {
 func (r RedirectTest) verify(ctx context.Context, spec RedirectSpec) error {
 	req, err := http.NewRequestWithContext(ctx, "GET", spec.URL, nil)
 	if err != nil {
-		return ErrRedirectUnexpectedError
+		return fmt.Errorf("error: %v: %w", err, ErrRedirectUnexpectedError)
 	}
 	resp, err := r.client.Do(req)
 	if err != nil {
-		return ErrRedirectUnexpectedError
+		return fmt.Errorf("error: %v: %w", err, ErrRedirectUnexpectedError)
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != spec.Code {
-		return ErrRedirectStatusCodeMismatch
+		return fmt.Errorf("redirect code: %v, want: %v: %w", resp.StatusCode, spec.Code, ErrRedirectStatusCodeMismatch)
 	}
 	if resp.Header.Get("Location") != spec.Target {
-		return ErrRedirectTargetMismatch
+		return fmt.Errorf("location: %v, want: %v: %w", resp.Header.Get("Location"), spec.Target, ErrRedirectTargetMismatch)
 	}
 	return nil
 }
