@@ -9,7 +9,6 @@ import (
 	"html/template"
 	"io/fs"
 	"net/http"
-	"net/url"
 	"slices"
 	"strings"
 
@@ -17,7 +16,7 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-var metaTemplate = template.Must(template.New("go-import").Parse(`<html><head><meta name="go-import" content="{{.ImportPath}} {{.VCS}} {{.RepoURL}}{{if .SubDirectory}} {{.SubDirectory}}{{end}}"></head></html>`))
+var metaTemplate = template.Must(template.New("go-import").Parse(`<html><head><meta name="go-import" content="{{.Content}}"/></head></html>`))
 
 // Spec represents a go-get meta tag specification.
 // From https://go.dev/ref/mod#serving-from-proxy
@@ -26,14 +25,12 @@ var metaTemplate = template.Must(template.New("go-import").Parse(`<html><head><m
 // path for details.
 type Spec struct {
 	ImportPath          string `yaml:"import" cmd:"import path"`
-	VCS                 string `yaml:"vcs" cmd:"version control system, e.g. git, hg, svn, bzr"`
-	RepoURL             string `yaml:"repo" cmd:"repository URL"`
-	SubDirectory        string `yaml:"subdir,omitempty" cmd:"subdirectory within the repository"` // optional subdirectory within the repository supported by go 1.25 and later
+	Content             string `yaml:"content" cmd:"content of the go-get meta tag"`
 	importPathWithSlash string
 }
 
 func (s Spec) String() string {
-	return fmt.Sprintf("%s %s %s", s.ImportPath, s.VCS, s.RepoURL)
+	return fmt.Sprintf("%s?go-get=1 content=%q", s.ImportPath, s.Content)
 }
 
 // Handler implements an HTTP handler that serves go-get meta tags
@@ -96,11 +93,7 @@ func NewHandlerFromFS(fsys fs.ReadFileFS, path string) (*Handler, error) {
 // specifications.
 func NewHandler(specs []Spec) (*Handler, error) {
 	for i := range specs {
-		ns, err := specs[i].validate()
-		if err != nil {
-			return nil, err
-		}
-		specs[i] = ns
+		specs[i] = specs[i].handleSlash()
 	}
 	// Sort specs by import path length in descending order to ensure
 	// that the longest prefix is matched first.
@@ -112,28 +105,7 @@ func NewHandler(specs []Spec) (*Handler, error) {
 	}, nil
 }
 
-func (s Spec) validate() (Spec, error) {
-	u, err := url.Parse(s.RepoURL)
-	if err != nil {
-		return s, fmt.Errorf("%s: invalid repo URL: %w", s, err)
-	}
-	if u.Scheme != "https" && u.Scheme != "http" && u.Scheme != "ssh" && u.Scheme != "git" {
-		return s, fmt.Errorf("%s: invalid scheme for repo URL %s", s, u.Scheme)
-	}
-	if len(u.Host) == 0 {
-		return s, fmt.Errorf("%s: no host in repo URL", s)
-	}
-	if len(u.Query()) != 0 {
-		return s, fmt.Errorf("%s: repo URL must not contain query parameters", s)
-	}
-	switch s.VCS {
-	case "":
-		s.VCS = "git"
-	case "git", "hg", "svn", "bzr":
-	default:
-		return s, fmt.Errorf("%s: unsupported VCS %q", s, s.VCS)
-	}
-
+func (s Spec) handleSlash() Spec {
 	hasSlash := strings.HasSuffix(s.ImportPath, "/")
 	if !hasSlash {
 		s.importPathWithSlash = s.ImportPath + "/"
@@ -141,5 +113,5 @@ func (s Spec) validate() (Spec, error) {
 		s.importPathWithSlash = s.ImportPath
 		s.ImportPath = strings.TrimSuffix(s.ImportPath, "/")
 	}
-	return s, nil
+	return s
 }
