@@ -6,6 +6,7 @@ import (
 	"net/http"
 
 	"cloudeng.io/errors"
+	"cloudeng.io/logging/ctxlog"
 )
 
 var (
@@ -17,9 +18,9 @@ var (
 
 // RedirectSpec represents a specification for a redirect test.
 type RedirectSpec struct {
-	URL    string `yaml:"url"`
-	Target string `yaml:"target"`
-	Code   int    `yaml:"code"`
+	URL    string `yaml:"url" json:"url"`
+	Target string `yaml:"target" json:"target"`
+	Code   int    `yaml:"code" json:"code"`
 }
 
 // RedirectTest can be used to validate redirects for a set of URLs.
@@ -37,9 +38,11 @@ func (r RedirectTest) Run(ctx context.Context) error {
 	for _, spec := range r.specs {
 		err := r.verify(ctx, spec)
 		if err != nil {
+			ctxlog.Error(ctx, "redirect", "spec", spec, "success", false, "error", err)
 			errs.Append(fmt.Errorf("%v: %w", spec, err))
 			continue
 		}
+		ctxlog.Info(ctx, "redirect", "spec", spec, "success", true)
 	}
 	return errs.Err()
 }

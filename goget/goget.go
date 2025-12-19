@@ -16,7 +16,7 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-var metaTemplate = template.Must(template.New("go-import").Parse(`<html><head><meta name="go-import" content="{{.Content}}"/></head></html>`))
+var metaTemplate = template.Must(template.New("go-import").Parse(`<html><head><meta name="go-import" content="{{.Content}}"></head></html>`))
 
 // Spec represents a go-get meta tag specification.
 // From https://go.dev/ref/mod#serving-from-proxy
@@ -24,8 +24,8 @@ var metaTemplate = template.Must(template.New("go-import").Parse(`<html><head><m
 // system, and the URL, separated by spaces. See Finding a repository for a module
 // path for details.
 type Spec struct {
-	ImportPath          string `yaml:"import" cmd:"import path"`
-	Content             string `yaml:"content" cmd:"content of the go-get meta tag"`
+	ImportPath          string `yaml:"import" cmd:"import path" json:"import"`
+	Content             string `yaml:"content" cmd:"content of the go-get meta tag" json:"content"`
 	importPathWithSlash string
 }
 
@@ -74,8 +74,7 @@ func (h *Handler) GoGetHandler(next http.Handler) http.Handler {
 // The file should contain a list YAML-formatted specifications as follows:
 //
 //   - import: "example.com/my/module"
-//     vcs: "git"
-//     repo: "github.com/user/repo"
+//     content: "example.com/my/module git github.com/user/repo"
 func NewHandlerFromFS(fsys fs.ReadFileFS, path string) (*Handler, error) {
 	specs, err := fsys.ReadFile(path)
 	if err != nil {

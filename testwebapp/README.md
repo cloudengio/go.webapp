@@ -65,9 +65,9 @@ func (g GoGetTest) Run(ctx context.Context) error
 ### Type RedirectSpec
 ```go
 type RedirectSpec struct {
-	URL    string `yaml:"url"`
-	Target string `yaml:"target"`
-	Code   int    `yaml:"code"`
+	URL    string `yaml:"url" json:"url"`
+	Target string `yaml:"target" json:"target"`
+	Code   int    `yaml:"code" json:"code"`
 }
 ```
 RedirectSpec represents a specification for a redirect test.

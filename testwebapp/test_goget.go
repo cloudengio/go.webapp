@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"cloudeng.io/errors"
+	"cloudeng.io/logging/ctxlog"
 	"cloudeng.io/webapp/goget"
 )
 
@@ -33,9 +34,11 @@ func (g GoGetTest) Run(ctx context.Context) error {
 	for _, spec := range g.specs {
 		err := g.verify(ctx, spec)
 		if err != nil {
+			ctxlog.Error(ctx, "goget", "spec", spec, "success", false, "error", err)
 			errs.Append(fmt.Errorf("%v: %w", spec, err))
 			continue
 		}
+		ctxlog.Info(ctx, "goget", "spec", spec, "success", true)
 	}
 	return errs.Err()
 }
@@ -69,11 +72,11 @@ func verify(req *http.Request, client *http.Client, expected goget.Spec) error {
 	if !strings.Contains(bodyStr, `<meta name="go-import" content="`) {
 		return ErrGoGetNotFound
 	}
-
-	// <meta name="go-import" content="example.com/mod git https://github.com/example/mod">
-
-	expectedTag := fmt.Sprintf(`<meta name="go-import" content="%s"/>`, expected.Content)
-	if !strings.Contains(bodyStr, expectedTag) {
+	// Depending on the webserver, the meta tag may be self-closing or not.
+	expectedTag := fmt.Sprintf(`<meta name="go-import" content="%s">`, expected.Content)
+	expectedTagSlash := fmt.Sprintf(`<meta name="go-import" content="%s"/>`, expected.Content)
+	if !strings.Contains(bodyStr, expectedTagSlash) &&
+		!strings.Contains(bodyStr, expectedTag) {
 		return ErrGoGetContentMismatch
 	}
 	return nil

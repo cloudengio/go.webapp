@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"cloudeng.io/errors"
+	"cloudeng.io/logging/ctxlog"
 	"cloudeng.io/webapp/tlsvalidate"
 )
 
@@ -40,7 +41,7 @@ func NewTLSTest(client *http.Client, specs ...TLSSpec) *TLSTest {
 	return &TLSTest{client: client, specs: specs}
 }
 
-func (t TLSTest) compileREs() error {
+func (t *TLSTest) compileREs() error {
 	for i, spec := range t.specs {
 		var res []*regexp.Regexp
 		for _, issuer := range spec.IssuerREs {
@@ -63,16 +64,17 @@ func (t *TLSTest) Run(ctx context.Context) error {
 	for _, spec := range t.specs {
 		err := t.verify(ctx, spec)
 		if err != nil {
+			ctxlog.Error(ctx, "tls", "spec", spec, "success", false, "error", err)
 			errs.Append(fmt.Errorf("%v: %w", spec, err))
 			continue
 		}
+		ctxlog.Info(ctx, "tls", "spec", spec, "success", true)
 	}
 	return errs.Err()
 }
 
 func (s TLSSpec) options() []tlsvalidate.Option {
 	return []tlsvalidate.Option{
-		tlsvalidate.WithExpandDNSNames(s.CheckSerialNumbers),
 		tlsvalidate.WithValidForAtLeast(s.ValidFor),
 		tlsvalidate.WithIssuerRegexps(s.issuerREs...),
 		tlsvalidate.WithCheckSerialNumbers(s.CheckSerialNumbers),
@@ -84,5 +86,9 @@ func (s TLSSpec) options() []tlsvalidate.Option {
 func (t TLSTest) verify(ctx context.Context, spec TLSSpec) error {
 	opts := spec.options()
 	validator := tlsvalidate.NewValidator(opts...)
+	port := spec.Port
+	if len(port) == 0 {
+		port = "443"
+	}
 	return validator.Validate(ctx, spec.Host, spec.Port)
 }

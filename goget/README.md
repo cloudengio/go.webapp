@@ -30,7 +30,8 @@ NewHandlerFromFS creates a new Handler instance by loading specifications
 from the specified file path within the provided fs.ReadFileFS. The file
 should contain a list YAML-formatted specifications as follows:
 
-  - import: "example.com/my/module" vcs: "git" repo: "github.com/user/repo"
+  - import: "example.com/my/module" content: "example.com/my/module git
+    github.com/user/repo"
 
 
 
@@ -51,8 +52,8 @@ matches.
 ### Type Spec
 ```go
 type Spec struct {
-	ImportPath string `yaml:"import" cmd:"import path"`
-	Content    string `yaml:"content" cmd:"content of the go-get meta tag"`
+	ImportPath string `yaml:"import" cmd:"import path" json:"import"`
+	Content    string `yaml:"content" cmd:"content of the go-get meta tag" json:"content"`
 	// contains filtered or unexported fields
 }
 ```
