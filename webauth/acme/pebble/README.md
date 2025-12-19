@@ -108,6 +108,13 @@ ConfigOption represents an option for configuring a new Config instance.
 ### Functions
 
 ```go
+func WithAlternatePorts(managementPort, serverPort int) ConfigOption
+```
+WithAlternatePorts returns a ConfigOption that sets alternate ports for the
+pebble management and server ports.
+
+
+```go
 func WithValidityPeriod(secs int) ConfigOption
 ```
 WithValidityPeriod returns a ConfigOption that sets the validity period for

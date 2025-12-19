@@ -157,19 +157,20 @@ func ReadAndParsePrivateKeyPEM(ctx context.Context, fs file.ReadFileFS, pemFile 
 ReadAndParsePrivateKeyPEM reads and parses a PEM encoded private key from
 the specified file.
 
-### Func RedirectHandler
-```go
-func RedirectHandler(redirects ...Redirect) http.Handler
-```
-
 ### Func RedirectPort80
 ```go
 func RedirectPort80(ctx context.Context, redirects ...Redirect) error
 ```
 RedirectPort80 starts an http.Server that will redirect port 80 to the
-specified supplied https port. If acmeRedirect is specified then acme
-HTTP-01 challenges will be redirected to that URL. The server will run in
-the background until the supplied context is canceled.
+specified redirect targets. The server will run in the background until the
+supplied context is canceled.
+
+### Func RegisterRedirects
+```go
+func RegisterRedirects(mux RedirectMux, redirects ...Redirect)
+```
+RegisterRedirects registers the specified redirects with the specified
+RedirectMux.
 
 ### Func SafePath
 ```go
@@ -388,8 +389,10 @@ HTTPServerConfig returns an HTTPServerConfig based on the supplied flags.
 ### Type Redirect
 ```go
 type Redirect struct {
-	Prefix string
-	Target RedirectTarget
+	Prefix      string         // prefix to match assuming http.ServeMux rules and registers the handler for both the prefix and prefix/.
+	Description string         // description of the redirect, only used for logging
+	Target      RedirectTarget // function that returns the target URL and HTTP status code
+	Log         bool           // if true then log the redirect
 }
 ```
 Redirect defines a URL path prefix which will be redirected to the specified
@@ -414,13 +417,48 @@ contain a port then port 443 is used.
 
 
 
+### Methods
+
+```go
+func (r Redirect) Handler() http.HandlerFunc
+```
+Handler returns a function that will redirect requests using the Target
+function to determine the target URL and HTTP status code and will log the
+redirect. It is provided for use with other middleware packages that expect
+an http.Handler.
+
+
+
+
+### Type RedirectMux
+```go
+type RedirectMux interface {
+	HandleFunc(pattern string, handler func(w http.ResponseWriter, req *http.Request))
+	ServeHTTP(w http.ResponseWriter, r *http.Request)
+}
+```
+RedirectMux is an interface that can be used to register handlers for
+redirects. It is provided for use with other middleware packages that expect
+an http.Handler.
+
 
 ### Type RedirectTarget
 ```go
 type RedirectTarget func(*http.Request) (string, int)
 ```
 RedirectTarget is a function that given an http.Request returns the target
-URL for the redirect and the HTTP status code to use.
+URL for the redirect and the HTTP status code to use. The request and in
+particular the Request.URL should not be modified by RedirectTarget.
+
+### Functions
+
+```go
+func LiteralRedirectTarget(to string, code int) RedirectTarget
+```
+LiteralRedirectTarget returns a RedirectTarget that always redirects to the
+specified URL with the specified status code.
+
+
 
 
 ### Type TLSCertConfig
