@@ -6,6 +6,13 @@ import cloudeng.io/webapp/webauth/acme/pebble/pebbletest
 
 
 ## Functions
+### Func WaitForConnection
+```go
+func WaitForConnection(ctx context.Context, t Testing, address string)
+```
+WaitForConnection waits until a TCP connection can be established to the
+specified address.
+
 ### Func WaitForNewCert
 ```go
 func WaitForNewCert(ctx context.Context, t Testing, msg, certPath string, previousSerial string) (*x509.Certificate, *x509.CertPool)
