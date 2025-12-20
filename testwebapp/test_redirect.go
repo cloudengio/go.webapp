@@ -29,7 +29,15 @@ type RedirectTest struct {
 	specs  []RedirectSpec
 }
 
+// NewRedirectTest creates a new RedirectTest, it if client.CheckRedirect
+// is nil, it will be set to http.ErrUseLastResponse to ensure that redirects
+// are not followed.
 func NewRedirectTest(client *http.Client, redirects ...RedirectSpec) *RedirectTest {
+	if client.CheckRedirect == nil {
+		client.CheckRedirect = func(_ *http.Request, _ []*http.Request) error {
+			return http.ErrUseLastResponse
+		}
+	}
 	return &RedirectTest{client: client, specs: redirects}
 }
 

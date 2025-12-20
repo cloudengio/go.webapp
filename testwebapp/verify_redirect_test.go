@@ -21,11 +21,7 @@ func TestVerifyRedirect(t *testing.T) {
 	srv := httptest.NewServer(mux)
 	defer srv.Close()
 
-	// Important: Configure client to NOT follow redirects so we can verify the 3xx response.
 	client := srv.Client()
-	client.CheckRedirect = func(_ *http.Request, _ []*http.Request) error {
-		return http.ErrUseLastResponse
-	}
 
 	t.Run("Success", func(t *testing.T) {
 		specs := []testwebapp.RedirectSpec{
