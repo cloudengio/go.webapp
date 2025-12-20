@@ -13,6 +13,7 @@ import (
 	"strings"
 
 	"cloudeng.io/logging/ctxlog"
+	"cloudeng.io/webapp"
 	"gopkg.in/yaml.v3"
 )
 
@@ -50,9 +51,10 @@ func (h *Handler) GoGetHandler(next http.Handler) http.Handler {
 			next.ServeHTTP(w, r)
 			return
 		}
-		importPath := r.Host + r.URL.Path
+		host, _ := webapp.SplitHostPort(r.Host)
+		importPath := host + r.URL.Path
 		for _, config := range h.specs {
-			if importPath == config.ImportPath || strings.HasPrefix(importPath, config.importPathWithSlash) {
+			if importPath == config.ImportPath || importPath == config.importPathWithSlash {
 				w.Header().Set("Content-Type", "text/html; charset=utf-8")
 				err := metaTemplate.Execute(w, config)
 				if err != nil {

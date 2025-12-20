@@ -74,23 +74,7 @@ func TestGoGetHandler(t *testing.T) {
 		assert.Equal(t, http.StatusNotFound, w.Result().StatusCode)
 	})
 
-	// 4. Sub-package match
-	t.Run("Match_SubPackage", func(t *testing.T) {
-		req := httptest.NewRequest("GET", "http://example.com/another/sub?go-get=1", nil)
-		w := httptest.NewRecorder()
-		nextCalled := false
-		next := http.HandlerFunc(func(_ http.ResponseWriter, _ *http.Request) {
-			nextCalled = true
-		})
-
-		h.GoGetHandler(next).ServeHTTP(w, req)
-
-		assert.False(t, nextCalled)
-		assert.Equal(t, http.StatusOK, w.Code)
-		assert.Contains(t, w.Body.String(), `<meta name="go-import" content="example.com/another git https://github.com/example/another">`)
-	})
-
-	// 5. No Match: partial prefix but not a sub-package
+	// 4. No Match: partial prefix but not a sub-package
 	t.Run("NoMatch_PartialPrefix", func(t *testing.T) {
 		req := httptest.NewRequest("GET", "http://example.com/module?go-get=1", nil)
 		w := httptest.NewRecorder()
@@ -276,26 +260,6 @@ func TestGoGetHandlerEdgeCases(t *testing.T) {
 		h.GoGetHandler(next).ServeHTTP(w, req)
 
 		assert.Equal(t, http.StatusOK, w.Code)
-	})
-
-	t.Run("DeepSubPackage", func(t *testing.T) {
-		specs := []Spec{
-			{
-				ImportPath: "example.com/pkg",
-				Content:    "example.com/pkg git https://github.com/user/pkg",
-			},
-		}
-		h, err := NewHandler(specs)
-		require.NoError(t, err)
-
-		req := httptest.NewRequest("GET", "http://example.com/pkg/sub/deep/nested?go-get=1", nil)
-		w := httptest.NewRecorder()
-		next := http.HandlerFunc(func(_ http.ResponseWriter, _ *http.Request) {})
-
-		h.GoGetHandler(next).ServeHTTP(w, req)
-
-		assert.Equal(t, http.StatusOK, w.Code)
-		assert.Contains(t, w.Body.String(), "example.com/pkg")
 	})
 
 	t.Run("PartialHostMatch", func(t *testing.T) {
