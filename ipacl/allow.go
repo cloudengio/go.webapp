@@ -5,7 +5,6 @@
 package ipacl
 
 import (
-	"net"
 	"net/http"
 	"net/netip"
 	"strings"
@@ -69,21 +68,15 @@ type aclHandler struct {
 
 // ServeHTTP implements the http.Handler interface.
 func (h *aclHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	ipStr, _, err := net.SplitHostPort(r.RemoteAddr)
+	ap, err := netip.ParseAddrPort(r.RemoteAddr)
 	if err != nil {
 		http.Error(w, "forbidden", http.StatusForbidden)
 		ctxlog.Debug(r.Context(), "failed to parse remote address", "remote_addr", r.RemoteAddr, "error", err)
 		return
 	}
-	ip, err := netip.ParseAddr(ipStr)
-	if err != nil {
+	if !h.acl.Allowed(ap.Addr()) {
 		http.Error(w, "forbidden", http.StatusForbidden)
-		ctxlog.Debug(r.Context(), "failed to parse remote ip", "remote_addr", r.RemoteAddr, "error", err)
-		return
-	}
-	if !h.acl.Allowed(ip) {
-		http.Error(w, "forbidden", http.StatusForbidden)
-		ctxlog.Debug(r.Context(), "ip address not allowed by acl", "ip", ip.String())
+		ctxlog.Debug(r.Context(), "ip address not allowed by acl", "ip", ap.Addr().String())
 		return
 	}
 	h.handler.ServeHTTP(w, r)
