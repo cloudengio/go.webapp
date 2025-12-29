@@ -87,7 +87,7 @@ func TestCertRenewal(t *testing.T) {
 
 	tmpDir := t.TempDir()
 
-	pebbleServer, pebbleCfg, _, pebbleCacheDir, pebbleTestDir := pebbletest.Start(ctx, t, tmpDir,
+	pebbleServer, pebbleCfg, recorder, pebbleCacheDir, pebbleTestDir := pebbletest.Start(ctx, t, tmpDir,
 		pebble.WithValidityPeriod(10), // short lived certs to force renewal
 	)
 	defer pebbleServer.EnsureStopped(ctx, time.Second) //nolint:errcheck
@@ -109,7 +109,7 @@ func TestCertRenewal(t *testing.T) {
 
 		leaf, intermediates := pebbletest.WaitForNewCert(ctx, t,
 			fmt.Sprintf("waiting for cert %v", i),
-			localhostCert, previousSerial)
+			localhostCert, previousSerial, recorder)
 
 		if err := leaf.VerifyHostname("pebble-test.example.com"); err != nil {
 			t.Fatalf("%v: hostname verification failed: %v", i, err)

@@ -8,6 +8,7 @@ import (
 	"context"
 	"crypto/x509"
 	"encoding/pem"
+	"errors"
 	"fmt"
 	"net"
 	"os"
@@ -89,11 +90,15 @@ func WaitForNewCert(ctx context.Context, t Testing, msg, certPath, previousSeria
 	for {
 		select {
 		case <-ctx.Done():
+			t.Logf("%v: pebble server recorded output:\n%s", msg, recorder.String())
 			t.Fatalf("%v: timed out waiting for new cert %v: %v", msg, certPath, ctx.Err())
 		case <-ticker.C:
 			if _, err := os.Stat(certPath); err != nil {
-				t.Logf("%v: waiting for cert file %v to appear: %v", msg, certPath, recorder.String(), err)
-				continue
+				if errors.Is(err, os.ErrNotExist) {
+					t.Logf("%v: waiting for cert file %v to appear: %v", msg, certPath, recorder.String())
+					continue
+				}
+				t.Fatalf("%v: failed to stat cert file %v: %v", msg, certPath, err)
 			}
 			leafCert, intermediates := getCerts(t, certPath)
 			gotSerial := fmt.Sprintf("%0*x", len(leafCert.SerialNumber.Bytes())*2, leafCert.SerialNumber)
