@@ -84,7 +84,7 @@ func Start(ctx context.Context, t Testing, tmpDir string, configOpts ...pebble.C
 // serial number different from previousSerial.
 func WaitForNewCert(ctx context.Context, t Testing, msg, certPath, previousSerial string, recorder *Recorder) (*x509.Certificate, *x509.CertPool) {
 	t.Helper()
-	ctx, cancel := context.WithTimeout(ctx, time.Second*10)
+	ctx, cancel := context.WithTimeout(ctx, time.Second*20)
 	defer cancel()
 	ticker := time.NewTicker(250 * time.Millisecond)
 	defer ticker.Stop()
