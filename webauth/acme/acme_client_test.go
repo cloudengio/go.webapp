@@ -17,6 +17,7 @@ import (
 	"cloudeng.io/errors"
 	"cloudeng.io/logging"
 	"cloudeng.io/logging/ctxlog"
+	"cloudeng.io/net/http/httptracing"
 	"cloudeng.io/webapp"
 	"cloudeng.io/webapp/webauth/acme"
 	"cloudeng.io/webapp/webauth/acme/certcache"
@@ -55,8 +56,15 @@ func TestACMEClient_FullFlow(t *testing.T) {
 	}
 	stripPort := certcache.WrapHostPolicyNoPort(mgr.HostPolicy)
 	mgr.HostPolicy = stripPort
+
+	tl := slog.New(slog.NewJSONHandler(logging.NewJSONFormatter(os.Stderr, "", "  "), &slog.HandlerOptions{AddSource: true}))
 	mgr.Client.HTTPClient, err = webapp.NewHTTPClient(ctx,
-		webapp.WithCustomCAPEMFile(filepath.Join(pebbleTestDir, pebbleCfg.CAFile)))
+		webapp.WithCustomCAPEMFile(filepath.Join(pebbleTestDir, pebbleCfg.CAFile)),
+		webapp.WithTracingTransport(
+			httptracing.WithTracingLogger(tl.With("component", "acme_http_client")),
+			httptracing.WithTraceRequestBody(httptracing.JSONRequestBodyLogger),
+			httptracing.WithTraceResponseBody(httptracing.JSONResponseBodyLogger)),
+	)
 	if err != nil {
 		t.Fatalf("failed to create acme manager http client: %v", err)
 	}
@@ -69,6 +77,14 @@ func TestACMEClient_FullFlow(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+
+	th := httptracing.NewTracingHandler(httpServer.Handler,
+		httptracing.WithHandlerLogger(tl.With("component", "acme_http_server")),
+		httptracing.WithHandlerRequestBody(httptracing.JSONRequestBodyLogger),
+		httptracing.WithHandlerResponseBody(httptracing.JSONHandlerResponseLogger),
+	)
+	httpServer.Handler = th
+
 	errCh := make(chan error, 1)
 	go func() {
 		err := webapp.ServeWithShutdown(ctx, httpListener, httpServer, time.Minute)

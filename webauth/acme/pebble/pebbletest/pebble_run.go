@@ -74,6 +74,7 @@ func Start(ctx context.Context, t Testing, tmpDir string, configOpts ...pebble.C
 
 	WaitForConnection(ctx, t, cfg.Address)
 
+	t.Logf("pebble address: %s", cfg.Address)
 	t.Logf("cert cache dir: %s", pebbleCacheDir)
 	t.Logf("pebble dir: %s", pebbleTestDir)
 	return pebbleServer, cfg, out, pebbleCacheDir, pebbleTestDir
@@ -83,7 +84,7 @@ func Start(ctx context.Context, t Testing, tmpDir string, configOpts ...pebble.C
 // serial number different from previousSerial.
 func WaitForNewCert(ctx context.Context, t Testing, msg, certPath, previousSerial string, recorder *Recorder) (*x509.Certificate, *x509.CertPool) {
 	t.Helper()
-	ctx, cancel := context.WithTimeout(ctx, time.Second*20)
+	ctx, cancel := context.WithTimeout(ctx, time.Second*10)
 	defer cancel()
 	ticker := time.NewTicker(250 * time.Millisecond)
 	defer ticker.Stop()
