@@ -25,7 +25,7 @@ import (
 
 func TestACMEClient_FullFlow(t *testing.T) {
 	ctx, cancel := context.WithCancel(t.Context())
-	ctx = ctxlog.WithLogger(ctx, slog.New(slog.NewJSONHandler(logging.NewJSONFormatter(os.Stderr, "", "  "), nil)))
+	ctx = ctxlog.WithLogger(ctx, slog.New(slog.NewJSONHandler(logging.NewJSONFormatter(os.Stderr, "", "  "), &slog.HandlerOptions{AddSource: true})))
 
 	tmpDir := t.TempDir()
 
