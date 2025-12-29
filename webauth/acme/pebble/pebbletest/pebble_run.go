@@ -80,7 +80,7 @@ func Start(ctx context.Context, t Testing, tmpDir string, configOpts ...pebble.C
 
 // WaitForNewCert waits for a new certificate to be issued at certPath with a
 // serial number different from previousSerial.
-func WaitForNewCert(ctx context.Context, t Testing, msg, certPath string, previousSerial string) (*x509.Certificate, *x509.CertPool) {
+func WaitForNewCert(ctx context.Context, t Testing, msg, certPath, previousSerial string, recorder *Recorder) (*x509.Certificate, *x509.CertPool) {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(ctx, time.Minute)
 	defer cancel()
@@ -92,7 +92,7 @@ func WaitForNewCert(ctx context.Context, t Testing, msg, certPath string, previo
 			t.Fatalf("%v: timed out waiting for new cert %v: %v", msg, certPath, ctx.Err())
 		case <-ticker.C:
 			if _, err := os.Stat(certPath); err != nil {
-				t.Logf("%v: waiting for cert file %v to appear: %v", msg, certPath, err)
+				t.Logf("%v: waiting for cert file %v to appear: %v", msg, certPath, recorder.String(), err)
 				continue
 			}
 			leafCert, intermediates := getCerts(t, certPath)

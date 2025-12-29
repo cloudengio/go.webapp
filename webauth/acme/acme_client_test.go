@@ -30,7 +30,7 @@ func TestACMEClient_FullFlow(t *testing.T) {
 	tmpDir := t.TempDir()
 
 	// Start a pebble server.
-	pebbleServer, pebbleCfg, _, pebbleCacheDir, pebbleTestDir := pebbletest.Start(ctx, t, tmpDir)
+	pebbleServer, pebbleCfg, recorder, pebbleCacheDir, pebbleTestDir := pebbletest.Start(ctx, t, tmpDir)
 	defer func() {
 		then := time.Now()
 		if err := pebbleServer.EnsureStopped(context.Background(), time.Second*5); err != nil {
@@ -85,7 +85,7 @@ func TestACMEClient_FullFlow(t *testing.T) {
 	localhostCert := filepath.Join(certDir, "pebble-test.example.com")
 
 	leaf, intermediates := pebbletest.WaitForNewCert(ctx, t,
-		"waiting for cert", localhostCert, "")
+		"waiting for cert", localhostCert, "", recorder)
 	if err := leaf.VerifyHostname("pebble-test.example.com"); err != nil {
 		t.Fatalf("hostname verification failed: %v", err)
 	}
