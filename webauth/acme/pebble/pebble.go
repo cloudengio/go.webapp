@@ -364,7 +364,7 @@ func (pc Config) PossibleValidityPeriods() []time.Duration {
 
 // DirectoryURL returns the ACME service 'directory' URL.
 func (pc Config) DirectoryURL() string {
-	return ensureScheme("https", pc.Address, "/dir")
+	return ensureScheme("https", pc.Address, "dir")
 }
 
 // CARootsURL returns the URL from which the pebble root CA certificate
