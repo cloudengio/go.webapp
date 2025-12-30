@@ -35,3 +35,5 @@ jobs:
         [ "1.25.x" ]
       multimod-action: "test-less-parallelism"
       with-webapp: true
+      pebble-version: "v2.8.0"
+

@@ -7,17 +7,17 @@ replace cloudeng.io/webapp => ../..
 require (
 	cloudeng.io/aws v0.0.0-20251108012845-0faa368df158
 	cloudeng.io/cmdutil v0.0.0-20251214214252-1a0778fa9b25
-	cloudeng.io/errors v0.0.13-0.20251108012845-0faa368df158
-	cloudeng.io/file v0.0.0-20251214210816-317e5245b82b
-	cloudeng.io/logging v0.0.0-20251214210816-317e5245b82b
-	cloudeng.io/net v0.0.0-20251214210816-317e5245b82b
+	cloudeng.io/errors v0.0.13
+	cloudeng.io/file v0.0.0-20251230013941-934119937476
+	cloudeng.io/logging v0.0.0-20251230033006-254419a25822
+	cloudeng.io/net v0.0.0-20251230033006-254419a25822
 	cloudeng.io/webapp v0.0.0-20251211202122-3206a59d8279
 	golang.org/x/crypto v0.46.0
 )
 
 require (
 	cloudeng.io/algo v0.0.0-20251210231338-d661eee74313 // indirect
-	cloudeng.io/os v0.0.0-20251214214252-1a0778fa9b25 // indirect
+	cloudeng.io/os v0.0.0-20251230033006-254419a25822 // indirect
 	cloudeng.io/sync v0.0.9-0.20251108012845-0faa368df158 // indirect
 	cloudeng.io/sys v0.0.0-20251210231338-d661eee74313 // indirect
 	cloudeng.io/text v0.0.13 // indirect

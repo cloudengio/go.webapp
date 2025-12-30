@@ -11,12 +11,12 @@ require (
 )
 
 require (
-	cloudeng.io/errors v0.0.13-0.20251108012845-0faa368df158 // indirect
-	cloudeng.io/file v0.0.0-20251214210816-317e5245b82b // indirect
+	cloudeng.io/errors v0.0.13 // indirect
+	cloudeng.io/file v0.0.0-20251230013941-934119937476 // indirect
 	cloudeng.io/io v0.0.0-20251211210013-54e657b3dad4 // indirect
-	cloudeng.io/logging v0.0.0-20251214210816-317e5245b82b // indirect
-	cloudeng.io/net v0.0.0-20251214210816-317e5245b82b // indirect
-	cloudeng.io/os v0.0.0-20251214214252-1a0778fa9b25 // indirect
+	cloudeng.io/logging v0.0.0-20251230033006-254419a25822 // indirect
+	cloudeng.io/net v0.0.0-20251230033006-254419a25822 // indirect
+	cloudeng.io/os v0.0.0-20251230033006-254419a25822 // indirect
 	cloudeng.io/sync v0.0.9-0.20251108012845-0faa368df158 // indirect
 	cloudeng.io/text v0.0.13 // indirect
 	golang.org/x/crypto v0.46.0 // indirect

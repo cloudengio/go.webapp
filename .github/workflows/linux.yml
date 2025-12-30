@@ -18,6 +18,7 @@ jobs:
       go-versions: |
         [ "1.25.x" ]
       with-webapp: true
+      with-pebble-version: "v2.8.0"
 
   lint:
     uses: cloudengio/.github/.github/workflows/go-lint-multimod.yml@main

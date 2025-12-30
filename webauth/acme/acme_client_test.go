@@ -17,6 +17,7 @@ import (
 	"cloudeng.io/errors"
 	"cloudeng.io/logging"
 	"cloudeng.io/logging/ctxlog"
+	"cloudeng.io/net/http/httptracing"
 	"cloudeng.io/webapp"
 	"cloudeng.io/webapp/webauth/acme"
 	"cloudeng.io/webapp/webauth/acme/certcache"
@@ -25,12 +26,12 @@ import (
 
 func TestACMEClient_FullFlow(t *testing.T) {
 	ctx, cancel := context.WithCancel(t.Context())
-	ctx = ctxlog.WithLogger(ctx, slog.New(slog.NewJSONHandler(logging.NewJSONFormatter(os.Stderr, "", "  "), nil)))
+	ctx = ctxlog.WithLogger(ctx, slog.New(slog.NewJSONHandler(logging.NewJSONFormatter(os.Stderr, "", "  "), &slog.HandlerOptions{AddSource: false})))
 
 	tmpDir := t.TempDir()
 
 	// Start a pebble server.
-	pebbleServer, pebbleCfg, _, pebbleCacheDir, pebbleTestDir := pebbletest.Start(ctx, t, tmpDir)
+	pebbleServer, pebbleCfg, recorder, pebbleCacheDir, pebbleTestDir := pebbletest.Start(ctx, t, tmpDir)
 	defer func() {
 		then := time.Now()
 		if err := pebbleServer.EnsureStopped(context.Background(), time.Second*5); err != nil {
@@ -55,8 +56,15 @@ func TestACMEClient_FullFlow(t *testing.T) {
 	}
 	stripPort := certcache.WrapHostPolicyNoPort(mgr.HostPolicy)
 	mgr.HostPolicy = stripPort
+
+	tl := slog.New(slog.NewJSONHandler(logging.NewJSONFormatter(os.Stderr, "", "  "), &slog.HandlerOptions{AddSource: true}))
 	mgr.Client.HTTPClient, err = webapp.NewHTTPClient(ctx,
-		webapp.WithCustomCAPEMFile(filepath.Join(pebbleTestDir, pebbleCfg.CAFile)))
+		webapp.WithCustomCAPEMFile(filepath.Join(pebbleTestDir, pebbleCfg.CAFile)),
+		webapp.WithTracingTransport(
+			httptracing.WithTracingLogger(tl.With("component", "acme_http_client")),
+			httptracing.WithTraceRequestBody(httptracing.JSONOrTextRequestBodyLogger),
+			httptracing.WithTraceResponseBody(httptracing.JSONOrTextResponseBodyLogger)),
+	)
 	if err != nil {
 		t.Fatalf("failed to create acme manager http client: %v", err)
 	}
@@ -69,6 +77,14 @@ func TestACMEClient_FullFlow(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+
+	th := httptracing.NewTracingHandler(httpServer.Handler,
+		httptracing.WithHandlerLogger(tl.With("component", "acme_http_server")),
+		httptracing.WithHandlerRequestBody(httptracing.JSONOrTextRequestBodyLogger),
+		httptracing.WithHandlerResponseBody(httptracing.JSONOrTextHandlerResponseLogger),
+	)
+	httpServer.Handler = th
+
 	errCh := make(chan error, 1)
 	go func() {
 		err := webapp.ServeWithShutdown(ctx, httpListener, httpServer, time.Minute)
@@ -85,7 +101,7 @@ func TestACMEClient_FullFlow(t *testing.T) {
 	localhostCert := filepath.Join(certDir, "pebble-test.example.com")
 
 	leaf, intermediates := pebbletest.WaitForNewCert(ctx, t,
-		"waiting for cert", localhostCert, "")
+		"waiting for cert", localhostCert, "", recorder)
 	if err := leaf.VerifyHostname("pebble-test.example.com"); err != nil {
 		t.Fatalf("hostname verification failed: %v", err)
 	}
