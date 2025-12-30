@@ -42,7 +42,7 @@ func TestNewCert(t *testing.T) {
 
 	tmpDir := t.TempDir()
 
-	pebbleServer, pebbleCfg, _, pebbleCacheDir, pebbleTestDir := pebbletest.Start(ctx, t, tmpDir)
+	pebbleServer, pebbleCfg, recorder, pebbleCacheDir, pebbleTestDir := pebbletest.Start(ctx, t, tmpDir)
 	defer pebbleServer.EnsureStopped(ctx, time.Second) //nolint:errcheck
 
 	mgrFlags := defaultManagerFlags(pebbleCfg, pebbleTestDir, pebbleCacheDir)
@@ -56,7 +56,7 @@ func TestNewCert(t *testing.T) {
 	}
 
 	localhostCert := filepath.Join(pebbleCacheDir, "certs", "pebble-test.example.com")
-	leaf, intermediates := pebbletest.WaitForNewCert(ctx, t, "new cert", localhostCert, "")
+	leaf, intermediates := pebbletest.WaitForNewCert(ctx, t, "new cert", localhostCert, "", recorder)
 
 	if err := leaf.VerifyHostname("pebble-test.example.com"); err != nil {
 		t.Fatalf("hostname verification failed: %v", err)
@@ -87,7 +87,7 @@ func TestCertRenewal(t *testing.T) {
 
 	tmpDir := t.TempDir()
 
-	pebbleServer, pebbleCfg, _, pebbleCacheDir, pebbleTestDir := pebbletest.Start(ctx, t, tmpDir,
+	pebbleServer, pebbleCfg, recorder, pebbleCacheDir, pebbleTestDir := pebbletest.Start(ctx, t, tmpDir,
 		pebble.WithValidityPeriod(10), // short lived certs to force renewal
 	)
 	defer pebbleServer.EnsureStopped(ctx, time.Second) //nolint:errcheck
@@ -109,7 +109,7 @@ func TestCertRenewal(t *testing.T) {
 
 		leaf, intermediates := pebbletest.WaitForNewCert(ctx, t,
 			fmt.Sprintf("waiting for cert %v", i),
-			localhostCert, previousSerial)
+			localhostCert, previousSerial, recorder)
 
 		if err := leaf.VerifyHostname("pebble-test.example.com"); err != nil {
 			t.Fatalf("%v: hostname verification failed: %v", i, err)
@@ -163,64 +163,3 @@ func waitForServer(t *testing.T, errCh <-chan error) {
 		t.Fatal("timeout waiting for cert manager to exit")
 	}
 }
-
-/*
-func waitForNewCert(ctx context.Context, t *testing.T, msg, certPath string, previousSerial string) (*x509.Certificate, *x509.CertPool) {
-	t.Helper()
-	ctx, cancel := context.WithTimeout(ctx, 20*time.Second)
-	defer cancel()
-	ticker := time.NewTicker(250 * time.Millisecond)
-	defer ticker.Stop()
-	for {
-		select {
-		case <-ctx.Done():
-			t.Fatalf("%v: timed out waiting for new cert %v: %v", msg, certPath, ctx.Err())
-		case <-ticker.C:
-			if _, err := os.Stat(certPath); err != nil {
-				continue
-			}
-			leafCert, intermediates := getCerts(t, certPath)
-			gotSerial := fmt.Sprintf("%0*x", len(leafCert.SerialNumber.Bytes())*2, leafCert.SerialNumber)
-			if gotSerial != previousSerial {
-				t.Logf("%v: found new cert %v with serial %v", msg, certPath, gotSerial)
-				return leafCert, intermediates
-			}
-			t.Logf("%v: waiting for new cert, previous serial %v, got %v", msg, previousSerial, gotSerial)
-		}
-	}
-}
-
-func getCerts(t *testing.T, certPath string) (*x509.Certificate, *x509.CertPool) {
-	t.Helper()
-	certPEM, err := os.ReadFile(certPath)
-	if err != nil {
-		t.Fatalf("failed to read cert file %v: %v", certPath, err)
-	}
-	var leafCert *x509.Certificate
-	intermediates := x509.NewCertPool()
-	for {
-		var block *pem.Block
-		block, certPEM = pem.Decode(certPEM)
-		if block == nil {
-			break
-		}
-		if block.Type != "CERTIFICATE" {
-			continue
-		}
-		cert, err := x509.ParseCertificate(block.Bytes)
-		if err != nil {
-			continue
-		}
-		if !cert.IsCA {
-			leafCert = cert
-			continue
-		}
-		intermediates.AddCert(cert)
-	}
-
-	if leafCert == nil {
-		t.Fatalf("failed to find leaf certificate in %v", certPath)
-	}
-	return leafCert, intermediates
-}
-*/

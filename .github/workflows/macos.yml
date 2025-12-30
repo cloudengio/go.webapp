@@ -20,3 +20,5 @@ jobs:
       go-versions: |
         [ "1.25.x" ]
       with-webapp: true
+      pebble-version: "v2.8.0"
+

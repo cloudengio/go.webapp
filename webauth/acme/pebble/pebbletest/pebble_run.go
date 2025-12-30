@@ -8,6 +8,7 @@ import (
 	"context"
 	"crypto/x509"
 	"encoding/pem"
+	"errors"
 	"fmt"
 	"net"
 	"os"
@@ -73,6 +74,7 @@ func Start(ctx context.Context, t Testing, tmpDir string, configOpts ...pebble.C
 
 	WaitForConnection(ctx, t, cfg.Address)
 
+	t.Logf("pebble address: %s", cfg.Address)
 	t.Logf("cert cache dir: %s", pebbleCacheDir)
 	t.Logf("pebble dir: %s", pebbleTestDir)
 	return pebbleServer, cfg, out, pebbleCacheDir, pebbleTestDir
@@ -80,19 +82,24 @@ func Start(ctx context.Context, t Testing, tmpDir string, configOpts ...pebble.C
 
 // WaitForNewCert waits for a new certificate to be issued at certPath with a
 // serial number different from previousSerial.
-func WaitForNewCert(ctx context.Context, t Testing, msg, certPath string, previousSerial string) (*x509.Certificate, *x509.CertPool) {
+func WaitForNewCert(ctx context.Context, t Testing, msg, certPath, previousSerial string, recorder *Recorder) (*x509.Certificate, *x509.CertPool) {
 	t.Helper()
-	ctx, cancel := context.WithTimeout(ctx, 20*time.Second)
+	ctx, cancel := context.WithTimeout(ctx, time.Second*20)
 	defer cancel()
 	ticker := time.NewTicker(250 * time.Millisecond)
 	defer ticker.Stop()
 	for {
 		select {
 		case <-ctx.Done():
+			t.Logf("%v: pebble server recorded output:\n%s", msg, recorder.String())
 			t.Fatalf("%v: timed out waiting for new cert %v: %v", msg, certPath, ctx.Err())
 		case <-ticker.C:
 			if _, err := os.Stat(certPath); err != nil {
-				continue
+				if errors.Is(err, os.ErrNotExist) {
+					t.Logf("%v: %v: waiting for cert file %v to appear", msg, time.Now(), certPath)
+					continue
+				}
+				t.Fatalf("%v: failed to stat cert file %v: %v", msg, certPath, err)
 			}
 			leafCert, intermediates := getCerts(t, certPath)
 			gotSerial := fmt.Sprintf("%0*x", len(leafCert.SerialNumber.Bytes())*2, leafCert.SerialNumber)
