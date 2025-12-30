@@ -5,15 +5,15 @@ go 1.25
 replace cloudeng.io/webapp => ../..
 
 require (
-	cloudeng.io/cmdutil v0.0.0-20251214214252-1a0778fa9b25
+	cloudeng.io/cmdutil v0.0.0-20251230033006-254419a25822
 	cloudeng.io/webapp v0.0.0-20251211202122-3206a59d8279
 	github.com/go-chi/chi/v5 v5.2.3
 )
 
 require (
 	cloudeng.io/errors v0.0.13 // indirect
-	cloudeng.io/file v0.0.0-20251230013941-934119937476 // indirect
-	cloudeng.io/io v0.0.0-20251211210013-54e657b3dad4 // indirect
+	cloudeng.io/file v0.0.0-20251230033006-254419a25822 // indirect
+	cloudeng.io/io v0.0.0-20251230033006-254419a25822 // indirect
 	cloudeng.io/logging v0.0.0-20251230033006-254419a25822 // indirect
 	cloudeng.io/net v0.0.0-20251230033006-254419a25822 // indirect
 	cloudeng.io/os v0.0.0-20251230033006-254419a25822 // indirect
