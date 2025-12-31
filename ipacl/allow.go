@@ -55,7 +55,7 @@ func (a *ACL) Allowed(ip netip.Addr) bool {
 type Option func(o *options)
 
 // AddressExtractor represents a function that extracts an IP address from an HTTP request.
-type AddressExtractor func(r *http.Request) (netip.Addr, error)
+type AddressExtractor func(r *http.Request) (string, netip.Addr, error)
 
 type options struct {
 	extractor AddressExtractor
@@ -79,22 +79,24 @@ func parseOptionalPort(addr string) (netip.Addr, error) {
 // RemoteAddrExtractor returns the remote IP address from an HTTP request.
 // It is the default AddressExtractor and is suitable
 // for when a server is directly exposed to the internet.
-func RemoteAddrExtractor(r *http.Request) (netip.Addr, error) {
-	return parseOptionalPort(r.RemoteAddr)
+func RemoteAddrExtractor(r *http.Request) (string, netip.Addr, error) {
+	ip, err := parseOptionalPort(r.RemoteAddr)
+	return r.RemoteAddr, ip, err
 }
 
 // XForwardedForExtractor returns the IP address from the X-Forwarded-For header.
 // It uses the first IP address in the list.
-func XForwardedForExtractor(r *http.Request) (netip.Addr, error) {
+func XForwardedForExtractor(r *http.Request) (string, netip.Addr, error) {
 	xf := r.Header.Get("X-Forwarded-For")
 	if xf == "" {
-		return netip.Addr{}, fmt.Errorf("X-Forwarded-For header is empty")
+		return "", netip.Addr{}, fmt.Errorf("X-Forwarded-For header is empty")
 	}
 	// will always have at least one part, and we only
 	// want the first ip address.
 	parts := strings.Split(xf, ",")
 	clientIP := strings.TrimSpace(parts[0])
-	return parseOptionalPort(clientIP)
+	ap, err := parseOptionalPort(clientIP)
+	return clientIP, ap, err
 }
 
 // NewACLHandler creates a new http.Handler that enforces the given ACL.
@@ -123,15 +125,15 @@ type aclHandler struct {
 
 // ServeHTTP implements the http.Handler interface.
 func (h *aclHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	ip, err := h.opts.extractor(r)
+	clientIP, ip, err := h.opts.extractor(r)
 	if err != nil {
 		http.Error(w, "forbidden", http.StatusForbidden)
-		ctxlog.Debug(r.Context(), "failed to parse remote address", "remote_addr", r.RemoteAddr, "error", err)
+		ctxlog.Debug(r.Context(), "failed to parse remote address", "remote_addr", clientIP, "error", err)
 		return
 	}
 	if !h.acl.Allowed(ip) {
 		http.Error(w, "forbidden", http.StatusForbidden)
-		ctxlog.Debug(r.Context(), "ip address not allowed by acl", "ip", ip.String())
+		ctxlog.Debug(r.Context(), "ip address not allowed by acl", "ip", clientIP)
 		return
 	}
 	h.handler.ServeHTTP(w, r)
