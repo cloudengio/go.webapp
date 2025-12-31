@@ -112,7 +112,7 @@ func TestACLHandler(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	nextHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	nextHandler := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	})
 
@@ -139,6 +139,110 @@ func TestACLHandler(t *testing.T) {
 
 		if got, want := w.Code, tc.wantStatus; got != want {
 			t.Errorf("ServeHTTP(%v) status = %v, want %v", tc.remoteAddr, got, want)
+		}
+	}
+}
+
+func TestXForwardedForExtractor(t *testing.T) {
+	tests := []struct {
+		name    string
+		header  string
+		want    string
+		wantErr bool
+	}{
+		{
+			name:    "single ipv4",
+			header:  "1.2.3.4",
+			want:    "1.2.3.4",
+			wantErr: false,
+		},
+		{
+			name:    "ipv4 with port",
+			header:  "1.2.3.4:1234",
+			want:    "1.2.3.4",
+			wantErr: false,
+		},
+		{
+			name:    "multiple ipv4",
+			header:  "1.2.3.4, 5.6.7.8",
+			want:    "1.2.3.4",
+			wantErr: false,
+		},
+		{
+			name:    "single ipv6",
+			header:  "2001:db8::1",
+			want:    "2001:db8::1",
+			wantErr: false,
+		},
+		{
+			name:    "ipv6 with port",
+			header:  "[2001:db8::1]:443",
+			want:    "2001:db8::1",
+			wantErr: false,
+		},
+		{
+			name:    "empty header",
+			header:  "",
+			want:    "",
+			wantErr: true,
+		},
+		{
+			name:    "invalid ip",
+			header:  "invalid",
+			want:    "",
+			wantErr: true,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			req := httptest.NewRequest("GET", "/", nil)
+			if tc.header != "" {
+				req.Header.Set("X-Forwarded-For", tc.header)
+			}
+
+			_, gotAddr, err := XForwardedForExtractor(req)
+			if (err != nil) != tc.wantErr {
+				t.Errorf("XForwardedForExtractor() error = %v, wantErr %v", err, tc.wantErr)
+				return
+			}
+			if !tc.wantErr && gotAddr.String() != tc.want {
+				t.Errorf("XForwardedForExtractor() = %v, want %v", gotAddr, tc.want)
+			}
+		})
+	}
+}
+
+func TestACLHandlerWithExtractor(t *testing.T) {
+	acl, err := NewACL("10.0.0.1")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	nextHandler := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})
+
+	handler := NewACLHandler(nextHandler, acl, WithAddressExtractor(XForwardedForExtractor))
+
+	tests := []struct {
+		header     string
+		wantStatus int
+	}{
+		{"10.0.0.1", http.StatusOK},
+		{"10.0.0.2", http.StatusForbidden},
+		{"", http.StatusForbidden},
+	}
+
+	for _, tc := range tests {
+		req := httptest.NewRequest("GET", "/", nil)
+		if tc.header != "" {
+			req.Header.Set("X-Forwarded-For", tc.header)
+		}
+		w := httptest.NewRecorder()
+		handler.ServeHTTP(w, req)
+		if got, want := w.Code, tc.wantStatus; got != want {
+			t.Errorf("ServeHTTP(%q) status = %v, want %v", tc.header, got, want)
 		}
 	}
 }
