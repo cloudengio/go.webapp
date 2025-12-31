@@ -24,6 +24,9 @@ type ACL struct {
 // a CIDR prefix. If a single IP address is provided, it is treated
 // as a /32 (for IPv4) or /128 (for IPv6) prefix.
 func NewACL(addrs ...string) (*ACL, error) {
+	if len(addrs) == 0 {
+		return nil, fmt.Errorf("no addresses provided")
+	}
 	acl := &bart.Lite{}
 	for _, addr := range addrs {
 		if !strings.Contains(addr, "/") {
@@ -137,4 +140,35 @@ func (h *aclHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	h.handler.ServeHTTP(w, r)
+}
+
+// AllowConfig represents an IP address access control list configuration.
+type AllowConfig struct {
+	Addresses []string `yaml:"addresses" cmd:"list of ip addresses or cidr prefixes"`
+	Direct    bool     `yaml:"direct" cmd:"set to true to use the requests.RemoteAddr"`   // Use the requests.RemoteAddr
+	Proxy     bool     `yaml:"proxy" cmd:"set to true to use the X-Forwarded-For header"` // Use the X-Forwarded-For header
+}
+
+// NewACL creates a new ACL from the given configuration.
+func (c AllowConfig) NewACL() (*ACL, error) {
+	return NewACL(c.Addresses...)
+}
+
+// NewHandler creates a new http.Handler that enforces the given ACL.
+func (c AllowConfig) NewHandler(handler http.Handler) (http.Handler, error) {
+	acl, err := c.NewACL()
+	if err != nil {
+		return nil, err
+	}
+	opts := []Option{}
+	if c.Direct {
+		opts = append(opts, WithAddressExtractor(RemoteAddrExtractor))
+	}
+	if c.Proxy {
+		opts = append(opts, WithAddressExtractor(XForwardedForExtractor))
+	}
+	if len(opts) == 0 {
+		return nil, fmt.Errorf("no address extractor specified")
+	}
+	return NewACLHandler(handler, acl, opts...), nil
 }

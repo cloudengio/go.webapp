@@ -246,3 +246,84 @@ func TestACLHandlerWithExtractor(t *testing.T) {
 		}
 	}
 }
+
+func TestAllowConfig(t *testing.T) {
+	tests := []struct {
+		name        string
+		config      AllowConfig
+		wantHandler bool
+		wantErr     bool
+	}{
+		{
+			name: "direct",
+			config: AllowConfig{
+				Addresses: []string{"127.0.0.1"},
+				Direct:    true,
+			},
+			wantHandler: true,
+			wantErr:     false,
+		},
+		{
+			name: "proxy",
+			config: AllowConfig{
+				Addresses: []string{"127.0.0.1"},
+				Proxy:     true,
+			},
+			wantHandler: true,
+			wantErr:     false,
+		},
+		{
+			name: "neither",
+			config: AllowConfig{
+				Addresses: []string{"127.0.0.1"},
+			},
+			wantHandler: false,
+			wantErr:     true,
+		},
+		{
+			name: "both (proxy wins)",
+			config: AllowConfig{
+				Addresses: []string{"127.0.0.1"},
+				Direct:    true,
+				Proxy:     true,
+			},
+			wantHandler: true,
+			wantErr:     false,
+		},
+		{
+			name: "no addresses",
+			config: AllowConfig{
+				Direct: true,
+			},
+			wantHandler: false,
+			wantErr:     true,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			acl, err := tc.config.NewACL()
+			if len(tc.config.Addresses) > 0 {
+				if err != nil {
+					t.Errorf("NewACL() error = %v", err)
+				}
+				if acl == nil {
+					t.Error("NewACL() returned nil")
+				}
+			} else {
+				if err == nil {
+					t.Error("NewACL() expected error")
+				}
+			}
+
+			handler, err := tc.config.NewHandler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
+			if (err != nil) != tc.wantErr {
+				t.Errorf("NewHandler() error = %v, wantErr %v", err, tc.wantErr)
+				return
+			}
+			if tc.wantHandler && handler == nil {
+				t.Error("NewHandler() returned nil")
+			}
+		})
+	}
+}
