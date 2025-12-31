@@ -15,7 +15,7 @@ specified address.
 
 ### Func WaitForNewCert
 ```go
-func WaitForNewCert(ctx context.Context, t Testing, msg, certPath string, previousSerial string) (*x509.Certificate, *x509.CertPool)
+func WaitForNewCert(ctx context.Context, t Testing, msg, certPath, previousSerial string, recorder *Recorder) (*x509.Certificate, *x509.CertPool)
 ```
 WaitForNewCert waits for a new certificate to be issued at certPath with a
 serial number different from previousSerial.

@@ -86,6 +86,9 @@ RedirectTest can be used to validate redirects for a set of URLs.
 ```go
 func NewRedirectTest(client *http.Client, redirects ...RedirectSpec) *RedirectTest
 ```
+NewRedirectTest creates a new RedirectTest, it if client.CheckRedirect is
+nil, it will be set to http.ErrUseLastResponse to ensure that redirects are
+not followed.
 
 
 
