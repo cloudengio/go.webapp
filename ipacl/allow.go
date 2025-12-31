@@ -90,10 +90,9 @@ func XForwardedForExtractor(r *http.Request) (netip.Addr, error) {
 	if xf == "" {
 		return netip.Addr{}, fmt.Errorf("X-Forwarded-For header is empty")
 	}
+	// will always have at least one part, and we only
+	// want the first ip address.
 	parts := strings.Split(xf, ",")
-	if len(parts) == 0 {
-		return netip.Addr{}, fmt.Errorf("X-Forwarded-For header is empty")
-	}
 	clientIP := strings.TrimSpace(parts[0])
 	return parseOptionalPort(clientIP)
 }
