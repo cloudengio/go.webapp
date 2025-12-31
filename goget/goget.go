@@ -7,6 +7,7 @@ package goget
 import (
 	"fmt"
 	"html/template"
+	"net"
 	"net/http"
 	"net/url"
 	"strings"
@@ -38,8 +39,12 @@ type handler struct {
 }
 
 func (h handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	if r.FormValue("go-get") != "1" || r.Host != h.host {
-		h.fb.ServeHTTP(w, r)
+	reqHost := r.Host
+	if host, _, err := net.SplitHostPort(r.Host); err == nil {
+		reqHost = host
+	}
+	if r.FormValue("go-get") != "1" || reqHost != h.host {
+		h.fb.ServeHTTP(w, r) //nolint:errcheck
 		return
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
@@ -53,6 +58,7 @@ func RegisterHandlers(mux webapp.ServeMux, next http.Handler, specs []Spec) erro
 	if next == nil {
 		next = http.NotFoundHandler()
 	}
+	var out strings.Builder
 	for _, spec := range specs {
 		importPath := spec.ImportPath
 		if !strings.Contains(importPath, "://") {
@@ -62,12 +68,12 @@ func RegisterHandlers(mux webapp.ServeMux, next http.Handler, specs []Spec) erro
 		if err != nil {
 			return err
 		}
-		var out strings.Builder
+		out.Reset()
 		if err := metaTemplate.Execute(&out, spec); err != nil {
 			return err
 		}
 		handler := handler{
-			host:    u.Host,
+			host:    u.Hostname(),
 			content: out.String(),
 			fb:      next,
 		}

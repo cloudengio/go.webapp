@@ -66,10 +66,10 @@ func newRedirectHandler(mux ServeMux, redirects ...Redirect) {
 		handler := r.Handler()
 		p := strings.TrimSuffix(r.Prefix, "/")
 		if p == "" || p == "/" {
-			mux.Handle("/", http.HandlerFunc(handler))
+			mux.Handle("/", handler)
 		} else {
-			mux.Handle(p, http.HandlerFunc(handler))
-			mux.Handle(p+"/", http.HandlerFunc(handler))
+			mux.Handle(p, handler)
+			mux.Handle(p+"/", handler)
 		}
 	}
 }

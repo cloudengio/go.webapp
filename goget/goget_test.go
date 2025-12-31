@@ -98,6 +98,25 @@ func TestGoGetHandlerEdgeCases(t *testing.T) {
 		assert.Contains(t, w.Body.String(), "example.com/exact")
 	})
 
+	t.Run("ExactMatchWithPort", func(t *testing.T) {
+		specs := []Spec{
+			{
+				ImportPath: "example.com/exact",
+				Content:    "example.com/exact git https://github.com/user/exact",
+			},
+		}
+		mux := http.NewServeMux()
+		err := RegisterHandlers(mux, nil, specs)
+		require.NoError(t, err)
+
+		req := httptest.NewRequest("GET", "https://example.com:8080/exact?go-get=1", nil)
+		w := httptest.NewRecorder()
+		mux.ServeHTTP(w, req)
+
+		assert.Equal(t, http.StatusOK, w.Code)
+		assert.Contains(t, w.Body.String(), "example.com/exact")
+	})
+
 	t.Run("DifferentHosts", func(t *testing.T) {
 		specs := []Spec{
 			{
