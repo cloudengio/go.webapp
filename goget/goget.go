@@ -7,17 +7,10 @@ package goget
 import (
 	"fmt"
 	"html/template"
-	"io/fs"
-	"net/http"
 	"slices"
-	"strings"
-
-	"cloudeng.io/logging/ctxlog"
-	"cloudeng.io/webapp"
-	"gopkg.in/yaml.v3"
 )
 
-var metaTemplate = template.Must(template.New("go-import").Parse(`<html><head><meta name="go-import" content="{{.Content}}"></head></html>`))
+var metaTemplate = template.Must(template.New("go-import").Parse(`<html><head><meta name="go-import" content="{{.Content}}"></head><body>{{.Content}}</body></html>`))
 
 // Spec represents a go-get meta tag specification.
 // From https://go.dev/ref/mod#serving-from-proxy
@@ -34,6 +27,23 @@ func (s Spec) String() string {
 	return fmt.Sprintf("%s?go-get=1 content=%q", s.ImportPath, s.Content)
 }
 
+// RegisterHandlers creates and registers appropriate
+// HTTP handlers for the provided specifications.
+func RegisterHandlers(specs []Spec) (*Handler, error) {
+	for i := range specs {
+		specs[i] = specs[i].handleSlash()
+	}
+	// Sort specs by import path length in descending order to ensure
+	// that the longest prefix is matched first.
+	slices.SortFunc(specs, func(a, b Spec) int {
+		return len(b.ImportPath) - len(a.ImportPath)
+	})
+	return &Handler{
+		specs: specs,
+	}, nil
+}
+
+/*
 // Handler implements an HTTP handler that serves go-get meta tags
 // based on the supplied specifications.
 type Handler struct {
@@ -73,7 +83,7 @@ func (h *Handler) GoGetHandler(next http.Handler) http.Handler {
 
 // NewHandlerFromFS creates a new Handler instance by loading
 // specifications from the specified file path within the provided fs.ReadFileFS.
-// The file should contain a list YAML-formatted specifications as follows:
+// The file should contain a list of YAML-formatted specifications as follows:
 //
 //   - import: "example.com/my/module"
 //     content: "example.com/my/module git github.com/user/repo"
@@ -116,3 +126,4 @@ func (s Spec) handleSlash() Spec {
 	}
 	return s
 }
+*/
