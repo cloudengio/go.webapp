@@ -142,3 +142,73 @@ func TestACLHandler(t *testing.T) {
 		}
 	}
 }
+
+func TestXForwardedForExtractor(t *testing.T) {
+	tests := []struct {
+		name    string
+		header  string
+		want    string
+		wantErr bool
+	}{
+		{
+			name:    "single ipv4",
+			header:  "1.2.3.4",
+			want:    "1.2.3.4",
+			wantErr: false,
+		},
+		{
+			name:    "ipv4 with port",
+			header:  "1.2.3.4:1234",
+			want:    "1.2.3.4",
+			wantErr: false,
+		},
+		{
+			name:    "multiple ipv4",
+			header:  "1.2.3.4, 5.6.7.8",
+			want:    "1.2.3.4",
+			wantErr: false,
+		},
+		{
+			name:    "single ipv6",
+			header:  "2001:db8::1",
+			want:    "2001:db8::1",
+			wantErr: false,
+		},
+		{
+			name:    "ipv6 with port",
+			header:  "[2001:db8::1]:443",
+			want:    "2001:db8::1",
+			wantErr: false,
+		},
+		{
+			name:    "empty header",
+			header:  "",
+			want:    "",
+			wantErr: true,
+		},
+		{
+			name:    "invalid ip",
+			header:  "invalid",
+			want:    "",
+			wantErr: true,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			req := httptest.NewRequest("GET", "/", nil)
+			if tc.header != "" {
+				req.Header.Set("X-Forwarded-For", tc.header)
+			}
+
+			got, err := XForwardedForExtractor(req)
+			if (err != nil) != tc.wantErr {
+				t.Errorf("XForwardedForExtractor() error = %v, wantErr %v", err, tc.wantErr)
+				return
+			}
+			if !tc.wantErr && got.String() != tc.want {
+				t.Errorf("XForwardedForExtractor() = %v, want %v", got, tc.want)
+			}
+		})
+	}
+}
