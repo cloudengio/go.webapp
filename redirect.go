@@ -15,12 +15,18 @@ import (
 	"cloudeng.io/logging/ctxlog"
 )
 
-// RedirectMux is an interface that can be used to register handlers for
-// redirects. It is provided for use with other middleware packages that
-// expect an http.Handler.
-type RedirectMux interface {
-	HandleFunc(pattern string, handler func(w http.ResponseWriter, req *http.Request))
+// ServeMux is an interface that can be used to register
+// HTTP handlers. It is provided for use with other middleware
+// packages that expect an http.Handler.
+type ServeMux interface {
+	Handle(pattern string, handler http.Handler)
 	ServeHTTP(w http.ResponseWriter, r *http.Request)
+	// Note HandleFunc is not provided as it is often
+	// defined in incompatible ways:
+	// - net/http.ServeMux.HandleFunc defines it as:
+	//   HandleFunc(pattern string, handler func(ResponseWriter, *Request))
+	// - whereas chi defines it as:
+	//   HandleFunc(pattern string, handler func(ResponseWriter, *Request))
 }
 
 // RedirectTarget is a function that given an http.Request returns
@@ -55,15 +61,15 @@ func (r Redirect) Handler() http.HandlerFunc {
 
 // newRedirectHandler creates a RedirectHandler that will redirect
 // requests based on the supplied redirects.
-func newRedirectHandler(mux RedirectMux, redirects ...Redirect) {
+func newRedirectHandler(mux ServeMux, redirects ...Redirect) {
 	for _, r := range redirects {
 		handler := r.Handler()
 		p := strings.TrimSuffix(r.Prefix, "/")
 		if p == "" || p == "/" {
-			mux.HandleFunc("/", handler)
+			mux.Handle("/", http.HandlerFunc(handler))
 		} else {
-			mux.HandleFunc(p, handler)
-			mux.HandleFunc(p+"/", handler)
+			mux.Handle(p, http.HandlerFunc(handler))
+			mux.Handle(p+"/", http.HandlerFunc(handler))
 		}
 	}
 }
@@ -116,8 +122,8 @@ func RedirectToHTTPSPort(addr string) Redirect {
 }
 
 // RegisterRedirects registers the specified redirects with the
-// specified RedirectMux.
-func RegisterRedirects(mux RedirectMux, redirects ...Redirect) {
+// specified ServeMux.
+func RegisterRedirects(mux ServeMux, redirects ...Redirect) {
 	newRedirectHandler(mux, redirects...)
 }
 
