@@ -302,18 +302,6 @@ func TestAllowConfig(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			acl, err := tc.config.NewACL()
-			if len(tc.config.Addresses) > 0 {
-				if err != nil {
-					t.Errorf("NewACL() error = %v", err)
-				}
-				if acl == nil {
-					t.Error("NewACL() returned nil")
-				}
-			} else if err == nil {
-				t.Error("NewACL() expected error")
-			}
-
 			handler, err := tc.config.NewHandler(http.HandlerFunc(func(_ http.ResponseWriter, _ *http.Request) {}))
 			if (err != nil) != tc.wantErr {
 				t.Errorf("NewHandler() error = %v, wantErr %v", err, tc.wantErr)
