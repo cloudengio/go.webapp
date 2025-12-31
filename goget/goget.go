@@ -7,17 +7,15 @@ package goget
 import (
 	"fmt"
 	"html/template"
-	"io/fs"
+	"net"
 	"net/http"
-	"slices"
+	"net/url"
 	"strings"
 
-	"cloudeng.io/logging/ctxlog"
 	"cloudeng.io/webapp"
-	"gopkg.in/yaml.v3"
 )
 
-var metaTemplate = template.Must(template.New("go-import").Parse(`<html><head><meta name="go-import" content="{{.Content}}"></head></html>`))
+var metaTemplate = template.Must(template.New("go-import").Parse(`<html><head><meta name="go-import" content="{{.Content}}"></head><body>{{.Content}}</body></html>`))
 
 // Spec represents a go-get meta tag specification.
 // From https://go.dev/ref/mod#serving-from-proxy
@@ -25,94 +23,66 @@ var metaTemplate = template.Must(template.New("go-import").Parse(`<html><head><m
 // system, and the URL, separated by spaces. See Finding a repository for a module
 // path for details.
 type Spec struct {
-	ImportPath          string `yaml:"import" cmd:"import path" json:"import"`
-	Content             string `yaml:"content" cmd:"content of the go-get meta tag" json:"content"`
-	importPathWithSlash string
+	ImportPath string `yaml:"import" cmd:"import path" json:"import"`
+	Content    string `yaml:"content" cmd:"content of the go-get meta tag" json:"content"`
 }
 
 func (s Spec) String() string {
 	return fmt.Sprintf("%s?go-get=1 content=%q", s.ImportPath, s.Content)
 }
 
-// Handler implements an HTTP handler that serves go-get meta tags
-// based on the supplied specifications.
-type Handler struct {
-	specs []Spec
+type handler struct {
+	host    string
+	content string
+	fb      http.Handler
 }
 
-// GoGetHandler returns an http.Handler that serves go-get meta tags
-// for requests that include the "go-get=1" query parameter and match
-// one of the defined specifications. If the query parameter is not present,
-// the request is passed to the next handler. A 404 is returned if no
-// specification matches.
-func (h *Handler) GoGetHandler(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.FormValue("go-get") != "1" {
-			next.ServeHTTP(w, r)
-			return
+func (h handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	reqHost := r.Host
+	if host, _, err := net.SplitHostPort(r.Host); err == nil {
+		reqHost = host
+	}
+	if r.FormValue("go-get") != "1" || reqHost != h.host {
+		h.fb.ServeHTTP(w, r) //nolint:errcheck
+		return
+	}
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.Write([]byte(h.content)) //nolint:errcheck
+}
+
+// RegisterHandlers creates and registers appropriate
+// HTTP handlers for the provided go-get specifications.
+// If next is nil, http.NotFoundHandler is used.
+func RegisterHandlers(mux webapp.ServeMux, next http.Handler, specs []Spec) error {
+	if next == nil {
+		next = http.NotFoundHandler()
+	}
+	var out strings.Builder
+	for _, spec := range specs {
+		importPath := spec.ImportPath
+		if !strings.Contains(importPath, "://") {
+			importPath = "https://" + importPath
 		}
-		host, _ := webapp.SplitHostPort(r.Host)
-		importPath := host + r.URL.Path
-		for _, config := range h.specs {
-			if importPath == config.ImportPath || importPath == config.importPathWithSlash {
-				w.Header().Set("Content-Type", "text/html; charset=utf-8")
-				err := metaTemplate.Execute(w, config)
-				if err != nil {
-					ctxlog.Error(r.Context(),
-						"failed to execute template",
-						"request", r.URL.String(),
-						"error", err)
-					http.Error(w, "Internal Server Error", http.StatusInternalServerError)
-				}
-				return
-			}
+		u, err := url.Parse(importPath)
+		if err != nil {
+			return err
 		}
-		http.NotFound(w, r)
-	})
-}
-
-// NewHandlerFromFS creates a new Handler instance by loading
-// specifications from the specified file path within the provided fs.ReadFileFS.
-// The file should contain a list YAML-formatted specifications as follows:
-//
-//   - import: "example.com/my/module"
-//     content: "example.com/my/module git github.com/user/repo"
-func NewHandlerFromFS(fsys fs.ReadFileFS, path string) (*Handler, error) {
-	specs, err := fsys.ReadFile(path)
-	if err != nil {
-		return nil, err
+		out.Reset()
+		if err := metaTemplate.Execute(&out, spec); err != nil {
+			return err
+		}
+		handler := handler{
+			host:    u.Hostname(),
+			content: out.String(),
+			fb:      next,
+		}
+		ns := strings.TrimSuffix(u.Path, "/")
+		mux.Handle(ns+"/", handler)
+		if len(ns) == 0 {
+			// An empty path will be redirected to /
+			continue
+		}
+		mux.Handle(ns, handler)
 	}
-	var parsedSpecs []Spec
-	err = yaml.Unmarshal(specs, &parsedSpecs)
-	if err != nil {
-		return nil, err
-	}
-	return NewHandler(parsedSpecs)
-}
-
-// NewHandler creates a new Handler instance for the provided
-// specifications.
-func NewHandler(specs []Spec) (*Handler, error) {
-	for i := range specs {
-		specs[i] = specs[i].handleSlash()
-	}
-	// Sort specs by import path length in descending order to ensure
-	// that the longest prefix is matched first.
-	slices.SortFunc(specs, func(a, b Spec) int {
-		return len(b.ImportPath) - len(a.ImportPath)
-	})
-	return &Handler{
-		specs: specs,
-	}, nil
-}
-
-func (s Spec) handleSlash() Spec {
-	hasSlash := strings.HasSuffix(s.ImportPath, "/")
-	if !hasSlash {
-		s.importPathWithSlash = s.ImportPath + "/"
-	} else {
-		s.importPathWithSlash = s.ImportPath
-		s.ImportPath = strings.TrimSuffix(s.ImportPath, "/")
-	}
-	return s
+	return nil
 }
