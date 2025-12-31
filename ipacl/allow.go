@@ -160,15 +160,18 @@ func (c AllowConfig) NewHandler(handler http.Handler) (http.Handler, error) {
 	if err != nil {
 		return nil, err
 	}
+	if c.Direct && c.Proxy {
+		return nil, fmt.Errorf("both direct and proxy are set")
+	}
+	if !c.Direct && !c.Proxy {
+		return nil, fmt.Errorf("neither direct nor proxy is set")
+	}
 	opts := []Option{}
 	if c.Direct {
 		opts = append(opts, WithAddressExtractor(RemoteAddrExtractor))
 	}
 	if c.Proxy {
 		opts = append(opts, WithAddressExtractor(XForwardedForExtractor))
-	}
-	if len(opts) == 0 {
-		return nil, fmt.Errorf("no address extractor specified")
 	}
 	return NewACLHandler(handler, acl, opts...), nil
 }

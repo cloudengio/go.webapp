@@ -281,14 +281,14 @@ func TestAllowConfig(t *testing.T) {
 			wantErr:     true,
 		},
 		{
-			name: "both (proxy wins)",
+			name: "both (error)",
 			config: AllowConfig{
 				Addresses: []string{"127.0.0.1"},
 				Direct:    true,
 				Proxy:     true,
 			},
-			wantHandler: true,
-			wantErr:     false,
+			wantHandler: false,
+			wantErr:     true,
 		},
 		{
 			name: "no addresses",
@@ -310,13 +310,11 @@ func TestAllowConfig(t *testing.T) {
 				if acl == nil {
 					t.Error("NewACL() returned nil")
 				}
-			} else {
-				if err == nil {
-					t.Error("NewACL() expected error")
-				}
+			} else if err == nil {
+				t.Error("NewACL() expected error")
 			}
 
-			handler, err := tc.config.NewHandler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
+			handler, err := tc.config.NewHandler(http.HandlerFunc(func(_ http.ResponseWriter, _ *http.Request) {}))
 			if (err != nil) != tc.wantErr {
 				t.Errorf("NewHandler() error = %v, wantErr %v", err, tc.wantErr)
 				return
