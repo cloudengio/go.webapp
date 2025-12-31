@@ -32,9 +32,9 @@ func NewACL(addrs ...string) (*ACL, error) {
 				return nil, err
 			}
 			if ip.Is4() {
-				addr = addr + "/32"
+				addr += "/32"
 			} else {
-				addr = addr + "/128"
+				addr += "/128"
 			}
 		}
 		p, err := netip.ParsePrefix(addr)
