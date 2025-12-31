@@ -23,9 +23,8 @@ var metaTemplate = template.Must(template.New("go-import").Parse(`<html><head><m
 // system, and the URL, separated by spaces. See Finding a repository for a module
 // path for details.
 type Spec struct {
-	ImportPath          string `yaml:"import" cmd:"import path" json:"import"`
-	Content             string `yaml:"content" cmd:"content of the go-get meta tag" json:"content"`
-	importPathWithSlash string
+	ImportPath string `yaml:"import" cmd:"import path" json:"import"`
+	Content    string `yaml:"content" cmd:"content of the go-get meta tag" json:"content"`
 }
 
 func (s Spec) String() string {
@@ -48,7 +47,7 @@ func (h handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	w.Write([]byte(h.content))
+	w.Write([]byte(h.content)) //nolint:errcheck
 }
 
 // RegisterHandlers creates and registers appropriate
