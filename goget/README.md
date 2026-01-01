@@ -5,56 +5,23 @@ import cloudeng.io/webapp/goget
 ```
 
 
+## Functions
+### Func RegisterHandlers
+```go
+func RegisterHandlers(mux webapp.ServeMux, next http.Handler, specs []Spec) error
+```
+RegisterHandlers creates and registers appropriate HTTP handlers for the
+provided go-get specifications. If next is nil, http.NotFoundHandler is
+used.
+
+
+
 ## Types
-### Type Handler
-```go
-type Handler struct {
-	// contains filtered or unexported fields
-}
-```
-Handler implements an HTTP handler that serves go-get meta tags based on the
-supplied specifications.
-
-### Functions
-
-```go
-func NewHandler(specs []Spec) (*Handler, error)
-```
-NewHandler creates a new Handler instance for the provided specifications.
-
-
-```go
-func NewHandlerFromFS(fsys fs.ReadFileFS, path string) (*Handler, error)
-```
-NewHandlerFromFS creates a new Handler instance by loading specifications
-from the specified file path within the provided fs.ReadFileFS. The file
-should contain a list YAML-formatted specifications as follows:
-
-  - import: "example.com/my/module" content: "example.com/my/module git
-    github.com/user/repo"
-
-
-
-### Methods
-
-```go
-func (h *Handler) GoGetHandler(next http.Handler) http.Handler
-```
-GoGetHandler returns an http.Handler that serves go-get meta tags for
-requests that include the "go-get=1" query parameter and match one of the
-defined specifications. If the query parameter is not present, the request
-is passed to the next handler. A 404 is returned if no specification
-matches.
-
-
-
-
 ### Type Spec
 ```go
 type Spec struct {
 	ImportPath string `yaml:"import" cmd:"import path" json:"import"`
 	Content    string `yaml:"content" cmd:"content of the go-get meta tag" json:"content"`
-	// contains filtered or unexported fields
 }
 ```
 Spec represents a go-get meta tag specification. From
