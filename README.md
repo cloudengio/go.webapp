@@ -78,6 +78,12 @@ func FindLeafPEM(certsPEM []*pem.Block) ([]byte, *x509.Certificate, error)
 FindLeafPEM searches the supplied PEM blocks for the leaf certificate and
 returns its DER encoding along with the parsed x509.Certificate.
 
+### Func HealthzHandler
+```go
+func HealthzHandler() http.Handler
+```
+HealthzHandler returns a handler that returns "ok" and a 200 status code.
+
 ### Func NewHTTPClient
 ```go
 func NewHTTPClient(ctx context.Context, opts ...HTTPClientOption) (*http.Client, error)
@@ -167,10 +173,10 @@ supplied context is canceled.
 
 ### Func RegisterRedirects
 ```go
-func RegisterRedirects(mux RedirectMux, redirects ...Redirect)
+func RegisterRedirects(mux ServeMux, redirects ...Redirect)
 ```
 RegisterRedirects registers the specified redirects with the specified
-RedirectMux.
+ServeMux.
 
 ### Func SafePath
 ```go
@@ -430,18 +436,6 @@ an http.Handler.
 
 
 
-### Type RedirectMux
-```go
-type RedirectMux interface {
-	HandleFunc(pattern string, handler func(w http.ResponseWriter, req *http.Request))
-	ServeHTTP(w http.ResponseWriter, r *http.Request)
-}
-```
-RedirectMux is an interface that can be used to register handlers for
-redirects. It is provided for use with other middleware packages that expect
-an http.Handler.
-
-
 ### Type RedirectTarget
 ```go
 type RedirectTarget func(*http.Request) (string, int)
@@ -459,6 +453,17 @@ LiteralRedirectTarget returns a RedirectTarget that always redirects to the
 specified URL with the specified status code.
 
 
+
+
+### Type ServeMux
+```go
+type ServeMux interface {
+	Handle(pattern string, handler http.Handler)
+	ServeHTTP(w http.ResponseWriter, r *http.Request)
+}
+```
+ServeMux is an interface that can be used to register HTTP handlers. It is
+provided for use with other middleware packages that expect an http.Handler.
 
 
 ### Type TLSCertConfig

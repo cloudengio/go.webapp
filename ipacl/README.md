@@ -16,7 +16,7 @@ response is returned, otherwise the request is passed to the given handler.
 
 ### Func RemoteAddrExtractor
 ```go
-func RemoteAddrExtractor(r *http.Request) (netip.Addr, error)
+func RemoteAddrExtractor(r *http.Request) (string, netip.Addr, error)
 ```
 RemoteAddrExtractor returns the remote IP address from an HTTP request.
 It is the default AddressExtractor and is suitable for when a server is
@@ -24,7 +24,7 @@ directly exposed to the internet.
 
 ### Func XForwardedForExtractor
 ```go
-func XForwardedForExtractor(r *http.Request) (netip.Addr, error)
+func XForwardedForExtractor(r *http.Request) (string, netip.Addr, error)
 ```
 XForwardedForExtractor returns the IP address from the X-Forwarded-For
 header. It uses the first IP address in the list.
@@ -64,10 +64,36 @@ Allowed returns whether the given IP address is allowed by the ACL.
 
 ### Type AddressExtractor
 ```go
-type AddressExtractor func(r *http.Request) (netip.Addr, error)
+type AddressExtractor func(r *http.Request) (string, netip.Addr, error)
 ```
 AddressExtractor represents a function that extracts an IP address from an
 HTTP request.
+
+
+### Type AllowConfig
+```go
+type AllowConfig struct {
+	Addresses []string `yaml:"addresses" cmd:"list of ip addresses or cidr prefixes"`
+	Direct    bool     `yaml:"direct" cmd:"set to true to use the requests.RemoteAddr"`   // Use the requests.RemoteAddr
+	Proxy     bool     `yaml:"proxy" cmd:"set to true to use the X-Forwarded-For header"` // Use the X-Forwarded-For header
+}
+```
+AllowConfig represents an IP address access control list configuration.
+
+### Methods
+
+```go
+func (c AllowConfig) NewACL() (*ACL, error)
+```
+NewACL creates a new ACL from the given configuration.
+
+
+```go
+func (c AllowConfig) NewHandler(handler http.Handler) (http.Handler, error)
+```
+NewHandler creates a new http.Handler that enforces the given ACL.
+
+
 
 
 ### Type Option

@@ -62,6 +62,30 @@ func (g GoGetTest) Run(ctx context.Context) error
 
 
 
+### Type HealthzTest
+```go
+type HealthzTest struct {
+	// contains filtered or unexported fields
+}
+```
+
+### Functions
+
+```go
+func NewHealthzTest(client *http.Client, healthcheckURL string, interval time.Duration, numHealthChecks int) *HealthzTest
+```
+
+
+
+### Methods
+
+```go
+func (h HealthzTest) Run(ctx context.Context) error
+```
+
+
+
+
 ### Type RedirectSpec
 ```go
 type RedirectSpec struct {
