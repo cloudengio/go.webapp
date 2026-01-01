@@ -246,3 +246,70 @@ func TestACLHandlerWithExtractor(t *testing.T) {
 		}
 	}
 }
+
+func TestAllowConfig(t *testing.T) {
+	tests := []struct {
+		name        string
+		config      AllowConfig
+		wantHandler bool
+		wantErr     bool
+	}{
+		{
+			name: "direct",
+			config: AllowConfig{
+				Addresses: []string{"127.0.0.1"},
+				Direct:    true,
+			},
+			wantHandler: true,
+			wantErr:     false,
+		},
+		{
+			name: "proxy",
+			config: AllowConfig{
+				Addresses: []string{"127.0.0.1"},
+				Proxy:     true,
+			},
+			wantHandler: true,
+			wantErr:     false,
+		},
+		{
+			name: "neither",
+			config: AllowConfig{
+				Addresses: []string{"127.0.0.1"},
+			},
+			wantHandler: false,
+			wantErr:     true,
+		},
+		{
+			name: "both (error)",
+			config: AllowConfig{
+				Addresses: []string{"127.0.0.1"},
+				Direct:    true,
+				Proxy:     true,
+			},
+			wantHandler: false,
+			wantErr:     true,
+		},
+		{
+			name: "no addresses",
+			config: AllowConfig{
+				Direct: true,
+			},
+			wantHandler: false,
+			wantErr:     true,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			handler, err := tc.config.NewHandler(http.HandlerFunc(func(_ http.ResponseWriter, _ *http.Request) {}))
+			if (err != nil) != tc.wantErr {
+				t.Errorf("NewHandler() error = %v, wantErr %v", err, tc.wantErr)
+				return
+			}
+			if tc.wantHandler && handler == nil {
+				t.Error("NewHandler() returned nil")
+			}
+		})
+	}
+}
