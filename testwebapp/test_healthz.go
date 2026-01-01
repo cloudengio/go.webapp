@@ -43,9 +43,6 @@ func (h HealthzTest) Run(ctx context.Context) error {
 			return fmt.Errorf("healthz: reading response body: %w", err)
 		}
 		resp.Body.Close()
-		if err != nil {
-			return fmt.Errorf("healthz: reading response body: %w", err)
-		}
 		if resp.StatusCode != http.StatusOK {
 			return fmt.Errorf("healthz: unexpected status code: %d, body: %s", resp.StatusCode, body)
 		}
