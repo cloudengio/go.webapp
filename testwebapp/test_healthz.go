@@ -11,6 +11,7 @@ import (
 	"cloudeng.io/logging/ctxlog"
 )
 
+// HealthzTest can be used to validate /healthz endpoints.
 type HealthzTest struct {
 	client          *http.Client
 	healthcheckURL  string
@@ -50,7 +51,15 @@ func (h HealthzTest) Run(ctx context.Context) error {
 			return fmt.Errorf("healthz: unexpected body: %q", string(body))
 		}
 		ctxlog.Info(ctx, "healthz: check successful", "url", h.healthcheckURL, "attempt", i+1)
-		time.Sleep(h.interval)
+		if i < h.numHealthChecks-1 {
+			timer := time.NewTimer(h.interval)
+			select {
+			case <-timer.C:
+			case <-ctx.Done():
+				timer.Stop()
+				return ctx.Err()
+			}
+		}
 	}
 	return nil
 }
