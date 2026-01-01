@@ -13,7 +13,7 @@ import (
 
 func TestVerifyHealthz(t *testing.T) {
 	mux := http.NewServeMux()
-	mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/healthz", func(w http.ResponseWriter, _ *http.Request) {
 		fmt.Fprint(w, "ok\n")
 	})
 
@@ -30,11 +30,11 @@ func TestVerifyHealthz(t *testing.T) {
 
 func TestVerifyHealthz_Failures(t *testing.T) {
 	mux := http.NewServeMux()
-	mux.HandleFunc("/healthz-error", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/healthz-error", func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusInternalServerError)
 		fmt.Fprint(w, "internal server error")
 	})
-	mux.HandleFunc("/healthz-bad-body", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/healthz-bad-body", func(w http.ResponseWriter, _ *http.Request) {
 		fmt.Fprint(w, "not ok")
 	})
 

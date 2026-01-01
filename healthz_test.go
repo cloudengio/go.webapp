@@ -21,6 +21,7 @@ func TestHealthzHandler(t *testing.T) {
 	handler.ServeHTTP(w, req)
 
 	resp := w.Result()
+	defer resp.Body.Close()
 	if got, want := resp.StatusCode, http.StatusOK; got != want {
 		t.Errorf("got %v, want %v", got, want)
 	}
@@ -30,7 +31,7 @@ func TestHealthzHandler(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if got, want := string(body), "ok"; got != want {
+	if got, want := string(body), "ok\n"; got != want {
 		t.Errorf("got %v, want %v", got, want)
 	}
 }

@@ -11,8 +11,8 @@ import (
 
 // HealthzHandler returns a handler that returns "ok" and a 200 status code.
 func HealthzHandler() http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	return http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
-		fmt.Fprint(w, "ok")
+		fmt.Fprint(w, "ok\n")
 	})
 }
