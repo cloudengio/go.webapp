@@ -121,12 +121,10 @@ func newServer(ctx context.Context, addr, port string, handler http.Handler, cfg
 	addr = netutil.Resolve(addr)
 	ap, err := netutil.ParseAddrDefaultPort(addr, port)
 	if err != nil {
-		fmt.Printf(".... 1 newServer: %s\n", err)
 		return nil, nil, err
 	}
 	ln, err := net.Listen("tcp", netutil.HTTPServerAddr(ap))
 	if err != nil {
-		fmt.Printf(".... 2 newServer: %s\n", err)
 		return nil, nil, err
 	}
 	if cfg == nil {
