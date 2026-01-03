@@ -13,6 +13,22 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func registerHandlers(mux *http.ServeMux, next http.Handler, specs []Spec) error {
+	for _, spec := range specs {
+		handler, path, err := spec.NewHandler(next)
+		if err != nil {
+			return err
+		}
+		mux.Handle(path+"/", handler)
+		if len(path) == 0 {
+			// An empty path will be redirected to /
+			continue
+		}
+		mux.Handle(path, handler)
+	}
+	return nil
+}
+
 func TestGoGetHandler(t *testing.T) {
 	specs := []Spec{
 		{
@@ -30,7 +46,7 @@ func TestGoGetHandler(t *testing.T) {
 	nextHandler := http.HandlerFunc(func(_ http.ResponseWriter, _ *http.Request) {
 		nextCalled = true
 	})
-	err := RegisterHandlers(mux, nextHandler, specs)
+	err := registerHandlers(mux, nextHandler, specs)
 	require.NoError(t, err)
 
 	// 1. Match: go-get=1 query param and prefix match
@@ -87,7 +103,7 @@ func TestGoGetHandlerEdgeCases(t *testing.T) {
 			},
 		}
 		mux := http.NewServeMux()
-		err := RegisterHandlers(mux, nil, specs)
+		err := registerHandlers(mux, nil, specs)
 		require.NoError(t, err)
 
 		req := httptest.NewRequest("GET", "http://example.com/exact?go-get=1", nil)
@@ -106,7 +122,7 @@ func TestGoGetHandlerEdgeCases(t *testing.T) {
 			},
 		}
 		mux := http.NewServeMux()
-		err := RegisterHandlers(mux, nil, specs)
+		err := registerHandlers(mux, nil, specs)
 		require.NoError(t, err)
 
 		req := httptest.NewRequest("GET", "https://example.com:8080/exact?go-get=1", nil)
@@ -125,7 +141,7 @@ func TestGoGetHandlerEdgeCases(t *testing.T) {
 			},
 		}
 		mux := http.NewServeMux()
-		err := RegisterHandlers(mux, nil, specs)
+		err := registerHandlers(mux, nil, specs)
 		require.NoError(t, err)
 
 		req := httptest.NewRequest("GET", "http://other.com/pkg?go-get=1", nil)
@@ -143,7 +159,7 @@ func TestGoGetHandlerEdgeCases(t *testing.T) {
 			},
 		}
 		mux := http.NewServeMux()
-		err := RegisterHandlers(mux, nil, specs)
+		err := registerHandlers(mux, nil, specs)
 		require.NoError(t, err)
 
 		req := httptest.NewRequest("GET", "http://example.com/pkg?go-get=1", nil)
@@ -162,7 +178,7 @@ func TestGoGetHandlerEdgeCases(t *testing.T) {
 			},
 		}
 		mux := http.NewServeMux()
-		err := RegisterHandlers(mux, nil, specs)
+		err := registerHandlers(mux, nil, specs)
 		require.NoError(t, err)
 
 		req := httptest.NewRequest("GET", "http://example.com?go-get=1", nil)
@@ -181,7 +197,7 @@ func TestGoGetHandlerEdgeCases(t *testing.T) {
 			},
 		}
 		mux := http.NewServeMux()
-		err := RegisterHandlers(mux, nil, specs)
+		err := registerHandlers(mux, nil, specs)
 		require.NoError(t, err)
 
 		req := httptest.NewRequest("GET", "http://example.com/?go-get=1", nil)
@@ -200,7 +216,7 @@ func TestGoGetHandlerEdgeCases(t *testing.T) {
 			},
 		}
 		mux := http.NewServeMux()
-		err := RegisterHandlers(mux, nil, specs)
+		err := registerHandlers(mux, nil, specs)
 		require.NoError(t, err)
 
 		req := httptest.NewRequest("GET", "http://sub.example.com/pkg?go-get=1", nil)
@@ -223,7 +239,7 @@ func TestGoGetHandlerEdgeCases(t *testing.T) {
 			},
 		}
 		mux := http.NewServeMux()
-		err := RegisterHandlers(mux, nil, specs)
+		err := registerHandlers(mux, nil, specs)
 		require.NoError(t, err)
 
 		req := httptest.NewRequest("GET", "http://example.com/pkg/sub?go-get=1", nil)
@@ -249,7 +265,7 @@ func TestGoGetHandlerEdgeCases(t *testing.T) {
 		next := http.HandlerFunc(func(_ http.ResponseWriter, _ *http.Request) {
 			nextCalled = true
 		})
-		err := RegisterHandlers(mux, next, specs)
+		err := registerHandlers(mux, next, specs)
 		require.NoError(t, err)
 
 		req := httptest.NewRequest("GET", "http://example.com/pkg?go-get=", nil)
@@ -271,7 +287,7 @@ func TestGoGetHandlerEdgeCases(t *testing.T) {
 		next := http.HandlerFunc(func(_ http.ResponseWriter, _ *http.Request) {
 			nextCalled = true
 		})
-		err := RegisterHandlers(mux, next, specs)
+		err := registerHandlers(mux, next, specs)
 		require.NoError(t, err)
 
 		req := httptest.NewRequest("GET", "http://example.com/pkg?go-get=0", nil)

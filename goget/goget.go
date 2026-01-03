@@ -7,12 +7,9 @@ package goget
 import (
 	"fmt"
 	"html/template"
-	"net"
 	"net/http"
 	"net/url"
 	"strings"
-
-	"cloudeng.io/webapp"
 )
 
 var metaTemplate = template.Must(template.New("go-import").Parse(`<html><head><meta name="go-import" content="{{.Content}}"></head><body>{{.Content}}</body></html>`))
@@ -31,18 +28,38 @@ func (s Spec) String() string {
 	return fmt.Sprintf("%s?go-get=1 content=%q", s.ImportPath, s.Content)
 }
 
+// SplitHostnamePath splits the import path into the hostname and
+// path components. The path component will have any trailing slash
+// removed.
+func (s Spec) SplitHostnamePath() (string, string, error) {
+	importPath := s.ImportPath
+	if !strings.Contains(importPath, "://") {
+		importPath = "https://" + importPath
+	}
+	u, err := url.Parse(importPath)
+	if err != nil {
+		return "", "", err
+	}
+	return u.Hostname(), strings.TrimSuffix(u.Path, "/"), nil
+}
+
 type handler struct {
 	host    string
+	path    string // no trailing slash
 	content string
 	fb      http.Handler
 }
 
 func (h handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	reqHost := r.Host
-	if host, _, err := net.SplitHostPort(r.Host); err == nil {
-		reqHost = host
+	if r.FormValue("go-get") != "1" {
+		h.fb.ServeHTTP(w, r) //nolint:errcheck
+		return
 	}
-	if r.FormValue("go-get") != "1" || reqHost != h.host {
+	if r.URL.Hostname() != h.host {
+		h.fb.ServeHTTP(w, r) //nolint:errcheck
+		return
+	}
+	if strings.TrimSuffix(r.URL.Path, "/") != h.path {
 		h.fb.ServeHTTP(w, r) //nolint:errcheck
 		return
 	}
@@ -50,39 +67,52 @@ func (h handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	w.Write([]byte(h.content)) //nolint:errcheck
 }
 
-// RegisterHandlers creates and registers appropriate
-// HTTP handlers for the provided go-get specifications.
-// If next is nil, http.NotFoundHandler is used.
-func RegisterHandlers(mux webapp.ServeMux, next http.Handler, specs []Spec) error {
+// Option is used to configure the creation and registration of go-get handlers.
+type Option func(*options)
+
+type options struct {
+	rootHandler http.Handler
+}
+
+// WithRootHandler configures the go-get handler to use the provided
+// handler for requests to the root "/" path. It is often the case
+// that the root path will be handled differently to all other
+// go-get paths.
+func WithRootHandler(next http.Handler) Option {
+	return func(o *options) {
+		o.rootHandler = next
+	}
+}
+
+// NewHandler creates a new http.Handler for a given go-get specification and
+// returns the path that the handler should be registered at, without
+// the trailing slash. The returned handler will call the provided next
+// handler if the request is not a go-get request. It will increment the
+// optional counter metric if the request is a go-get request.
+func (s Spec) NewHandler(next http.Handler, opts ...Option) (http.Handler, string, error) {
 	if next == nil {
 		next = http.NotFoundHandler()
 	}
-	var out strings.Builder
-	for _, spec := range specs {
-		importPath := spec.ImportPath
-		if !strings.Contains(importPath, "://") {
-			importPath = "https://" + importPath
-		}
-		u, err := url.Parse(importPath)
-		if err != nil {
-			return err
-		}
-		out.Reset()
-		if err := metaTemplate.Execute(&out, spec); err != nil {
-			return err
-		}
-		handler := handler{
-			host:    u.Hostname(),
-			content: out.String(),
-			fb:      next,
-		}
-		ns := strings.TrimSuffix(u.Path, "/")
-		mux.Handle(ns+"/", handler)
-		if len(ns) == 0 {
-			// An empty path will be redirected to /
-			continue
-		}
-		mux.Handle(ns, handler)
+	var o options
+	for _, opt := range opts {
+		opt(&o)
 	}
-	return nil
+	host, path, err := s.SplitHostnamePath()
+	if err != nil {
+		return nil, "", err
+	}
+	if path == "" && o.rootHandler != nil {
+		next = o.rootHandler
+	}
+	var out strings.Builder
+	if err := metaTemplate.Execute(&out, s); err != nil {
+		return nil, "", err
+	}
+	handler := handler{
+		host:    host,
+		path:    path,
+		content: out.String(),
+		fb:      next,
+	}
+	return handler, path, nil
 }

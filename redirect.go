@@ -9,25 +9,10 @@ import (
 	"net"
 	"net/http"
 	"net/url"
-	"strings"
 	"time"
 
 	"cloudeng.io/logging/ctxlog"
 )
-
-// ServeMux is an interface that can be used to register
-// HTTP handlers. It is provided for use with other middleware
-// packages that expect an http.Handler.
-type ServeMux interface {
-	Handle(pattern string, handler http.Handler)
-	ServeHTTP(w http.ResponseWriter, r *http.Request)
-	// Note HandleFunc is not provided as it is often
-	// defined in incompatible ways:
-	// - net/http.ServeMux.HandleFunc defines it as:
-	//   HandleFunc(pattern string, handler func(ResponseWriter, *Request))
-	// - whereas chi defines it as:
-	//   HandleFunc(pattern string, handler func(ResponseWriter, *Request))
-}
 
 // RedirectTarget is a function that given an http.Request returns
 // the target URL for the redirect and the HTTP status code to use.
@@ -38,7 +23,6 @@ type RedirectTarget func(*http.Request) (string, int)
 // Redirect defines a URL path prefix which will be redirected to
 // the specified target.
 type Redirect struct {
-	Prefix      string         // prefix to match assuming http.ServeMux rules and registers the handler for both the prefix and prefix/.
 	Description string         // description of the redirect, only used for logging
 	Target      RedirectTarget // function that returns the target URL and HTTP status code
 	Log         bool           // if true then log the redirect
@@ -59,21 +43,6 @@ func (r Redirect) Handler() http.HandlerFunc {
 	}
 }
 
-// newRedirectHandler creates a RedirectHandler that will redirect
-// requests based on the supplied redirects.
-func newRedirectHandler(mux ServeMux, redirects ...Redirect) {
-	for _, r := range redirects {
-		handler := r.Handler()
-		p := strings.TrimSuffix(r.Prefix, "/")
-		if p == "" || p == "/" {
-			mux.Handle("/", handler)
-		} else {
-			mux.Handle(p, handler)
-			mux.Handle(p+"/", handler)
-		}
-	}
-}
-
 func challengeRewrite(host string, r *http.Request) string {
 	nrl := url.URL{
 		Scheme: "http",
@@ -87,7 +56,6 @@ func challengeRewrite(host string, r *http.Request) string {
 // ACME HTTP-01 challenges to the specified host.
 func RedirectAcmeHTTP01(host string) Redirect {
 	return Redirect{
-		Prefix:      "/.well-known/acme-challenge/",
 		Log:         true,
 		Description: "redirecting ACME HTTP-01 challenge",
 		Target: func(r *http.Request) (string, int) {
@@ -95,6 +63,8 @@ func RedirectAcmeHTTP01(host string) Redirect {
 		},
 	}
 }
+
+const ACMEHTTP01Prefix = "/.well-known/acme-challenge/"
 
 // RedirectToHTTPSPort returns a Redirect that will redirect
 // to the specified address using https but with the following defaults:
@@ -106,7 +76,6 @@ func RedirectToHTTPSPort(addr string) Redirect {
 		port = "443"
 	}
 	return Redirect{
-		Prefix:      "/",
 		Description: "redirect to https",
 		Target: func(r *http.Request) (string, int) {
 			h, _ := SplitHostPort(r.Host)
@@ -121,19 +90,22 @@ func RedirectToHTTPSPort(addr string) Redirect {
 	}
 }
 
-// RegisterRedirects registers the specified redirects with the
-// specified ServeMux.
-func RegisterRedirects(mux ServeMux, redirects ...Redirect) {
-	newRedirectHandler(mux, redirects...)
+// Port80Redirect is a Redirect that that will be registered using
+// http.ServeMux with the specified pattern/
+type Port80Redirect struct {
+	Pattern string
+	Redirect
 }
 
 // RedirectPort80 starts an http.Server that will redirect port 80 to the
 // specified redirect targets.
 // The server will run in the background until the supplied context
 // is canceled.
-func RedirectPort80(ctx context.Context, redirects ...Redirect) error {
+func RedirectPort80(ctx context.Context, redirects ...Port80Redirect) error {
 	mux := http.NewServeMux()
-	newRedirectHandler(mux, redirects...)
+	for _, r := range redirects {
+		mux.Handle(r.Pattern, r.Handler())
+	}
 	ln, srv, err := NewHTTPServer(ctx, ":80", mux)
 	if err != nil {
 		return err
