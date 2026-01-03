@@ -9,15 +9,15 @@ require (
 	cloudeng.io/cmdutil v0.0.0-20251230033006-254419a25822
 	cloudeng.io/errors v0.0.13
 	cloudeng.io/file v0.0.0-20251230033006-254419a25822
-	cloudeng.io/logging v0.0.0-20251230033006-254419a25822
-	cloudeng.io/net v0.0.0-20251230033006-254419a25822
+	cloudeng.io/logging v0.0.0-20260103202810-a46dd087d286
+	cloudeng.io/net v0.0.0-20260103202810-a46dd087d286
 	cloudeng.io/webapp v0.0.0-20251211202122-3206a59d8279
 	golang.org/x/crypto v0.46.0
 )
 
 require (
 	cloudeng.io/algo v0.0.0-20251230033006-254419a25822 // indirect
-	cloudeng.io/os v0.0.0-20251230033006-254419a25822 // indirect
+	cloudeng.io/os v0.0.0-20260103202810-a46dd087d286 // indirect
 	cloudeng.io/sync v0.0.9-0.20251108012845-0faa368df158 // indirect
 	cloudeng.io/sys v0.0.0-20251230033006-254419a25822 // indirect
 	cloudeng.io/text v0.0.13 // indirect

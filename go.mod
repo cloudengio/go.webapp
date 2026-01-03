@@ -6,10 +6,10 @@ require (
 	cloudeng.io/cmdutil v0.0.0-20251214214252-1a0778fa9b25
 	cloudeng.io/errors v0.0.13
 	cloudeng.io/file v0.0.0-20251230033006-254419a25822
-	cloudeng.io/io v0.0.0-20251230033006-254419a25822
-	cloudeng.io/logging v0.0.0-20251230033006-254419a25822
-	cloudeng.io/net v0.0.0-20251230033006-254419a25822
-	cloudeng.io/os v0.0.0-20251230033006-254419a25822
+	cloudeng.io/io v0.0.0-20260103202810-a46dd087d286
+	cloudeng.io/logging v0.0.0-20260103202810-a46dd087d286
+	cloudeng.io/net v0.0.0-20260103230226-ab5a7d039924
+	cloudeng.io/os v0.0.0-20260103202810-a46dd087d286
 	cloudeng.io/sync v0.0.9-0.20251108012845-0faa368df158
 	github.com/chromedp/cdproto v0.0.0-20250803210736-d308e07a266d
 	github.com/chromedp/chromedp v0.14.2

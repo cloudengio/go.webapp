@@ -213,7 +213,6 @@ func (dc *CachingStore) Put(ctx context.Context, name string, data []byte) error
 	if dc.opts.readonly {
 		return fmt.Errorf("put %q: %w", name, ErrReadonlyCache)
 	}
-	fmt.Printf("......... CertCache Put: %s\n", name)
 	name, backingStore := dc.useBackingStore(name)
 	if backingStore {
 		if err := dc.backingStore.WriteFileCtx(ctx, name, data, 0600); err != nil {
