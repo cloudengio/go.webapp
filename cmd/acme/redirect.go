@@ -31,11 +31,11 @@ func (testRedirectCmd) redirect(ctx context.Context, values any, _ []string) err
 	defer done()
 	cl := values.(*testRedirectFlags)
 
-	cfg := cl.HTTPServerConfig()
-
 	if len(cl.AcmeClientHost) == 0 {
 		return fmt.Errorf("must specific a target for the acme client")
 	}
+
+	cfg := cl.HTTPServerConfig()
 
 	if err := webapp.RedirectPort80(ctx,
 		webapp.Port80Redirect{
