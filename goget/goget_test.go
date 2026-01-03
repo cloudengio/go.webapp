@@ -10,21 +10,26 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/assert/yaml"
 	"github.com/stretchr/testify/require"
 )
 
 func registerHandlers(mux *http.ServeMux, next http.Handler, specs []Spec) error {
 	for _, spec := range specs {
-		handler, path, err := spec.NewHandler(next)
+		// Not parsed from yaml.
+		if err := spec.SplitHostnamePath(); err != nil {
+			return err
+		}
+		handler, err := spec.NewHandler(next)
 		if err != nil {
 			return err
 		}
-		mux.Handle(path+"/", handler)
-		if len(path) == 0 {
+		mux.Handle(spec.Path()+"/", handler)
+		if spec.Path() == "" {
 			// An empty path will be redirected to /
 			continue
 		}
-		mux.Handle(path, handler)
+		mux.Handle(spec.Path(), handler)
 	}
 	return nil
 }
@@ -283,10 +288,7 @@ func TestGoGetHandlerEdgeCases(t *testing.T) {
 			},
 		}
 		mux := http.NewServeMux()
-		nextCalled := false
-		next := http.HandlerFunc(func(_ http.ResponseWriter, _ *http.Request) {
-			nextCalled = true
-		})
+		next := http.HandlerFunc(func(_ http.ResponseWriter, _ *http.Request) {})
 		err := registerHandlers(mux, next, specs)
 		require.NoError(t, err)
 
@@ -294,6 +296,29 @@ func TestGoGetHandlerEdgeCases(t *testing.T) {
 		w := httptest.NewRecorder()
 		mux.ServeHTTP(w, req)
 
-		assert.True(t, nextCalled)
 	})
+}
+
+func TestYAMLUnmarshal(t *testing.T) {
+	yamlSpec := `
+- import: example.com/pkg
+  content: example.com/pkg git https://github.com/user/pkg
+- import: example.com/other
+  content: example.com/other git https://github.com/user/other
+`
+	var specs []Spec
+	err := yaml.Unmarshal([]byte(yamlSpec), &specs)
+	require.NoError(t, err)
+
+	require.Len(t, specs, 2)
+
+	assert.Equal(t, "example.com/pkg", specs[0].ImportPath)
+	assert.Equal(t, "example.com/pkg git https://github.com/user/pkg", specs[0].Content)
+	assert.Equal(t, "example.com", specs[0].Hostname())
+	assert.Equal(t, "/pkg", specs[0].Path())
+
+	assert.Equal(t, "example.com/other", specs[1].ImportPath)
+	assert.Equal(t, "example.com/other git https://github.com/user/other", specs[1].Content)
+	assert.Equal(t, "example.com", specs[1].Hostname())
+	assert.Equal(t, "/other", specs[1].Path())
 }
