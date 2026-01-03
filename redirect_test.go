@@ -29,6 +29,7 @@ func TestRedirectHandler(t *testing.T) {
 		name               string
 		reqURL             string
 		redirects          []webapp.Redirect
+		prefixes           []string
 		expectedStatusCode int
 		expectedLocation   string
 		expectedLog        string
@@ -56,8 +57,8 @@ func TestRedirectHandler(t *testing.T) {
 			reqURL: "http://example.com/.well-known/acme-challenge/some-token",
 			redirects: []webapp.Redirect{
 				webapp.RedirectAcmeHTTP01(acmeRedirectURL.Host),
-				webapp.RedirectToHTTPSPort(":8443"),
 			},
+			prefixes:           []string{"/.well-known/acme-challenge/"},
 			expectedStatusCode: http.StatusTemporaryRedirect,
 			expectedLocation:   "http://acme-handler.example.com/.well-known/acme-challenge/some-token",
 			expectedLog:        `redirecting ACME HTTP-01 challenge`,
@@ -69,6 +70,7 @@ func TestRedirectHandler(t *testing.T) {
 				webapp.RedirectAcmeHTTP01(acmeRedirectURL.Host),
 				webapp.RedirectToHTTPSPort(":8443"),
 			},
+			prefixes:           []string{"/.well-known/acme-challenge/", "/"},
 			expectedStatusCode: http.StatusMovedPermanently,
 			expectedLocation:   "https://example.com:8443/not-an-acme-challenge",
 		},
@@ -82,11 +84,10 @@ func TestRedirectHandler(t *testing.T) {
 			expectedLocation:   "https://example.com:8443/path",
 		},
 		{
-			name:   "No matching redirect",
-			reqURL: "http://example.com/no-match",
-			redirects: []webapp.Redirect{
-				{Prefix: "/foo"},
-			},
+			name:               "No matching redirect",
+			reqURL:             "http://example.com/no-match",
+			redirects:          []webapp.Redirect{},
+			prefixes:           []string{"/foo"},
 			expectedStatusCode: http.StatusNotFound,
 		},
 		{
@@ -94,18 +95,17 @@ func TestRedirectHandler(t *testing.T) {
 			reqURL: "http://example.com/foo/bar",
 			redirects: []webapp.Redirect{
 				{
-					Prefix: "/",
 					Target: func(_ *http.Request) (string, int) {
 						return "http://catchall.com", http.StatusMovedPermanently
 					},
 				},
 				{
-					Prefix: "/foo",
 					Target: func(_ *http.Request) (string, int) {
 						return "https://foospecific.com", http.StatusMovedPermanently
 					},
 				},
 			},
+			prefixes:           []string{"/", "/foo/"},
 			expectedStatusCode: http.StatusMovedPermanently,
 			expectedLocation:   "https://foospecific.com",
 		},
@@ -122,7 +122,15 @@ func TestRedirectHandler(t *testing.T) {
 			rr := httptest.NewRecorder()
 
 			mux := http.NewServeMux()
-			webapp.RegisterRedirects(mux, tc.redirects...)
+			if len(tc.prefixes) == 0 {
+				tc.prefixes = make([]string, len(tc.redirects))
+				for i := range len(tc.redirects) {
+					tc.prefixes[i] = "/"
+				}
+			}
+			for i := range len(tc.redirects) {
+				mux.Handle(tc.prefixes[i], tc.redirects[i].Handler())
+			}
 			mux.ServeHTTP(rr, req)
 
 			if status := rr.Code; status != tc.expectedStatusCode {
@@ -149,7 +157,10 @@ func TestRedirectPort80(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	err := webapp.RedirectPort80(ctx, webapp.RedirectToHTTPSPort(":8443"))
+	err := webapp.RedirectPort80(ctx,
+		webapp.Port80Redirect{
+			Pattern:  "/",
+			Redirect: webapp.RedirectToHTTPSPort(":8443")})
 	if err != nil {
 		// This may fail on systems where port 80 is privileged.
 		// We can't reliably test this everywhere, so we just log it.
@@ -239,18 +250,13 @@ func TestLiteralRedirectTarget(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			target := webapp.LiteralRedirectTarget(tc.targetURL, tc.statusCode)
 
-			redirects := []webapp.Redirect{
-				{
-					Prefix: "/",
-					Target: target,
-				},
-			}
+			redirect := webapp.Redirect{Target: target}
 
 			req := httptest.NewRequest("GET", tc.requestURL, nil)
 			rr := httptest.NewRecorder()
 
 			mux := http.NewServeMux()
-			webapp.RegisterRedirects(mux, redirects...)
+			mux.Handle("/", redirect.Handler())
 			mux.ServeHTTP(rr, req)
 
 			assert.Equal(t, tc.expectedStatusCode, rr.Code)
@@ -259,79 +265,14 @@ func TestLiteralRedirectTarget(t *testing.T) {
 	}
 }
 
-func TestRedirectHandlerEmptyPrefix(t *testing.T) {
-	redirects := []webapp.Redirect{
-		{
-			Prefix: "",
-			Target: webapp.LiteralRedirectTarget("https://example.com", http.StatusMovedPermanently),
-		},
-	}
-
-	req := httptest.NewRequest("GET", "http://test.com/path", nil)
-	rr := httptest.NewRecorder()
-
-	mux := http.NewServeMux()
-	webapp.RegisterRedirects(mux, redirects...)
-	mux.ServeHTTP(rr, req)
-
-	if got, want := rr.Code, http.StatusMovedPermanently; got != want {
-		t.Errorf("got status %v, want %v", got, want)
-	}
-}
-
-func TestRedirectHandlerPrefixWithoutTrailingSlash(t *testing.T) {
-	redirects := []webapp.Redirect{
-		{
-			Prefix: "/docs",
-			Target: webapp.LiteralRedirectTarget("https://docs.example.com", http.StatusMovedPermanently),
-		},
-	}
-
-	req := httptest.NewRequest("GET", "http://test.com/docs/page", nil)
-	rr := httptest.NewRecorder()
-
-	mux := http.NewServeMux()
-	webapp.RegisterRedirects(mux, redirects...)
-	mux.ServeHTTP(rr, req)
-
-	if got, want := rr.Code, http.StatusMovedPermanently; got != want {
-		t.Errorf("got status %v, want %v", got, want)
-	}
-	if got, want := rr.Header().Get("Location"), "https://docs.example.com"; got != want {
-		t.Errorf("got location %q, want %q", got, want)
-	}
-}
-
-func TestRedirectHandlerPrefixWithTrailingSlash(t *testing.T) {
-	redirects := []webapp.Redirect{
-		{
-			Prefix: "/api/",
-			Target: webapp.LiteralRedirectTarget("https://api.example.com", http.StatusMovedPermanently),
-		},
-	}
-
-	req := httptest.NewRequest("GET", "http://test.com/api/v1/endpoint", nil)
-	rr := httptest.NewRecorder()
-
-	mux := http.NewServeMux()
-	webapp.RegisterRedirects(mux, redirects...)
-	mux.ServeHTTP(rr, req)
-
-	if got, want := rr.Code, http.StatusMovedPermanently; got != want {
-		t.Errorf("got status %v, want %v", got, want)
-	}
-}
-
 func TestRedirectHandlerRequestWithQueryString(t *testing.T) {
-	redirects := []webapp.Redirect{
-		webapp.RedirectToHTTPSPort(":443"),
-	}
+	redirect := webapp.RedirectToHTTPSPort(":443")
 
 	req := httptest.NewRequest("GET", "http://example.com/path?foo=bar&baz=qux", nil)
 	rr := httptest.NewRecorder()
 
 	mux := http.NewServeMux()
-	webapp.RegisterRedirects(mux, redirects...)
+	mux.Handle("/", redirect.Handler())
 	mux.ServeHTTP(rr, req)
 
 	if got, want := rr.Code, http.StatusMovedPermanently; got != want {
@@ -343,15 +284,13 @@ func TestRedirectHandlerRequestWithQueryString(t *testing.T) {
 }
 
 func TestRedirectHandlerRequestWithFragment(t *testing.T) {
-	redirects := []webapp.Redirect{
-		webapp.RedirectToHTTPSPort(":443"),
-	}
+	redirect := webapp.RedirectToHTTPSPort(":443")
 
 	req := httptest.NewRequest("GET", "http://example.com/path#section", nil)
 	rr := httptest.NewRecorder()
 
 	mux := http.NewServeMux()
-	webapp.RegisterRedirects(mux, redirects...)
+	mux.Handle("/", redirect.Handler())
 	mux.ServeHTTP(rr, req)
 
 	if got, want := rr.Code, http.StatusMovedPermanently; got != want {
@@ -365,15 +304,13 @@ func TestRedirectHandlerRequestWithFragment(t *testing.T) {
 }
 
 func TestRedirectHandlerRootPathRedirect(t *testing.T) {
-	redirects := []webapp.Redirect{
-		webapp.RedirectToHTTPSPort(":443"),
-	}
+	redirect := webapp.RedirectToHTTPSPort(":443")
 
 	req := httptest.NewRequest("GET", "http://example.com/", nil)
 	rr := httptest.NewRecorder()
 
 	mux := http.NewServeMux()
-	webapp.RegisterRedirects(mux, redirects...)
+	mux.Handle("/", redirect.Handler())
 	mux.ServeHTTP(rr, req)
 
 	if got, want := rr.Code, http.StatusMovedPermanently; got != want {
@@ -385,15 +322,13 @@ func TestRedirectHandlerRootPathRedirect(t *testing.T) {
 }
 
 func TestRedirectHandlerEmptyPathRedirect(t *testing.T) {
-	redirects := []webapp.Redirect{
-		webapp.RedirectToHTTPSPort(":443"),
-	}
+	redirect := webapp.RedirectToHTTPSPort(":443")
 
 	req := httptest.NewRequest("GET", "http://example.com", nil)
 	rr := httptest.NewRecorder()
 
 	mux := http.NewServeMux()
-	webapp.RegisterRedirects(mux, redirects...)
+	mux.Handle("/", redirect.Handler())
 	mux.ServeHTTP(rr, req)
 
 	if got, want := rr.Code, http.StatusMovedPermanently; got != want {
@@ -402,15 +337,13 @@ func TestRedirectHandlerEmptyPathRedirect(t *testing.T) {
 }
 
 func TestRedirectHandlerIPv6Host(t *testing.T) {
-	redirects := []webapp.Redirect{
-		webapp.RedirectToHTTPSPort(":443"),
-	}
+	redirect := webapp.RedirectToHTTPSPort(":443")
 
 	req := httptest.NewRequest("GET", "http://[::1]/path", nil)
 	rr := httptest.NewRecorder()
 
 	mux := http.NewServeMux()
-	webapp.RegisterRedirects(mux, redirects...)
+	mux.Handle("/", redirect.Handler())
 	mux.ServeHTTP(rr, req)
 
 	if got, want := rr.Code, http.StatusMovedPermanently; got != want {
@@ -425,20 +358,21 @@ func TestRedirectHandlerIPv6Host(t *testing.T) {
 func TestRedirectHandlerMultipleRedirectsLongestMatch(t *testing.T) {
 	redirects := []webapp.Redirect{
 		{
-			Prefix: "/api",
 			Target: webapp.LiteralRedirectTarget("https://api.example.com", http.StatusMovedPermanently),
 		},
 		{
-			Prefix: "/",
 			Target: webapp.LiteralRedirectTarget("https://www.example.com", http.StatusMovedPermanently),
 		},
 	}
+	prefixes := []string{"/api/", "/"}
 
 	req := httptest.NewRequest("GET", "http://test.com/api/endpoint", nil)
 	rr := httptest.NewRecorder()
 
 	mux := http.NewServeMux()
-	webapp.RegisterRedirects(mux, redirects...)
+	for i := range len(prefixes) {
+		mux.Handle(prefixes[i], redirects[i].Handler())
+	}
 	mux.ServeHTTP(rr, req)
 
 	if got, want := rr.Code, http.StatusMovedPermanently; got != want {
@@ -449,29 +383,14 @@ func TestRedirectHandlerMultipleRedirectsLongestMatch(t *testing.T) {
 	}
 }
 
-func TestRedirectHandlerNoRedirectsConfigured(t *testing.T) {
-	req := httptest.NewRequest("GET", "http://test.com/path", nil)
-	rr := httptest.NewRecorder()
-
-	mux := http.NewServeMux()
-	webapp.RegisterRedirects(mux)
-	mux.ServeHTTP(rr, req)
-
-	if got, want := rr.Code, http.StatusNotFound; got != want {
-		t.Errorf("got status %v, want %v", got, want)
-	}
-}
-
 func TestRedirectHandlerHostWithExplicitPort(t *testing.T) {
-	redirects := []webapp.Redirect{
-		webapp.RedirectToHTTPSPort("example.com:8443"),
-	}
+	redirect := webapp.RedirectToHTTPSPort("example.com:8443")
 
 	req := httptest.NewRequest("GET", "http://test.com:8080/path", nil)
 	rr := httptest.NewRecorder()
 
 	mux := http.NewServeMux()
-	webapp.RegisterRedirects(mux, redirects...)
+	mux.Handle("/", redirect.Handler())
 	mux.ServeHTTP(rr, req)
 
 	if got, want := rr.Code, http.StatusMovedPermanently; got != want {
@@ -483,15 +402,13 @@ func TestRedirectHandlerHostWithExplicitPort(t *testing.T) {
 }
 
 func TestRedirectHandlerFullHostWithPort(t *testing.T) {
-	redirects := []webapp.Redirect{
-		webapp.RedirectToHTTPSPort("newhost.com:9443"),
-	}
+	redirect := webapp.RedirectToHTTPSPort("newhost.com:9443")
 
 	req := httptest.NewRequest("GET", "http://oldhost.com/path", nil)
 	rr := httptest.NewRecorder()
 
 	mux := http.NewServeMux()
-	webapp.RegisterRedirects(mux, redirects...)
+	mux.Handle("/", redirect.Handler())
 	mux.ServeHTTP(rr, req)
 
 	if got, want := rr.Code, http.StatusMovedPermanently; got != want {
@@ -510,7 +427,7 @@ func TestRedirectAcmeHTTP01(t *testing.T) {
 		rr := httptest.NewRecorder()
 
 		mux := http.NewServeMux()
-		webapp.RegisterRedirects(mux, redirect)
+		mux.Handle("/.well-known/acme-challenge/", redirect.Handler())
 		mux.ServeHTTP(rr, req)
 
 		if got, want := rr.Code, http.StatusTemporaryRedirect; got != want {
@@ -528,7 +445,7 @@ func TestRedirectAcmeHTTP01(t *testing.T) {
 		rr := httptest.NewRecorder()
 
 		mux := http.NewServeMux()
-		webapp.RegisterRedirects(mux, redirect)
+		mux.Handle("/.well-known/acme-challenge/", redirect.Handler())
 		mux.ServeHTTP(rr, req)
 
 		if got, want := rr.Code, http.StatusTemporaryRedirect; got != want {
@@ -546,7 +463,7 @@ func TestRedirectAcmeHTTP01(t *testing.T) {
 		rr := httptest.NewRecorder()
 
 		mux := http.NewServeMux()
-		webapp.RegisterRedirects(mux, redirect)
+		mux.Handle("/.well-known/acme-challenge/", redirect.Handler())
 		mux.ServeHTTP(rr, req)
 
 		if got, want := rr.Code, http.StatusNotFound; got != want {

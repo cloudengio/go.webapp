@@ -123,7 +123,11 @@ func prodServe(ctx context.Context, values any, _ []string) error {
 	}
 
 	// Force all http traffic to an https port.
-	if err := webapp.RedirectPort80(ctx, webapp.RedirectToHTTPSPort(cl.Address)); err != nil {
+	if err := webapp.RedirectPort80(ctx,
+		webapp.Port80Redirect{
+			Pattern:  "/",
+			Redirect: webapp.RedirectToHTTPSPort(cl.Address)},
+	); err != nil {
 		return err
 	}
 
