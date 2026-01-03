@@ -55,7 +55,7 @@ func (s Spec) String() string {
 
 // SplitHostnamePath splits the import path into the hostname and
 // path components. The path component will have any trailing slash
-// removed. Use the Hostname and Path methodsto retrieve the components.
+// removed. Use the Hostname and Path methods to retrieve the components.
 func (s *Spec) SplitHostnamePath() error {
 	importPath := s.ImportPath
 	if !strings.Contains(importPath, "://") {

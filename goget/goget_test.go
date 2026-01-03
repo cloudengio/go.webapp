@@ -288,14 +288,17 @@ func TestGoGetHandlerEdgeCases(t *testing.T) {
 			},
 		}
 		mux := http.NewServeMux()
-		next := http.HandlerFunc(func(_ http.ResponseWriter, _ *http.Request) {})
+		nextCalled := false
+		next := http.HandlerFunc(func(_ http.ResponseWriter, _ *http.Request) {
+			nextCalled = true
+		})
 		err := registerHandlers(mux, next, specs)
 		require.NoError(t, err)
 
 		req := httptest.NewRequest("GET", "http://example.com/pkg?go-get=0", nil)
 		w := httptest.NewRecorder()
 		mux.ServeHTTP(w, req)
-
+		assert.True(t, nextCalled, "fallback handler should have been called")
 	})
 }
 
