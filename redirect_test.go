@@ -20,11 +20,6 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-func registerRedirects(mux *http.ServeMux, prefix string, redirect webapp.Redirect) {
-	hdl := redirect.Handler()
-	mux.Handle(prefix, hdl)
-}
-
 func TestRedirectHandler(t *testing.T) {
 	acmeRedirectURL, err := url.Parse("http://acme-handler.example.com")
 	if err != nil {
