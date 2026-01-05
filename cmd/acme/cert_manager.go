@@ -105,7 +105,7 @@ func (certManagerCmd) manageCerts(ctx context.Context, flags any, args []string)
 		httpHandler = httptracing.NewTracingHandler(
 			mgr.HTTPHandler(fallback),
 			httptracing.WithTraceHandlerLogger(logger.With("server", "acme-challenge-http")),
-			httptracing.WithTraceHandlerRequest(httptracing.JSONRequestLogger),
+			httptracing.WithTraceHandlerRequest(httptracing.JSONHandlerRequestLogger),
 			httptracing.WithTraceHandlerResponse(httptracing.JSONHandlerResponseLogger),
 		)
 	}
