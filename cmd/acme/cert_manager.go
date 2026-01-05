@@ -83,9 +83,9 @@ func (certManagerCmd) manageCerts(ctx context.Context, flags any, args []string)
 	if cl.Trace {
 		clientOpts = append(clientOpts,
 			webapp.WithTracingTransport(
-				httptracing.WithTracingLogger(logger),
-				httptracing.WithTraceRequestBody(httptracing.JSONRequestBodyLogger),
-				httptracing.WithTraceResponseBody(httptracing.JSONResponseBodyLogger)),
+				httptracing.WithTraceLogger(logger),
+				httptracing.WithTraceRequest(httptracing.JSONRequestLogger),
+				httptracing.WithTraceResponse(httptracing.JSONResponseLogger)),
 		)
 	}
 	clientOpts = append(clientOpts, webapp.WithCustomCAPEMFile(cl.TestingCAPEM))
@@ -104,9 +104,9 @@ func (certManagerCmd) manageCerts(ctx context.Context, flags any, args []string)
 	if cl.Trace {
 		httpHandler = httptracing.NewTracingHandler(
 			mgr.HTTPHandler(fallback),
-			httptracing.WithHandlerLogger(logger.With("server", "acme-challenge-http")),
-			httptracing.WithHandlerRequestBody(httptracing.JSONRequestBodyLogger),
-			httptracing.WithHandlerResponseBody(httptracing.JSONHandlerResponseLogger),
+			httptracing.WithTraceHandlerLogger(logger.With("server", "acme-challenge-http")),
+			httptracing.WithTraceHandlerRequest(httptracing.JSONRequestLogger),
+			httptracing.WithTraceHandlerResponse(httptracing.JSONHandlerResponseLogger),
 		)
 	}
 
