@@ -57,7 +57,6 @@ type options struct {
 	deniedCounter     webapp.CounterInc
 	notAllowedCounter webapp.CounterInc
 	errorCounter      webapp.CounterInc
-	label             string
 }
 
 // WithAddressExtractor returns an Option that sets the AddressExtractor.
