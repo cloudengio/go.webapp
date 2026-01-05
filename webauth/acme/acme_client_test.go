@@ -21,6 +21,7 @@ import (
 	"cloudeng.io/webapp"
 	"cloudeng.io/webapp/webauth/acme"
 	"cloudeng.io/webapp/webauth/acme/certcache"
+	"cloudeng.io/webapp/webauth/acme/pebble"
 	"cloudeng.io/webapp/webauth/acme/pebble/pebbletest"
 )
 
@@ -31,7 +32,7 @@ func TestACMEClient_FullFlow(t *testing.T) {
 	tmpDir := t.TempDir()
 
 	// Start a pebble server.
-	pebbleServer, pebbleCfg, recorder, pebbleCacheDir, pebbleTestDir := pebbletest.Start(ctx, t, tmpDir)
+	pebbleServer, pebbleCfg, recorder, pebbleCacheDir, pebbleTestDir := pebbletest.Start(ctx, t, tmpDir, pebbletest.WithServerOptions(pebble.WithNoSleep()))
 	defer func() {
 		then := time.Now()
 		if err := pebbleServer.EnsureStopped(context.Background(), time.Second*5); err != nil {
@@ -61,9 +62,9 @@ func TestACMEClient_FullFlow(t *testing.T) {
 	mgr.Client.HTTPClient, err = webapp.NewHTTPClient(ctx,
 		webapp.WithCustomCAPEMFile(filepath.Join(pebbleTestDir, pebbleCfg.CAFile)),
 		webapp.WithTracingTransport(
-			httptracing.WithTracingLogger(tl.With("component", "acme_http_client")),
-			httptracing.WithTraceRequestBody(httptracing.JSONOrTextRequestBodyLogger),
-			httptracing.WithTraceResponseBody(httptracing.JSONOrTextResponseBodyLogger)),
+			httptracing.WithTraceLogger(tl.With("component", "acme_http_client")),
+			httptracing.WithTraceRequest(httptracing.JSONOrTextRequestLogger),
+			httptracing.WithTraceResponse(httptracing.JSONOrTextResponseLogger)),
 	)
 	if err != nil {
 		t.Fatalf("failed to create acme manager http client: %v", err)
@@ -79,9 +80,9 @@ func TestACMEClient_FullFlow(t *testing.T) {
 	}
 
 	th := httptracing.NewTracingHandler(httpServer.Handler,
-		httptracing.WithHandlerLogger(tl.With("component", "acme_http_server")),
-		httptracing.WithHandlerRequestBody(httptracing.JSONOrTextRequestBodyLogger),
-		httptracing.WithHandlerResponseBody(httptracing.JSONOrTextHandlerResponseLogger),
+		httptracing.WithTraceHandlerLogger(tl.With("component", "acme_http_server")),
+		httptracing.WithTraceHandlerRequest(httptracing.JSONOrTextHandlerRequestLogger),
+		httptracing.WithTraceHandlerResponse(httptracing.JSONOrTextHandlerResponseLogger),
 	)
 	httpServer.Handler = th
 
