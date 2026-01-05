@@ -21,58 +21,89 @@ import (
 // Client implements an ACME client that periodically refreshes
 // certificates for a set of hosts using the provided autocert.Manager.
 type Client struct {
-	logger   *slog.Logger
-	mgr      *autocert.Manager
-	interval time.Duration
-	hosts    []string
+	mgr  *autocert.Manager
+	opts clientOptions
 }
 
-func NewClient(mgr *autocert.Manager, refreshInterval time.Duration, hosts ...string) *Client {
-	return &Client{
-		mgr:      mgr,
-		interval: refreshInterval,
-		hosts:    slices.Clone(hosts),
+type clientOption func(o *clientOptions)
+
+type clientOptions struct {
+	refreshInterval time.Duration
+	refreshMetric   webapp.CounterVecInc
+}
+
+// WithRefreshInterval configures the client to refresh certificates
+// at the provided interval. The default is 1 hour.
+func WithRefreshInterval(interval time.Duration) clientOption {
+	return func(o *clientOptions) {
+		o.refreshInterval = interval
 	}
 }
 
-func (s *Client) Start(ctx context.Context) (func() error, error) {
+// WithRefreshMetric configures the client to increment the provided metric
+// with the outcome of each refresh operation. The metric will be
+// incremented with the labels: host, status.
+func WithRefreshMetric(refresh webapp.CounterVecInc) clientOption {
+	return func(o *clientOptions) {
+		o.refreshMetric = refresh
+	}
+}
+
+// NewClient creates a new client that refreshes certificates for the
+// provided hosts using the autocert.Manager.
+func NewClient(mgr *autocert.Manager, opts ...clientOption) *Client {
+	opts = append(opts, WithRefreshInterval(1*time.Hour))
+	var o clientOptions
+	for _, opt := range opts {
+		opt(&o)
+	}
+	return &Client{
+		mgr:  mgr,
+		opts: o,
+	}
+}
+
+// Start starts the client, refreshing certificates for the provided hosts.
+// It returns a function that can be called to stop the client.
+func (s *Client) Start(ctx context.Context, hosts ...string) (func() error, error) {
+	hosts = slices.Clone(hosts)
 	refreshCtx, cancel := context.WithCancel(ctx)
-	s.logger = ctxlog.Logger(ctx).With("component", "acme_client")
+	logger := ctxlog.Logger(ctx).With("component", "acme_client")
 	errCh := make(chan error, 1)
-	go s.refresh(refreshCtx, errCh)
+	go s.refresh(refreshCtx, logger, errCh, hosts)
 	return func() error {
-		return s.stop(cancel, errCh)
+		return s.stop(logger, cancel, errCh)
 	}, nil
 }
 
-func (s *Client) stop(cancel func(), errCh <-chan error) error {
+func (s *Client) stop(logger *slog.Logger, cancel func(), errCh <-chan error) error {
 	cancel()
-	s.logger.Info("stopping acme client")
+	logger.Info("stopping acme client")
 	select {
 	case err := <-errCh:
 		if err != nil {
-			s.logger.Error("acme client stopped with error", "error", err)
+			logger.Error("acme client stopped with error", "error", err)
 		} else {
-			s.logger.Info("acme client stopped")
+			logger.Info("acme client stopped")
 		}
 		return err
 	case <-time.After(5 * time.Second):
-		s.logger.Warn("timeout waiting for acme server to stop")
+		logger.Warn("timeout waiting for acme server to stop")
 		return fmt.Errorf("timeout waiting for acme server to stop")
 	}
 }
 
-func (s *Client) refresh(ctx context.Context, errCh chan<- error) {
+func (s *Client) refresh(ctx context.Context, logger *slog.Logger, errCh chan<- error, hosts []string) {
 	grp := &errgroup.T{}
-	for _, host := range s.hosts {
+	for _, host := range hosts {
 		h := host
 		grp.Go(func() error {
-			ctxlog.Logger(ctx).Info("starting certificate refresh loop", "host", h, "interval", s.interval.String())
-			ticker := time.NewTicker(s.interval)
+			logger.Info("starting certificate refresh loop", "host", h, "interval", s.opts.refreshInterval.String())
+			ticker := time.NewTicker(s.opts.refreshInterval)
 			defer ticker.Stop()
 			for {
-				if err := s.refreshHost(ctx, h); err != nil {
-					ctxlog.Logger(ctx).Error("failed to refresh certificate using tls hello", "host", h, "error", err)
+				if err := s.refreshHost(ctx, logger, h); err != nil {
+					logger.Error("failed to refresh certificate using tls hello", "host", h, "error", err)
 				}
 				select {
 				case <-ctx.Done():
@@ -85,21 +116,27 @@ func (s *Client) refresh(ctx context.Context, errCh chan<- error) {
 	errCh <- grp.Wait()
 }
 
-func (s *Client) refreshHost(ctx context.Context, host string) error {
+func (s *Client) refreshHost(ctx context.Context, logger *slog.Logger, host string) error {
 	hello := tls.ClientHelloInfo{
 		ServerName:       host,
 		CipherSuites:     webapp.PreferredCipherSuites,
 		SignatureSchemes: webapp.PreferredSignatureSchemes,
 	}
-	ctxlog.Logger(ctx).Info("refreshing certificate using tls hello", "host", host)
+	logger.Info("refreshing certificate using tls hello", "host", host)
 	cert, err := s.mgr.GetCertificate(&hello)
 	if err != nil {
+		if s.opts.refreshMetric != nil {
+			s.opts.refreshMetric(ctx, host, err.Error())
+		}
 		return err
 	}
 	leaf := cert.Leaf
-	ctxlog.Logger(ctx).Info("refreshed certificate using tls hello", "host", host, "expiry", leaf.NotAfter, "serial", fmt.Sprintf("%0*x", len(leaf.SerialNumber.Bytes())*2, leaf.SerialNumber))
+	logger.Info("refreshed certificate using tls hello", "host", host, "expiry", leaf.NotAfter, "serial", fmt.Sprintf("%0*x", len(leaf.SerialNumber.Bytes())*2, leaf.SerialNumber))
+	if s.opts.refreshMetric != nil {
+		s.opts.refreshMetric(ctx, host, "ok")
+	}
 	if time.Now().After(leaf.NotAfter) {
-		ctxlog.Logger(ctx).Warn("certificate has expired", "host", host, "expiry", leaf.NotAfter, "serial", fmt.Sprintf("%0*x", len(leaf.SerialNumber.Bytes())*2, leaf.SerialNumber))
+		logger.Warn("certificate has expired", "host", host, "expiry", leaf.NotAfter, "serial", fmt.Sprintf("%0*x", len(leaf.SerialNumber.Bytes())*2, leaf.SerialNumber))
 	}
 	return nil
 }
