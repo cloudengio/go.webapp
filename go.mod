@@ -8,7 +8,7 @@ require (
 	cloudeng.io/file v0.0.0-20260103230226-ab5a7d039924
 	cloudeng.io/io v0.0.0-20260103215246-58ebe1762d14
 	cloudeng.io/logging v0.0.0-20260103230226-ab5a7d039924
-	cloudeng.io/net v0.0.0-20260103230226-ab5a7d039924
+	cloudeng.io/net v0.0.0-20260105001028-464ff5af0c62
 	cloudeng.io/os v0.0.0-20260103230226-ab5a7d039924
 	cloudeng.io/sync v0.0.9-0.20251108012845-0faa368df158
 	github.com/chromedp/cdproto v0.0.0-20250803210736-d308e07a266d
