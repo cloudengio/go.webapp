@@ -25,7 +25,7 @@ type Client struct {
 	opts clientOptions
 }
 
-type clientOption func(o *clientOptions)
+type ClientOption func(o *clientOptions)
 
 type clientOptions struct {
 	refreshInterval time.Duration
@@ -34,7 +34,7 @@ type clientOptions struct {
 
 // WithRefreshInterval configures the client to refresh certificates
 // at the provided interval. The default is 1 hour.
-func WithRefreshInterval(interval time.Duration) clientOption {
+func WithRefreshInterval(interval time.Duration) ClientOption {
 	return func(o *clientOptions) {
 		o.refreshInterval = interval
 	}
@@ -43,7 +43,7 @@ func WithRefreshInterval(interval time.Duration) clientOption {
 // WithRefreshMetric configures the client to increment the provided metric
 // with the outcome of each refresh operation. The metric will be
 // incremented with the labels: host, status.
-func WithRefreshMetric(refresh webapp.CounterVecInc) clientOption {
+func WithRefreshMetric(refresh webapp.CounterVecInc) ClientOption {
 	return func(o *clientOptions) {
 		o.refreshMetric = refresh
 	}
@@ -51,7 +51,7 @@ func WithRefreshMetric(refresh webapp.CounterVecInc) clientOption {
 
 // NewClient creates a new client that refreshes certificates for the
 // provided hosts using the autocert.Manager.
-func NewClient(mgr *autocert.Manager, opts ...clientOption) *Client {
+func NewClient(mgr *autocert.Manager, opts ...ClientOption) *Client {
 	opts = append(opts, WithRefreshInterval(1*time.Hour))
 	var o clientOptions
 	for _, opt := range opts {
