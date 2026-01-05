@@ -48,18 +48,42 @@ func (o *Recorder) String() string {
 	return string(o.buf)
 }
 
+type Option func(o *options)
+
+type options struct {
+	serverOpts []pebble.ServerOption
+	configOpts []pebble.ConfigOption
+}
+
+func WithServerOptions(opts ...pebble.ServerOption) Option {
+	return func(o *options) {
+		o.serverOpts = append(o.serverOpts, opts...)
+	}
+}
+
+func WithConfigOptions(opts ...pebble.ConfigOption) Option {
+	return func(o *options) {
+		o.configOpts = append(o.configOpts, opts...)
+	}
+}
+
 // Start starts a pebble ACME server for testing purposes.
-func Start(ctx context.Context, t Testing, tmpDir string, configOpts ...pebble.ConfigOption) (*pebble.T, pebble.Config, *Recorder, string, string) {
+func Start(ctx context.Context, t Testing, tmpDir string, opts ...Option) (*pebble.T, pebble.Config, *Recorder, string, string) {
 	t.Helper()
+
+	var o options
+	for _, opt := range opts {
+		opt(&o)
+	}
 	pebbleCacheDir := filepath.Join(tmpDir, "certcache")
 	if err := os.MkdirAll(pebbleCacheDir, 0700); err != nil {
 		t.Fatalf("failed to create pebble cache dir: %v", err)
 	}
 
-	pebbleServer := pebble.New("pebble")
+	pebbleServer := pebble.New("pebble", o.serverOpts...)
 	pebbleTestDir := filepath.Join(tmpDir, "pebble-test")
 
-	cfg := pebble.NewConfig(configOpts...)
+	cfg := pebble.NewConfig(o.configOpts...)
 	pebbleCfg, err := cfg.CreateCertsAndUpdateConfig(ctx, pebbleTestDir)
 	if err != nil {
 		t.Fatalf("failed to create pebble certs: %v", err)
