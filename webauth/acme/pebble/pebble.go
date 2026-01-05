@@ -100,7 +100,7 @@ func (p *T) Start(ctx context.Context, dir, cfg string, forward io.WriteCloser) 
 	p.cmd.Stdout = filter
 	p.cmd.Stderr = filter
 	if p.opts.noSleep {
-		p.cmd.Env = append(p.cmd.Env, "PEBBLE_VA_NOSLEEP=1")
+		p.cmd.Env = append(os.Environ(), "PEBBLE_VA_NOSLEEP=1")
 	}
 	p.closer = filter
 	if err := p.cmd.Start(); err != nil {
