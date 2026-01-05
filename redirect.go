@@ -104,7 +104,7 @@ func RedirectToHTTPSPort(addr string) Redirect {
 }
 
 // Port80Redirect is a Redirect that that will be registered using
-// http.ServeMux with the specified pattern/
+// http.ServeMux with the specified pattern.
 type Port80Redirect struct {
 	Pattern string
 	Redirect

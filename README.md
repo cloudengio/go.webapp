@@ -421,7 +421,7 @@ type Port80Redirect struct {
 }
 ```
 Port80Redirect is a Redirect that that will be registered using
-http.ServeMux with the specified pattern/
+http.ServeMux with the specified pattern.
 
 
 ### Type Redirect
