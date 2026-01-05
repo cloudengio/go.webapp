@@ -116,7 +116,7 @@ func TestACLHandler(t *testing.T) {
 		w.WriteHeader(http.StatusOK)
 	})
 
-	handler := NewACLHandler(nextHandler, acl)
+	handler := NewHandler(nextHandler, acl)
 
 	tests := []struct {
 		remoteAddr string
@@ -223,7 +223,7 @@ func TestACLHandlerWithExtractor(t *testing.T) {
 		w.WriteHeader(http.StatusOK)
 	})
 
-	handler := NewACLHandler(nextHandler, acl, WithAddressExtractor(XForwardedForExtractor))
+	handler := NewHandler(nextHandler, acl, WithAddressExtractor(XForwardedForExtractor))
 
 	tests := []struct {
 		header     string
@@ -249,10 +249,10 @@ func TestACLHandlerWithExtractor(t *testing.T) {
 
 func TestAllowConfig(t *testing.T) {
 	tests := []struct {
-		name        string
-		config      AllowConfig
-		wantHandler bool
-		wantErr     bool
+		name          string
+		config        AllowConfig
+		wantExtractor bool
+		wantErr       bool
 	}{
 		{
 			name: "direct",
@@ -260,8 +260,8 @@ func TestAllowConfig(t *testing.T) {
 				Addresses: []string{"127.0.0.1"},
 				Direct:    true,
 			},
-			wantHandler: true,
-			wantErr:     false,
+			wantExtractor: true,
+			wantErr:       false,
 		},
 		{
 			name: "proxy",
@@ -269,16 +269,16 @@ func TestAllowConfig(t *testing.T) {
 				Addresses: []string{"127.0.0.1"},
 				Proxy:     true,
 			},
-			wantHandler: true,
-			wantErr:     false,
+			wantExtractor: true,
+			wantErr:       false,
 		},
 		{
 			name: "neither",
 			config: AllowConfig{
 				Addresses: []string{"127.0.0.1"},
 			},
-			wantHandler: false,
-			wantErr:     true,
+			wantExtractor: false,
+			wantErr:       true,
 		},
 		{
 			name: "both (error)",
@@ -287,28 +287,28 @@ func TestAllowConfig(t *testing.T) {
 				Direct:    true,
 				Proxy:     true,
 			},
-			wantHandler: false,
-			wantErr:     true,
+			wantExtractor: false,
+			wantErr:       true,
 		},
 		{
 			name: "no addresses",
 			config: AllowConfig{
 				Direct: true,
 			},
-			wantHandler: false,
-			wantErr:     true,
+			wantExtractor: true, // AddressExtractor doesn't care about addresses
+			wantErr:       false,
 		},
 	}
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			handler, err := tc.config.NewHandler(http.HandlerFunc(func(_ http.ResponseWriter, _ *http.Request) {}))
+			extractor, err := tc.config.AddressExtractor()
 			if (err != nil) != tc.wantErr {
-				t.Errorf("NewHandler() error = %v, wantErr %v", err, tc.wantErr)
+				t.Errorf("AddressExtractor() error = %v, wantErr %v", err, tc.wantErr)
 				return
 			}
-			if tc.wantHandler && handler == nil {
-				t.Error("NewHandler() returned nil")
+			if tc.wantExtractor && extractor == nil {
+				t.Error("AddressExtractor() returned nil")
 			}
 		})
 	}

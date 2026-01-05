@@ -11,6 +11,8 @@ import (
 	"strings"
 
 	"cloudeng.io/logging/ctxlog"
+	"cloudeng.io/net/netutil"
+	"cloudeng.io/webapp"
 	"github.com/gaissmai/bart"
 )
 
@@ -29,18 +31,7 @@ func NewACL(addrs ...string) (*ACL, error) {
 	}
 	acl := &bart.Lite{}
 	for _, addr := range addrs {
-		if !strings.Contains(addr, "/") {
-			ip, err := netip.ParseAddr(addr)
-			if err != nil {
-				return nil, err
-			}
-			if ip.Is4() {
-				addr += "/32"
-			} else {
-				addr += "/128"
-			}
-		}
-		p, err := netip.ParsePrefix(addr)
+		p, err := netutil.ParseAddrOrPrefix(addr)
 		if err != nil {
 			return nil, err
 		}
@@ -62,12 +53,22 @@ type AddressExtractor func(r *http.Request) (string, netip.Addr, error)
 
 type options struct {
 	extractor AddressExtractor
+	counter   webapp.CounterInc
+	label     string
 }
 
 // WithAddressExtractor returns an Option that sets the AddressExtractor.
 func WithAddressExtractor(extractor AddressExtractor) Option {
 	return func(o *options) {
 		o.extractor = extractor
+	}
+}
+
+// WithDeniedCounter returns an Option that sets the Counter that is
+// incremented when a request is denied.
+func WithDeniedCounter(counter webapp.CounterInc) Option {
+	return func(o *options) {
+		o.counter = counter
 	}
 }
 
@@ -102,11 +103,11 @@ func XForwardedForExtractor(r *http.Request) (string, netip.Addr, error) {
 	return clientIP, ap, err
 }
 
-// NewACLHandler creates a new http.Handler that enforces the given ACL.
+// NewHandler creates a new http.Handler that enforces the given ACL.
 // If the request's remote IP address is not allowed by the ACL,
 // a 403 Forbidden response is returned, otherwise the request is
 // passed to the given handler.
-func NewACLHandler(handler http.Handler, acl *ACL, opts ...Option) http.Handler {
+func NewHandler(handler http.Handler, acl *ACL, opts ...Option) http.Handler {
 	ach := &aclHandler{
 		acl:     acl,
 		handler: handler,
@@ -131,12 +132,20 @@ func (h *aclHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	clientIP, ip, err := h.opts.extractor(r)
 	if err != nil {
 		http.Error(w, "forbidden", http.StatusForbidden)
-		ctxlog.Debug(r.Context(), "failed to parse remote address", "remote_addr", clientIP, "error", err)
+		ctx := r.Context()
+		ctxlog.Debug(ctx, "failed to parse remote address", "remote_addr", clientIP, "error", err)
+		if h.opts.counter != nil {
+			h.opts.counter(ctx)
+		}
 		return
 	}
 	if !h.acl.Allowed(ip) {
+		ctx := r.Context()
 		http.Error(w, "forbidden", http.StatusForbidden)
-		ctxlog.Debug(r.Context(), "ip address not allowed by acl", "ip", clientIP)
+		ctxlog.Debug(ctx, "ip address not allowed by acl", "ip", clientIP)
+		if h.opts.counter != nil {
+			h.opts.counter(ctx)
+		}
 		return
 	}
 	h.handler.ServeHTTP(w, r)
@@ -154,24 +163,16 @@ func (c AllowConfig) NewACL() (*ACL, error) {
 	return NewACL(c.Addresses...)
 }
 
-// NewHandler creates a new http.Handler that enforces the given ACL.
-func (c AllowConfig) NewHandler(handler http.Handler) (http.Handler, error) {
-	acl, err := c.NewACL()
-	if err != nil {
-		return nil, err
-	}
+// AddressExtractor returns an Option that sets the AddressExtractor.
+func (c AllowConfig) AddressExtractor() (AddressExtractor, error) {
 	if c.Direct && c.Proxy {
 		return nil, fmt.Errorf("both direct and proxy are set")
 	}
-	if !c.Direct && !c.Proxy {
-		return nil, fmt.Errorf("neither direct nor proxy is set")
-	}
-	opts := []Option{}
 	if c.Direct {
-		opts = append(opts, WithAddressExtractor(RemoteAddrExtractor))
+		return RemoteAddrExtractor, nil
 	}
 	if c.Proxy {
-		opts = append(opts, WithAddressExtractor(XForwardedForExtractor))
+		return XForwardedForExtractor, nil
 	}
-	return NewACLHandler(handler, acl, opts...), nil
+	return nil, fmt.Errorf("neither direct nor proxy is set")
 }
