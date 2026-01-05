@@ -120,6 +120,10 @@ func WithCounter(counter webapp.CounterInc) Option {
 // the trailing slash. The returned handler will call the provided next
 // handler if the request is not a go-get request. Take care to set the
 // appropriate next handler for the root path "/".
+// The go-get redirect will be served if go-get=1 is present in the query
+// parameters and the request path matches the path component of the import
+// path. If the request includes a host name, it must match the hostname
+// component of the import path.
 func (s *Spec) NewHandler(next http.Handler, opts ...Option) (http.Handler, error) {
 	if next == nil {
 		next = http.NotFoundHandler()

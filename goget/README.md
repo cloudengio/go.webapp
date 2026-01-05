@@ -6,6 +6,24 @@ import cloudeng.io/webapp/goget
 
 
 ## Types
+### Type Option
+```go
+type Option func(*options)
+```
+Option is used to configure the creation and registration of go-get
+handlers.
+
+### Functions
+
+```go
+func WithCounter(counter webapp.CounterInc) Option
+```
+WithCounter configures the handler to increment the provided metric when a
+go-get request is handled.
+
+
+
+
 ### Type Spec
 ```go
 type Spec struct {
@@ -30,12 +48,16 @@ YAML.
 
 
 ```go
-func (s *Spec) NewHandler(next http.Handler) (http.Handler, error)
+func (s *Spec) NewHandler(next http.Handler, opts ...Option) (http.Handler, error)
 ```
 NewHandler creates a new http.Handler for a given go-get specification
 and returns the path that the handler should be registered at, without the
-trailing slash. The returned handler will call the provided next handler if
-the request is not a go-get request.
+trailing slash. The returned handler will call the provided next handler
+if the request is not a go-get request. Take care to set the appropriate
+next handler for the root path "/". The go-get redirect will be served if
+go-get=1 is present in the query parameters and the request path matches
+the path component of the import path. If the request includes a host name,
+it must match the hostname component of the import path.
 
 
 ```go

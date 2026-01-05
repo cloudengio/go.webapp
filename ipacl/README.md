@@ -6,13 +6,16 @@ import cloudeng.io/webapp/ipacl
 
 
 ## Functions
-### Func NewACLHandler
+### Func NewHandler
 ```go
-func NewACLHandler(handler http.Handler, acl *ACL, opts ...Option) http.Handler
+func NewHandler(handler http.Handler, allow, deny Contains, opts ...Option) http.Handler
 ```
-NewACLHandler creates a new http.Handler that enforces the given ACL. If
-the request's remote IP address is not allowed by the ACL, a 403 Forbidden
-response is returned, otherwise the request is passed to the given handler.
+NewHandler creates a new http.Handler that enforces allow and deny ACLs.
+The deny ACL takes precedence over the allow ACL. If no ACLs are supplied
+then the handler allows all requests. If the remote IP cannot be determined
+or parsed then the request is denied. If the request's remote IP address is
+not allowed by the ACL, a 403 Forbidden response is returned, otherwise the
+request is passed to the given handler.
 
 ### Func RemoteAddrExtractor
 ```go
@@ -55,9 +58,9 @@ If a single IP address is provided, it is treated as a /32 (for IPv4) or
 ### Methods
 
 ```go
-func (a *ACL) Allowed(ip netip.Addr) bool
+func (a *ACL) Contains(ip netip.Addr) bool
 ```
-Allowed returns whether the given IP address is allowed by the ACL.
+Contains returns whether the given IP address is allowed by the ACL.
 
 
 
@@ -70,30 +73,38 @@ AddressExtractor represents a function that extracts an IP address from an
 HTTP request.
 
 
-### Type AllowConfig
+### Type Config
 ```go
-type AllowConfig struct {
+type Config struct {
 	Addresses []string `yaml:"addresses" cmd:"list of ip addresses or cidr prefixes"`
 	Direct    bool     `yaml:"direct" cmd:"set to true to use the requests.RemoteAddr"`   // Use the requests.RemoteAddr
 	Proxy     bool     `yaml:"proxy" cmd:"set to true to use the X-Forwarded-For header"` // Use the X-Forwarded-For header
 }
 ```
-AllowConfig represents an IP address access control list configuration.
+Config represents an IP address access control list configuration.
 
 ### Methods
 
 ```go
-func (c AllowConfig) NewACL() (*ACL, error)
+func (c Config) AddressExtractor() (AddressExtractor, error)
+```
+AddressExtractor returns an Option that sets the AddressExtractor.
+
+
+```go
+func (c Config) NewACL() (*ACL, error)
 ```
 NewACL creates a new ACL from the given configuration.
 
 
+
+
+### Type Contains
 ```go
-func (c AllowConfig) NewHandler(handler http.Handler) (http.Handler, error)
+type Contains func(ip netip.Addr) bool
 ```
-NewHandler creates a new http.Handler that enforces the given ACL.
-
-
+Contains represents a function that returns whether the given IP address is
+in the ACL.
 
 
 ### Type Option
@@ -108,6 +119,15 @@ Option represents an option for NewACLHandler.
 func WithAddressExtractor(extractor AddressExtractor) Option
 ```
 WithAddressExtractor returns an Option that sets the AddressExtractor.
+
+
+```go
+func WithCounters(deniedCounter, notAllowedCounter, errorCounter webapp.CounterInc) Option
+```
+WithCounters returns an Option that sets three Counters: 1. one that is
+incremented when a request is denied because the IP address is in the deny
+ACL 2. one that is incremented if the address is not in the allow ACL 3.
+one that is incremented on error
 
 
 

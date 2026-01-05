@@ -62,17 +62,29 @@ func (g GoGetTest) Run(ctx context.Context) error
 
 
 
+### Type HealthzSpec
+```go
+type HealthzSpec struct {
+	URL             string        `yaml:"url" json:"url"`
+	Interval        time.Duration `yaml:"interval" json:"interval"`
+	Timeout         time.Duration `yaml:"timeout" json:"timeout"`
+	NumHealthChecks int           `yaml:"num_health_checks" json:"num_health_checks"`
+}
+```
+
+
 ### Type HealthzTest
 ```go
 type HealthzTest struct {
 	// contains filtered or unexported fields
 }
 ```
+HealthzTest can be used to validate /healthz endpoints.
 
 ### Functions
 
 ```go
-func NewHealthzTest(client *http.Client, healthcheckURL string, interval time.Duration, numHealthChecks int) *HealthzTest
+func NewHealthzTest(client *http.Client, specs ...HealthzSpec) *HealthzTest
 ```
 
 
@@ -110,9 +122,9 @@ RedirectTest can be used to validate redirects for a set of URLs.
 ```go
 func NewRedirectTest(client *http.Client, redirects ...RedirectSpec) *RedirectTest
 ```
-NewRedirectTest creates a new RedirectTest, it if client.CheckRedirect is
-nil, it will be set to http.ErrUseLastResponse to ensure that redirects are
-not followed.
+NewRedirectTest creates a new RedirectTest, if client.CheckRedirect is nil,
+it will be set to http.ErrUseLastResponse to ensure that redirects are not
+followed.
 
 
 

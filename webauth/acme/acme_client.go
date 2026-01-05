@@ -54,6 +54,7 @@ func WithRefreshMetric(refresh webapp.CounterVecInc) clientOption {
 func NewClient(mgr *autocert.Manager, opts ...clientOption) *Client {
 	opts = append(opts, WithRefreshInterval(1*time.Hour))
 	var o clientOptions
+	o.refreshMetric = func(context.Context, ...string) {}
 	for _, opt := range opts {
 		opt(&o)
 	}
@@ -125,18 +126,16 @@ func (s *Client) refreshHost(ctx context.Context, logger *slog.Logger, host stri
 	logger.Info("refreshing certificate using tls hello", "host", host)
 	cert, err := s.mgr.GetCertificate(&hello)
 	if err != nil {
-		if s.opts.refreshMetric != nil {
-			s.opts.refreshMetric(ctx, host, err.Error())
-		}
+		s.opts.refreshMetric(ctx, host, err.Error())
 		return err
 	}
 	leaf := cert.Leaf
 	logger.Info("refreshed certificate using tls hello", "host", host, "expiry", leaf.NotAfter, "serial", fmt.Sprintf("%0*x", len(leaf.SerialNumber.Bytes())*2, leaf.SerialNumber))
-	if s.opts.refreshMetric != nil {
-		s.opts.refreshMetric(ctx, host, "ok")
-	}
 	if time.Now().After(leaf.NotAfter) {
 		logger.Warn("certificate has expired", "host", host, "expiry", leaf.NotAfter, "serial", fmt.Sprintf("%0*x", len(leaf.SerialNumber.Bytes())*2, leaf.SerialNumber))
+		s.opts.refreshMetric(ctx, host, "expired")
+	} else {
+		s.opts.refreshMetric(ctx, host, "ok")
 	}
 	return nil
 }
