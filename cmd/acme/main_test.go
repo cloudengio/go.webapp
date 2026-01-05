@@ -88,7 +88,7 @@ func TestCertRenewal(t *testing.T) {
 	tmpDir := t.TempDir()
 
 	pebbleServer, pebbleCfg, recorder, pebbleCacheDir, pebbleTestDir := pebbletest.Start(ctx, t, tmpDir,
-		pebble.WithValidityPeriod(10), // short lived certs to force renewal
+		pebbletest.WithConfigOptions(pebble.WithValidityPeriod(10)), // short lived certs to force renewal
 	)
 	defer pebbleServer.EnsureStopped(ctx, time.Second) //nolint:errcheck
 

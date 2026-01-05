@@ -21,7 +21,12 @@ func TestVerifyHealthz(t *testing.T) {
 	defer server.Close()
 
 	client := server.Client()
-	ht := testwebapp.NewHealthzTest(client, server.URL+"/healthz", time.Millisecond, 1)
+	spec := testwebapp.HealthzSpec{
+		URL:             server.URL + "/healthz",
+		Interval:        time.Millisecond,
+		NumHealthChecks: 1,
+	}
+	ht := testwebapp.NewHealthzTest(client, spec)
 
 	if err := ht.Run(t.Context()); err != nil {
 		t.Fatalf("healthz check failed: %v", err)
@@ -43,7 +48,12 @@ func TestVerifyHealthz_Failures(t *testing.T) {
 	client := server.Client()
 
 	t.Run("status_error", func(t *testing.T) {
-		ht := testwebapp.NewHealthzTest(client, server.URL+"/healthz-error", time.Millisecond, 1)
+		spec := testwebapp.HealthzSpec{
+			URL:             server.URL + "/healthz-error",
+			Interval:        time.Millisecond,
+			NumHealthChecks: 1,
+		}
+		ht := testwebapp.NewHealthzTest(client, spec)
 		err := ht.Run(t.Context())
 		if err == nil {
 			t.Fatal("expected error, got nil")
@@ -54,7 +64,12 @@ func TestVerifyHealthz_Failures(t *testing.T) {
 	})
 
 	t.Run("body_error", func(t *testing.T) {
-		ht := testwebapp.NewHealthzTest(client, server.URL+"/healthz-bad-body", time.Millisecond, 1)
+		spec := testwebapp.HealthzSpec{
+			URL:             server.URL + "/healthz-bad-body",
+			Interval:        time.Millisecond,
+			NumHealthChecks: 1,
+		}
+		ht := testwebapp.NewHealthzTest(client, spec)
 		err := ht.Run(t.Context())
 		if err == nil {
 			t.Fatal("expected error, got nil")

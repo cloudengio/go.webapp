@@ -5,6 +5,7 @@
 package ipacl
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"net/netip"
@@ -40,8 +41,8 @@ func NewACL(addrs ...string) (*ACL, error) {
 	return &ACL{acl: acl}, nil
 }
 
-// Allowed returns whether the given IP address is allowed by the ACL.
-func (a *ACL) Allowed(ip netip.Addr) bool {
+// Contains returns whether the given IP address is allowed by the ACL.
+func (a *ACL) Contains(ip netip.Addr) bool {
 	return a.acl.Contains(ip)
 }
 
@@ -52,9 +53,10 @@ type Option func(o *options)
 type AddressExtractor func(r *http.Request) (string, netip.Addr, error)
 
 type options struct {
-	extractor AddressExtractor
-	counter   webapp.CounterInc
-	label     string
+	extractor         AddressExtractor
+	deniedCounter     webapp.CounterInc
+	notAllowedCounter webapp.CounterInc
+	errorCounter      webapp.CounterInc
 }
 
 // WithAddressExtractor returns an Option that sets the AddressExtractor.
@@ -64,11 +66,16 @@ func WithAddressExtractor(extractor AddressExtractor) Option {
 	}
 }
 
-// WithDeniedCounter returns an Option that sets the Counter that is
-// incremented when a request is denied.
-func WithDeniedCounter(counter webapp.CounterInc) Option {
+// WithCounters returns an Option that sets three Counters:
+// 1. one that is incremented when a request is denied because the
+// IP address is in the deny ACL
+// 2. one that is incremented if the address is not in the allow ACL
+// 3. one that is incremented on error
+func WithCounters(deniedCounter, notAllowedCounter, errorCounter webapp.CounterInc) Option {
 	return func(o *options) {
-		o.counter = counter
+		o.deniedCounter = deniedCounter
+		o.notAllowedCounter = notAllowedCounter
+		o.errorCounter = errorCounter
 	}
 }
 
@@ -103,14 +110,35 @@ func XForwardedForExtractor(r *http.Request) (string, netip.Addr, error) {
 	return clientIP, ap, err
 }
 
-// NewHandler creates a new http.Handler that enforces the given ACL.
+// Contains represents a function that returns whether the given IP address
+// is in the ACL.
+type Contains func(ip netip.Addr) bool
+
+func noopCounter(context.Context) {}
+
+// NewHandler creates a new http.Handler that enforces allow and deny ACLs.
+// The deny ACL takes precedence over the allow ACL. If no ACLs are supplied
+// then the handler allows all requests. If the remote IP cannot be
+// determined or parsed then the request is denied.
 // If the request's remote IP address is not allowed by the ACL,
 // a 403 Forbidden response is returned, otherwise the request is
 // passed to the given handler.
-func NewHandler(handler http.Handler, acl *ACL, opts ...Option) http.Handler {
+func NewHandler(handler http.Handler, allow, deny Contains, opts ...Option) http.Handler {
+	if allow == nil {
+		allow = func(netip.Addr) bool { return true }
+	}
+	if deny == nil {
+		deny = func(netip.Addr) bool { return false }
+	}
 	ach := &aclHandler{
-		acl:     acl,
+		allowed: allow,
+		denied:  deny,
 		handler: handler,
+		opts: options{
+			notAllowedCounter: noopCounter,
+			deniedCounter:     noopCounter,
+			errorCounter:      noopCounter,
+		},
 	}
 	for _, opt := range opts {
 		opt(&ach.opts)
@@ -123,7 +151,8 @@ func NewHandler(handler http.Handler, acl *ACL, opts ...Option) http.Handler {
 
 type aclHandler struct {
 	opts    options
-	acl     *ACL
+	allowed Contains
+	denied  Contains
 	handler http.Handler
 }
 
@@ -131,40 +160,42 @@ type aclHandler struct {
 func (h *aclHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	clientIP, ip, err := h.opts.extractor(r)
 	if err != nil {
+		h.opts.errorCounter(r.Context())
 		http.Error(w, "forbidden", http.StatusForbidden)
-		ctx := r.Context()
-		ctxlog.Debug(ctx, "failed to parse remote address", "remote_addr", clientIP, "error", err)
-		if h.opts.counter != nil {
-			h.opts.counter(ctx)
-		}
+		ctxlog.Debug(r.Context(), "failed to parse remote address", "remote_addr", clientIP, "error", err)
 		return
 	}
-	if !h.acl.Allowed(ip) {
-		ctx := r.Context()
+	forbidden := false
+	if h.denied(ip) {
+		forbidden = true
+		h.opts.deniedCounter(r.Context())
+	}
+	if !forbidden && !h.allowed(ip) {
+		forbidden = true
+		h.opts.notAllowedCounter(r.Context())
+	}
+	if forbidden {
 		http.Error(w, "forbidden", http.StatusForbidden)
-		ctxlog.Debug(ctx, "ip address not allowed by acl", "ip", clientIP)
-		if h.opts.counter != nil {
-			h.opts.counter(ctx)
-		}
+		ctxlog.Debug(r.Context(), "ip address not allowed by acl", "ip", clientIP)
 		return
 	}
 	h.handler.ServeHTTP(w, r)
 }
 
-// AllowConfig represents an IP address access control list configuration.
-type AllowConfig struct {
+// Config represents an IP address access control list configuration.
+type Config struct {
 	Addresses []string `yaml:"addresses" cmd:"list of ip addresses or cidr prefixes"`
 	Direct    bool     `yaml:"direct" cmd:"set to true to use the requests.RemoteAddr"`   // Use the requests.RemoteAddr
 	Proxy     bool     `yaml:"proxy" cmd:"set to true to use the X-Forwarded-For header"` // Use the X-Forwarded-For header
 }
 
 // NewACL creates a new ACL from the given configuration.
-func (c AllowConfig) NewACL() (*ACL, error) {
+func (c Config) NewACL() (*ACL, error) {
 	return NewACL(c.Addresses...)
 }
 
 // AddressExtractor returns an Option that sets the AddressExtractor.
-func (c AllowConfig) AddressExtractor() (AddressExtractor, error) {
+func (c Config) AddressExtractor() (AddressExtractor, error) {
 	if c.Direct && c.Proxy {
 		return nil, fmt.Errorf("both direct and proxy are set")
 	}

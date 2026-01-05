@@ -15,16 +15,17 @@ import (
 // HealthzTest can be used to validate /healthz endpoints.
 type HealthzTest struct {
 	client *http.Client
-	specs  []HealtzSpec
+	specs  []HealthzSpec
 }
 
-type HealtzSpec struct {
-	HealthcheckURL  string        `yaml:"healthcheck_url" json:"healthcheck_url"`
+type HealthzSpec struct {
+	URL             string        `yaml:"url" json:"url"`
 	Interval        time.Duration `yaml:"interval" json:"interval"`
+	Timeout         time.Duration `yaml:"timeout" json:"timeout"`
 	NumHealthChecks int           `yaml:"num_health_checks" json:"num_health_checks"`
 }
 
-func NewHealthzTest(client *http.Client, specs ...HealtzSpec) *HealthzTest {
+func NewHealthzTest(client *http.Client, specs ...HealthzSpec) *HealthzTest {
 	return &HealthzTest{
 		client: client,
 		specs:  specs,
@@ -41,13 +42,19 @@ func (h HealthzTest) Run(ctx context.Context) error {
 	return g.Wait()
 }
 
-func (h HealthzTest) run(ctx context.Context, spec HealtzSpec) error {
+func (h HealthzTest) run(ctx context.Context, spec HealthzSpec) error {
+	timeout := spec.Timeout
+	if timeout == 0 {
+		timeout = time.Second
+	}
 	for i := 0; i < spec.NumHealthChecks; i++ {
-		ctxlog.Info(ctx, "healthz: checking", "url", spec.HealthcheckURL, "attempt", i+1)
-		req, err := http.NewRequestWithContext(ctx, "GET", spec.HealthcheckURL, nil)
+		ctxlog.Info(ctx, "healthz: checking", "url", spec.URL, "attempt", i+1)
+		req, err := http.NewRequestWithContext(ctx, "GET", spec.URL, nil)
 		if err != nil {
 			return fmt.Errorf("healthz: creating request: %w", err)
 		}
+		ctx, cancel := context.WithTimeout(ctx, timeout)
+		defer cancel()
 		resp, err := h.client.Do(req)
 		if err != nil {
 			return fmt.Errorf("healthz: performing request: %w", err)
@@ -63,7 +70,7 @@ func (h HealthzTest) run(ctx context.Context, spec HealtzSpec) error {
 		if string(body) != "ok\n" {
 			return fmt.Errorf("healthz: unexpected body: %q", string(body))
 		}
-		ctxlog.Info(ctx, "healthz: check successful", "url", spec.HealthcheckURL, "attempt", i+1)
+		ctxlog.Info(ctx, "healthz: check successful", "url", spec.URL, "attempt", i+1)
 		if i < spec.NumHealthChecks-1 {
 			timer := time.NewTimer(spec.Interval)
 			select {

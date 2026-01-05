@@ -49,7 +49,7 @@ func TestPebble(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to build mock pebble: %v", err)
 	}
-	p := pebble.New(mockPebblePath)
+	p := pebble.New(mockPebblePath, pebble.WithNoSleep())
 	out := &output{}
 	defer ensureStopped(t, p, out)
 

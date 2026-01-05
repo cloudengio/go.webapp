@@ -6,15 +6,6 @@ package webapp
 
 import "context"
 
-// Collector is an interface for collecting metrics,
-// it mirrors the interface of the prometheus Collector
-// but is parameterized by the metric and descriptor types
-// to avoid a direct dependency on the prometheus package.
-type Collector[Metric, Desc any] interface {
-	Describe(chan<- *Desc)
-	Collect(chan<- Metric)
-}
-
 // CounterInc is a function that increments a counter metric.
 type CounterInc func(ctx context.Context)
 
