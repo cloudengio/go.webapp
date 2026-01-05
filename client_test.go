@@ -168,7 +168,7 @@ func TestNewHTTPClient(t *testing.T) {
 		logger := slog.New(slog.NewJSONHandler(&logBuf, nil))
 
 		client, err := webapp.NewHTTPClient(ctx, webapp.WithTracingTransport(
-			httptracing.WithTracingLogger(logger),
+			httptracing.WithTraceLogger(logger),
 		))
 		if err != nil {
 			t.Fatalf("NewHTTPClient with tracing failed: %v", err)

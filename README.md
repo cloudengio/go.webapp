@@ -19,6 +19,12 @@ same application.
 An example/template can be found in cmd/webapp.
 
 ## Constants
+### ACMEHTTP01Prefix
+```go
+ACMEHTTP01Prefix = "/.well-known/acme-challenge/"
+
+```
+
 ### PreferredTLSMinVersion
 ```go
 PreferredTLSMinVersion = tls.VersionTLS13
@@ -111,9 +117,8 @@ set to log errors via the ctxlog package.
 ```go
 func NewTLSServer(ctx context.Context, addr string, handler http.Handler, cfg *tls.Config) (net.Listener, *http.Server, error)
 ```
-NewTLSServer returns a new *http.Server using ParseAddrPortDefaults(addr,
-"https") to obtain the address to listen on and NewTLSServerOnly to create
-the server.
+NewTLSServer returns a new *http.Server using addr, "https") to obtain the
+address to listen on and NewTLSServerOnly to create the server.
 
 ### Func NewTLSServerOnly
 ```go
@@ -123,13 +128,6 @@ NewTLSServerOnly returns a new *http.Server whose address defaults to
 ":https" and with it's BaseContext set to the supplied context and TLSConfig
 set to the supplied config. ErrorLog is set to log errors via the ctxlog
 package.
-
-### Func ParseAddrPortDefaults
-```go
-func ParseAddrPortDefaults(addr, port string) string
-```
-ParseAddrPortDefaults parses addr and returns an address:port string.
-If addr does not contain a port then the supplied port is used.
 
 ### Func ParseCertsPEM
 ```go
@@ -165,18 +163,11 @@ the specified file.
 
 ### Func RedirectPort80
 ```go
-func RedirectPort80(ctx context.Context, redirects ...Redirect) error
+func RedirectPort80(ctx context.Context, redirects ...Port80Redirect) error
 ```
 RedirectPort80 starts an http.Server that will redirect port 80 to the
 specified redirect targets. The server will run in the background until the
 supplied context is canceled.
-
-### Func RegisterRedirects
-```go
-func RegisterRedirects(mux ServeMux, redirects ...Redirect)
-```
-RegisterRedirects registers the specified redirects with the specified
-ServeMux.
 
 ### Func SafePath
 ```go
@@ -201,14 +192,6 @@ func ServeWithShutdown(ctx context.Context, ln net.Listener, srv *http.Server, g
 ServeWithShutdown runs srv.ListenAndServe in background and then waits for
 the context to be canceled. It will then attempt to shutdown the web server
 within the specified grace period.
-
-### Func SplitHostPort
-```go
-func SplitHostPort(hostport string) (string, string)
-```
-SplitHostPort splits hostport into host and port. If hostport does not
-contain a port, then the returned port is empty. It assumes that the
-hostport is a valid ipv4 or ipv6 address.
 
 ### Func TLSConfigUsingCertFiles
 ```go
@@ -317,6 +300,36 @@ refreshed. This is generally only required for testing purposes.
 
 
 
+### Type CounterAdd
+```go
+type CounterAdd func(ctx context.Context, delta float64)
+```
+CounterAdd is a function that adds a delta to a counter metric.
+
+
+### Type CounterInc
+```go
+type CounterInc func(ctx context.Context)
+```
+CounterInc is a function that increments a counter metric.
+
+
+### Type CounterVecAdd
+```go
+type CounterVecAdd func(ctx context.Context, delta float64, labels ...string)
+```
+CounterVecAdd is a function that adds a delta to a counter metric with the
+given labels.
+
+
+### Type CounterVecInc
+```go
+type CounterVecInc func(ctx context.Context, labels ...string)
+```
+CounterVecInc is a function that increments a counter metric with the given
+labels.
+
+
 ### Type HTTPClientOption
 ```go
 type HTTPClientOption func(o *httpClientOptions)
@@ -392,10 +405,27 @@ HTTPServerConfig returns an HTTPServerConfig based on the supplied flags.
 
 
 
+### Type Observe
+```go
+type Observe func(ctx context.Context, value float64)
+```
+Observe is a function that records a value for an observer metric.
+
+
+### Type Port80Redirect
+```go
+type Port80Redirect struct {
+	Pattern string
+	Redirect
+}
+```
+Port80Redirect is a Redirect that that will be registered using
+http.ServeMux with the specified pattern/
+
+
 ### Type Redirect
 ```go
 type Redirect struct {
-	Prefix      string         // prefix to match assuming http.ServeMux rules and registers the handler for both the prefix and prefix/.
 	Description string         // description of the redirect, only used for logging
 	Target      RedirectTarget // function that returns the target URL and HTTP status code
 	Log         bool           // if true then log the redirect
@@ -453,17 +483,6 @@ LiteralRedirectTarget returns a RedirectTarget that always redirects to the
 specified URL with the specified status code.
 
 
-
-
-### Type ServeMux
-```go
-type ServeMux interface {
-	Handle(pattern string, handler http.Handler)
-	ServeHTTP(w http.ResponseWriter, r *http.Request)
-}
-```
-ServeMux is an interface that can be used to register HTTP handlers. It is
-provided for use with other middleware packages that expect an http.Handler.
 
 
 ### Type TLSCertConfig
