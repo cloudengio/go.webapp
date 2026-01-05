@@ -121,57 +121,70 @@ func TestACLHandler(t *testing.T) {
 		w.WriteHeader(http.StatusOK)
 	})
 
-	handler := NewHandler(nextHandler, allow.Contains, deny.Contains)
-
-	tests := []struct {
+	type testCase struct {
 		remoteAddr string
 		wantStatus int
-	}{
-		{"127.0.0.1:1234", http.StatusOK},
-		{"127.0.0.2:1234", http.StatusForbidden},
-		{"127.0.0.3:1234", http.StatusForbidden},
-		{"192.168.1.50:80", http.StatusOK},
-		{"192.168.2.50:80", http.StatusForbidden},
-		{"invalid:80", http.StatusForbidden},
-		{"1.2.3.4", http.StatusForbidden}, // Missing port
 	}
 
-	for _, tc := range tests {
-		req := httptest.NewRequest("GET", "/", nil)
-		req.RemoteAddr = tc.remoteAddr
-		w := httptest.NewRecorder()
+	runTests := func(handler http.Handler, cases []testCase) {
+		t.Helper()
+		for _, tc := range cases {
+			t.Run(tc.remoteAddr, func(t *testing.T) {
+				t.Helper()
+				req := httptest.NewRequest("GET", "/", nil)
+				req.RemoteAddr = tc.remoteAddr
+				w := httptest.NewRecorder()
 
-		handler.ServeHTTP(w, req)
+				handler.ServeHTTP(w, req)
 
-		if got, want := w.Code, tc.wantStatus; got != want {
-			t.Errorf("ServeHTTP(%v) status = %v, want %v", tc.remoteAddr, got, want)
+				if got, want := w.Code, tc.wantStatus; got != want {
+					t.Errorf("ServeHTTP(%v) status = %v, want %v", tc.remoteAddr, got, want)
+				}
+			})
 		}
 	}
 
-	tests = []struct {
-		remoteAddr string
-		wantStatus int
-	}{
+	noACL := []testCase{
 		{"127.0.0.1:1234", http.StatusOK},
 		{"127.0.0.2:1234", http.StatusOK},
 		{"127.0.0.3:1234", http.StatusOK},
 		{"192.168.1.50:80", http.StatusOK},
 		{"192.168.2.50:80", http.StatusOK},
 		{"invalid:80", http.StatusForbidden},
-		{"1.2.3.4", http.StatusOK}, // Missing port
+		{"1.2.3.4", http.StatusOK},
 	}
-	handler = NewHandler(nextHandler, nil, nil)
-	for _, tc := range tests {
-		req := httptest.NewRequest("GET", "/", nil)
-		req.RemoteAddr = tc.remoteAddr
-		w := httptest.NewRecorder()
+	runTests(NewHandler(nextHandler, nil, nil), noACL)
 
-		handler.ServeHTTP(w, req)
+	allowAndDeny := []testCase{
+		{"127.0.0.1:1234", http.StatusOK},
+		{"127.0.0.2:1234", http.StatusForbidden},
+		{"127.0.0.3:1234", http.StatusForbidden},
+		{"192.168.1.50:80", http.StatusOK},
+		{"192.168.2.50:80", http.StatusForbidden},
+		{"invalid:80", http.StatusForbidden},
+		{"1.2.3.4", http.StatusForbidden}}
+	runTests(NewHandler(nextHandler, allow.Contains, deny.Contains), allowAndDeny)
 
-		if got, want := w.Code, tc.wantStatus; got != want {
-			t.Errorf("ServeHTTP(%v) status = %v, want %v", tc.remoteAddr, got, want)
-		}
-	}
+	allowOnly := []testCase{
+		{"127.0.0.1:1234", http.StatusOK},
+		{"192.168.1.50:80", http.StatusOK},
+		{"127.0.0.2:1234", http.StatusForbidden},
+		{"127.0.0.3:1234", http.StatusOK},
+		{"192.168.2.50:80", http.StatusForbidden},
+		{"invalid:80", http.StatusForbidden},
+		{"1.2.3.4", http.StatusForbidden}}
+	runTests(NewHandler(nextHandler, allow.Contains, nil), allowOnly)
+
+	denyOnly := []testCase{
+		{"127.0.0.1:1234", http.StatusOK},
+		{"127.0.0.2:1234", http.StatusForbidden},
+		{"127.0.0.3:1234", http.StatusForbidden},
+		{"192.168.1.50:80", http.StatusOK},
+		{"192.168.2.50:80", http.StatusForbidden},
+		{"invalid:80", http.StatusForbidden},
+		{"1.2.3.4", http.StatusOK}}
+	runTests(NewHandler(nextHandler, nil, deny.Contains), denyOnly)
+
 }
 
 func TestXForwardedForExtractor(t *testing.T) {
@@ -375,11 +388,14 @@ func TestACLHandlerCounters(t *testing.T) {
 	}{
 		{"10.0.0.1:1234", http.StatusOK, 0, 0, 0},
 		{"10.0.0.2:1234", http.StatusForbidden, 1, 0, 0},
-		{"10.0.0.3:1234", http.StatusForbidden, 1, 1, 0},
-		{"invalid", http.StatusForbidden, 1, 1, 1},
+		{"10.0.0.3:1234", http.StatusForbidden, 0, 1, 0},
+		{"invalid", http.StatusForbidden, 0, 0, 1},
 	}
 
 	for i, tc := range tests {
+		deniedCount = 0
+		notAllowedCount = 0
+		errorCount = 0
 		req := httptest.NewRequest("GET", "/", nil)
 		req.RemoteAddr = tc.remoteAddr
 		w := httptest.NewRecorder()

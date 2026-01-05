@@ -53,10 +53,11 @@ type Option func(o *options)
 type AddressExtractor func(r *http.Request) (string, netip.Addr, error)
 
 type options struct {
-	extractor                     AddressExtractor
-	deniedCounter, allowedCounter webapp.CounterInc
-	errorCounter                  webapp.CounterInc
-	label                         string
+	extractor         AddressExtractor
+	deniedCounter     webapp.CounterInc
+	notAllowedCounter webapp.CounterInc
+	errorCounter      webapp.CounterInc
+	label             string
 }
 
 // WithAddressExtractor returns an Option that sets the AddressExtractor.
@@ -71,10 +72,10 @@ func WithAddressExtractor(extractor AddressExtractor) Option {
 // IP address is in the deny ACL
 // 2. one that is incremented if the address is not in the allow ACL
 // 3. one that is incremented on error
-func WithCounters(denied, allowed, error webapp.CounterInc) Option {
+func WithCounters(denied, notAllowed, error webapp.CounterInc) Option {
 	return func(o *options) {
 		o.deniedCounter = denied
-		o.allowedCounter = allowed
+		o.notAllowedCounter = notAllowed
 		o.errorCounter = error
 	}
 }
@@ -135,9 +136,9 @@ func NewHandler(handler http.Handler, allow, deny Contains, opts ...Option) http
 		denied:  deny,
 		handler: handler,
 		opts: options{
-			allowedCounter: noopCounter,
-			deniedCounter:  noopCounter,
-			errorCounter:   noopCounter,
+			notAllowedCounter: noopCounter,
+			deniedCounter:     noopCounter,
+			errorCounter:      noopCounter,
 		},
 	}
 	for _, opt := range opts {
@@ -162,12 +163,7 @@ func (h *aclHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		h.opts.errorCounter(r.Context())
 		http.Error(w, "forbidden", http.StatusForbidden)
-		ctx := r.Context()
-		ctxlog.Debug(ctx, "failed to parse remote address", "remote_addr", clientIP, "error", err)
-		return
-	}
-	if h.denied == nil && h.allowed == nil {
-		h.handler.ServeHTTP(w, r)
+		ctxlog.Debug(r.Context(), "failed to parse remote address", "remote_addr", clientIP, "error", err)
 		return
 	}
 	forbidden := false
@@ -177,12 +173,11 @@ func (h *aclHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	if !forbidden && !h.allowed(ip) {
 		forbidden = true
-		h.opts.allowedCounter(r.Context())
+		h.opts.notAllowedCounter(r.Context())
 	}
 	if forbidden {
-		ctx := r.Context()
 		http.Error(w, "forbidden", http.StatusForbidden)
-		ctxlog.Debug(ctx, "ip address not allowed by acl", "ip", clientIP)
+		ctxlog.Debug(r.Context(), "ip address not allowed by acl", "ip", clientIP)
 		return
 	}
 	h.handler.ServeHTTP(w, r)
