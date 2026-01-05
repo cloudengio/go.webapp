@@ -5,6 +5,7 @@
 package ipacl
 
 import (
+	"context"
 	"net/http"
 	"net/http/httptest"
 	"net/netip"
@@ -39,8 +40,8 @@ func TestACL(t *testing.T) {
 			t.Errorf("failed to parse %v: %v", tc.ip, err)
 			continue
 		}
-		if got, want := acl.Allowed(ip), tc.allowed; got != want {
-			t.Errorf("Allowed(%v) = %v, want %v", tc.ip, got, want)
+		if got, want := acl.Contains(ip), tc.allowed; got != want {
+			t.Errorf("Contains(%v) = %v, want %v", tc.ip, got, want)
 		}
 	}
 }
@@ -88,8 +89,8 @@ func TestACLSingleAddresses(t *testing.T) {
 			if err != nil {
 				t.Fatalf("failed to parse check IP %v: %v", tc.checkIP, err)
 			}
-			if got, want := acl.Allowed(ip), tc.allowed; got != want {
-				t.Errorf("Allowed(%v) = %v, want %v", tc.checkIP, got, want)
+			if got, want := acl.Contains(ip), tc.allowed; got != want {
+				t.Errorf("Contains(%v) = %v, want %v", tc.checkIP, got, want)
 			}
 		})
 	}
@@ -107,7 +108,11 @@ func TestACLInvalid(t *testing.T) {
 }
 
 func TestACLHandler(t *testing.T) {
-	acl, err := NewACL("127.0.0.1", "192.168.1.0/24")
+	allow, err := NewACL("127.0.0.1", "192.168.1.0/24", "127.0.0.3")
+	if err != nil {
+		t.Fatal(err)
+	}
+	deny, err := NewACL("127.0.0.2", "192.168.2.0/24", "127.0.0.3")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -116,7 +121,7 @@ func TestACLHandler(t *testing.T) {
 		w.WriteHeader(http.StatusOK)
 	})
 
-	handler := NewHandler(nextHandler, acl)
+	handler := NewHandler(nextHandler, allow.Contains, deny.Contains)
 
 	tests := []struct {
 		remoteAddr string
@@ -124,12 +129,38 @@ func TestACLHandler(t *testing.T) {
 	}{
 		{"127.0.0.1:1234", http.StatusOK},
 		{"127.0.0.2:1234", http.StatusForbidden},
+		{"127.0.0.3:1234", http.StatusForbidden},
 		{"192.168.1.50:80", http.StatusOK},
 		{"192.168.2.50:80", http.StatusForbidden},
 		{"invalid:80", http.StatusForbidden},
 		{"1.2.3.4", http.StatusForbidden}, // Missing port
 	}
 
+	for _, tc := range tests {
+		req := httptest.NewRequest("GET", "/", nil)
+		req.RemoteAddr = tc.remoteAddr
+		w := httptest.NewRecorder()
+
+		handler.ServeHTTP(w, req)
+
+		if got, want := w.Code, tc.wantStatus; got != want {
+			t.Errorf("ServeHTTP(%v) status = %v, want %v", tc.remoteAddr, got, want)
+		}
+	}
+
+	tests = []struct {
+		remoteAddr string
+		wantStatus int
+	}{
+		{"127.0.0.1:1234", http.StatusOK},
+		{"127.0.0.2:1234", http.StatusOK},
+		{"127.0.0.3:1234", http.StatusOK},
+		{"192.168.1.50:80", http.StatusOK},
+		{"192.168.2.50:80", http.StatusOK},
+		{"invalid:80", http.StatusForbidden},
+		{"1.2.3.4", http.StatusOK}, // Missing port
+	}
+	handler = NewHandler(nextHandler, nil, nil)
 	for _, tc := range tests {
 		req := httptest.NewRequest("GET", "/", nil)
 		req.RemoteAddr = tc.remoteAddr
@@ -223,7 +254,7 @@ func TestACLHandlerWithExtractor(t *testing.T) {
 		w.WriteHeader(http.StatusOK)
 	})
 
-	handler := NewHandler(nextHandler, acl, WithAddressExtractor(XForwardedForExtractor))
+	handler := NewHandler(nextHandler, acl.Contains, nil, WithAddressExtractor(XForwardedForExtractor))
 
 	tests := []struct {
 		header     string
@@ -247,16 +278,16 @@ func TestACLHandlerWithExtractor(t *testing.T) {
 	}
 }
 
-func TestAllowConfig(t *testing.T) {
+func TestConfig(t *testing.T) {
 	tests := []struct {
 		name          string
-		config        AllowConfig
+		config        Config
 		wantExtractor bool
 		wantErr       bool
 	}{
 		{
 			name: "direct",
-			config: AllowConfig{
+			config: Config{
 				Addresses: []string{"127.0.0.1"},
 				Direct:    true,
 			},
@@ -265,7 +296,7 @@ func TestAllowConfig(t *testing.T) {
 		},
 		{
 			name: "proxy",
-			config: AllowConfig{
+			config: Config{
 				Addresses: []string{"127.0.0.1"},
 				Proxy:     true,
 			},
@@ -274,7 +305,7 @@ func TestAllowConfig(t *testing.T) {
 		},
 		{
 			name: "neither",
-			config: AllowConfig{
+			config: Config{
 				Addresses: []string{"127.0.0.1"},
 			},
 			wantExtractor: false,
@@ -282,7 +313,7 @@ func TestAllowConfig(t *testing.T) {
 		},
 		{
 			name: "both (error)",
-			config: AllowConfig{
+			config: Config{
 				Addresses: []string{"127.0.0.1"},
 				Direct:    true,
 				Proxy:     true,
@@ -292,7 +323,7 @@ func TestAllowConfig(t *testing.T) {
 		},
 		{
 			name: "no addresses",
-			config: AllowConfig{
+			config: Config{
 				Direct: true,
 			},
 			wantExtractor: true, // AddressExtractor doesn't care about addresses
@@ -311,5 +342,61 @@ func TestAllowConfig(t *testing.T) {
 				t.Error("AddressExtractor() returned nil")
 			}
 		})
+	}
+}
+
+func TestACLHandlerCounters(t *testing.T) {
+	allow, err := NewACL("10.0.0.1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	deny, err := NewACL("10.0.0.2")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var deniedCount, notAllowedCount, errorCount int
+	deniedCounter := func(context.Context) { deniedCount++ }
+	notAllowedCounter := func(context.Context) { notAllowedCount++ }
+	errorCounter := func(context.Context) { errorCount++ }
+
+	nextHandler := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})
+
+	handler := NewHandler(nextHandler, allow.Contains, deny.Contains, WithCounters(deniedCounter, notAllowedCounter, errorCounter))
+
+	tests := []struct {
+		remoteAddr          string
+		wantStatus          int
+		wantDeniedCount     int
+		wantNotAllowedCount int
+		wantErrorCount      int
+	}{
+		{"10.0.0.1:1234", http.StatusOK, 0, 0, 0},
+		{"10.0.0.2:1234", http.StatusForbidden, 1, 0, 0},
+		{"10.0.0.3:1234", http.StatusForbidden, 1, 1, 0},
+		{"invalid", http.StatusForbidden, 1, 1, 1},
+	}
+
+	for i, tc := range tests {
+		req := httptest.NewRequest("GET", "/", nil)
+		req.RemoteAddr = tc.remoteAddr
+		w := httptest.NewRecorder()
+
+		handler.ServeHTTP(w, req)
+
+		if got, want := w.Code, tc.wantStatus; got != want {
+			t.Errorf("case %d: ServeHTTP(%v) status = %v, want %v", i, tc.remoteAddr, got, want)
+		}
+		if deniedCount != tc.wantDeniedCount {
+			t.Errorf("case %d: deniedCount = %v, want %v", i, deniedCount, tc.wantDeniedCount)
+		}
+		if notAllowedCount != tc.wantNotAllowedCount {
+			t.Errorf("case %d: notAllowedCount = %v, want %v", i, notAllowedCount, tc.wantNotAllowedCount)
+		}
+		if errorCount != tc.wantErrorCount {
+			t.Errorf("case %d: errorCount = %v, want %v", i, errorCount, tc.wantErrorCount)
+		}
 	}
 }
