@@ -9,29 +9,42 @@ import (
 	"time"
 
 	"cloudeng.io/logging/ctxlog"
+	"cloudeng.io/sync/errgroup"
 )
 
 // HealthzTest can be used to validate /healthz endpoints.
 type HealthzTest struct {
-	client          *http.Client
-	healthcheckURL  string
-	interval        time.Duration
-	numHealthChecks int
+	client *http.Client
+	specs  []HealtzSpec
 }
 
-func NewHealthzTest(client *http.Client, healthcheckURL string, interval time.Duration, numHealthChecks int) *HealthzTest {
+type HealtzSpec struct {
+	HealthcheckURL  string        `yaml:"healthcheck_url" json:"healthcheck_url"`
+	Interval        time.Duration `yaml:"interval" json:"interval"`
+	NumHealthChecks int           `yaml:"num_health_checks" json:"num_health_checks"`
+}
+
+func NewHealthzTest(client *http.Client, specs ...HealtzSpec) *HealthzTest {
 	return &HealthzTest{
-		client:          client,
-		healthcheckURL:  healthcheckURL,
-		interval:        interval,
-		numHealthChecks: numHealthChecks,
+		client: client,
+		specs:  specs,
 	}
 }
 
 func (h HealthzTest) Run(ctx context.Context) error {
-	for i := 0; i < h.numHealthChecks; i++ {
-		ctxlog.Info(ctx, "healthz: checking", "url", h.healthcheckURL, "attempt", i+1)
-		req, err := http.NewRequestWithContext(ctx, "GET", h.healthcheckURL, nil)
+	var g errgroup.T
+	for _, spec := range h.specs {
+		g.Go(func() error {
+			return h.run(ctx, spec)
+		})
+	}
+	return g.Wait()
+}
+
+func (h HealthzTest) run(ctx context.Context, spec HealtzSpec) error {
+	for i := 0; i < spec.NumHealthChecks; i++ {
+		ctxlog.Info(ctx, "healthz: checking", "url", spec.HealthcheckURL, "attempt", i+1)
+		req, err := http.NewRequestWithContext(ctx, "GET", spec.HealthcheckURL, nil)
 		if err != nil {
 			return fmt.Errorf("healthz: creating request: %w", err)
 		}
@@ -50,9 +63,9 @@ func (h HealthzTest) Run(ctx context.Context) error {
 		if string(body) != "ok\n" {
 			return fmt.Errorf("healthz: unexpected body: %q", string(body))
 		}
-		ctxlog.Info(ctx, "healthz: check successful", "url", h.healthcheckURL, "attempt", i+1)
-		if i < h.numHealthChecks-1 {
-			timer := time.NewTimer(h.interval)
+		ctxlog.Info(ctx, "healthz: check successful", "url", spec.HealthcheckURL, "attempt", i+1)
+		if i < spec.NumHealthChecks-1 {
+			timer := time.NewTimer(spec.Interval)
 			select {
 			case <-timer.C:
 			case <-ctx.Done():

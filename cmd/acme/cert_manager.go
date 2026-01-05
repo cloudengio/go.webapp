@@ -83,9 +83,9 @@ func (certManagerCmd) manageCerts(ctx context.Context, flags any, args []string)
 	if cl.Trace {
 		clientOpts = append(clientOpts,
 			webapp.WithTracingTransport(
-				httptracing.WithTracingLogger(logger),
-				httptracing.WithTraceRequestBody(httptracing.JSONRequestBodyLogger),
-				httptracing.WithTraceResponseBody(httptracing.JSONResponseBodyLogger)),
+				httptracing.WithTraceLogger(logger),
+				httptracing.WithTraceRequest(httptracing.JSONOrTextRequestLogger),
+				httptracing.WithTraceResponse(httptracing.JSONOrTextResponseLogger)),
 		)
 	}
 	clientOpts = append(clientOpts, webapp.WithCustomCAPEMFile(cl.TestingCAPEM))
@@ -104,9 +104,9 @@ func (certManagerCmd) manageCerts(ctx context.Context, flags any, args []string)
 	if cl.Trace {
 		httpHandler = httptracing.NewTracingHandler(
 			mgr.HTTPHandler(fallback),
-			httptracing.WithHandlerLogger(logger.With("server", "acme-challenge-http")),
-			httptracing.WithHandlerRequestBody(httptracing.JSONRequestBodyLogger),
-			httptracing.WithHandlerResponseBody(httptracing.JSONHandlerResponseLogger),
+			httptracing.WithTraceHandlerLogger(logger.With("server", "acme-challenge-http")),
+			httptracing.WithTraceHandlerRequest(httptracing.JSONOrTextHandlerRequestLogger),
+			httptracing.WithTraceHandlerResponse(httptracing.JSONOrTextHandlerResponseLogger),
 		)
 	}
 
@@ -125,9 +125,9 @@ func (certManagerCmd) manageCerts(ctx context.Context, flags any, args []string)
 		return fmt.Errorf("http server failed to start: %w", err)
 	}
 
-	acmeClient := acme.NewClient(mgr, cl.RefreshInterval, args...)
+	acmeClient := acme.NewClient(mgr, acme.WithRefreshInterval(cl.RefreshInterval))
 
-	stopAcmeClient, err := acmeClient.Start(ctx)
+	stopAcmeClient, err := acmeClient.Start(ctx, args...)
 	if err != nil {
 		return fmt.Errorf("failed to start acme client: %w", err)
 	}

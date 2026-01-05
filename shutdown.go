@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"cloudeng.io/logging/ctxlog"
+	"cloudeng.io/net/netutil"
 	"cloudeng.io/sync/errgroup"
 )
 
@@ -107,17 +108,21 @@ func NewTLSServerOnly(ctx context.Context, addr string, handler http.Handler, cf
 // NewHTTPServer returns a new *http.Server using ParseAddrPortDefaults(addr, "http")
 // to obtain the address to listen on and NewHTTPServerOnly to create the server.
 func NewHTTPServer(ctx context.Context, addr string, handler http.Handler) (net.Listener, *http.Server, error) {
-	return newServer(ctx, ParseAddrPortDefaults(addr, "http"), handler, nil)
+	return newServer(ctx, addr, "http", handler, nil)
 }
 
-// NewTLSServer returns a new *http.Server using ParseAddrPortDefaults(addr, "https")
+// NewTLSServer returns a new *http.Server using addr, "https")
 // to obtain the address to listen on and NewTLSServerOnly to create the server.
 func NewTLSServer(ctx context.Context, addr string, handler http.Handler, cfg *tls.Config) (net.Listener, *http.Server, error) {
-	return newServer(ctx, ParseAddrPortDefaults(addr, "https"), handler, cfg)
+	return newServer(ctx, addr, "https", handler, cfg)
 }
 
-func newServer(ctx context.Context, addr string, handler http.Handler, cfg *tls.Config) (net.Listener, *http.Server, error) {
-	ln, err := net.Listen("tcp", addr)
+func newServer(ctx context.Context, addr, port string, handler http.Handler, cfg *tls.Config) (net.Listener, *http.Server, error) {
+	ap, err := netutil.ParseAddrDefaultPort(addr, port)
+	if err != nil {
+		return nil, nil, err
+	}
+	ln, err := net.Listen("tcp", netutil.HTTPServerAddr(ap))
 	if err != nil {
 		return nil, nil, err
 	}
@@ -127,38 +132,6 @@ func newServer(ctx context.Context, addr string, handler http.Handler, cfg *tls.
 	}
 	srv := NewTLSServerOnly(ctx, addr, handler, cfg)
 	return ln, srv, nil
-}
-
-// SplitHostPort splits hostport into host and port. If hostport
-// does not contain a port, then the returned port is empty.
-// It assumes that the hostport is a valid ipv4 or ipv6 address.
-func SplitHostPort(hostport string) (string, string) {
-	if host, port, err := net.SplitHostPort(hostport); err == nil {
-		return host, port
-	}
-	if len(hostport) == 0 {
-		return "", ""
-	}
-	if hostport[0] == '[' && hostport[len(hostport)-1] == ']' {
-		return hostport[1 : len(hostport)-1], ""
-	}
-	return hostport, ""
-}
-
-// ParseAddrPortDefaults parses addr and returns an address:port string.
-// If addr does not contain a port then the supplied port is used.
-func ParseAddrPortDefaults(addr, port string) string {
-	h, p := SplitHostPort(addr)
-	switch {
-	case len(h) == 0 && len(p) == 0:
-		return net.JoinHostPort("", port)
-	case len(h) == 0:
-		return net.JoinHostPort("", p)
-	case len(p) == 0:
-		return net.JoinHostPort(h, port)
-	default:
-		return net.JoinHostPort(h, p)
-	}
 }
 
 // WaitForServers waits for all supplied addresses to be available

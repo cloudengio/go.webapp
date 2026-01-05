@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"cloudeng.io/logging/ctxlog"
+	"cloudeng.io/net/netutil"
 	"cloudeng.io/webapp"
 	"github.com/gaissmai/bart"
 )
@@ -30,18 +31,7 @@ func NewACL(addrs ...string) (*ACL, error) {
 	}
 	acl := &bart.Lite{}
 	for _, addr := range addrs {
-		if !strings.Contains(addr, "/") {
-			ip, err := netip.ParseAddr(addr)
-			if err != nil {
-				return nil, err
-			}
-			if ip.Is4() {
-				addr += "/32"
-			} else {
-				addr += "/128"
-			}
-		}
-		p, err := netip.ParsePrefix(addr)
+		p, err := netutil.ParseAddrOrPrefix(addr)
 		if err != nil {
 			return nil, err
 		}

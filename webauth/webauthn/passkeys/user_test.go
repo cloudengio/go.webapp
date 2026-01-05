@@ -6,7 +6,6 @@ package passkeys_test
 
 import (
 	"bytes"
-	"fmt"
 	"reflect"
 	"testing"
 
@@ -57,7 +56,6 @@ func TestUserID_Serialization(t *testing.T) {
 		t.Fatal(err)
 	}
 	originalID := user.ID()
-	fmt.Printf("Original UserID: %s\n", originalID.String())
 
 	t.Run("Text Marshaling", func(t *testing.T) {
 		text, err := originalID.MarshalText()

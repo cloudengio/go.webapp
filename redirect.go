@@ -66,19 +66,32 @@ func RedirectAcmeHTTP01(host string) Redirect {
 
 const ACMEHTTP01Prefix = "/.well-known/acme-challenge/"
 
+func splitHostPort(hostport string) (string, string) {
+	if host, port, err := net.SplitHostPort(hostport); err == nil {
+		return host, port
+	}
+	if len(hostport) == 0 {
+		return "", ""
+	}
+	if hostport[0] == '[' && hostport[len(hostport)-1] == ']' {
+		return hostport[1 : len(hostport)-1], ""
+	}
+	return hostport, ""
+}
+
 // RedirectToHTTPSPort returns a Redirect that will redirect
 // to the specified address using https but with the following defaults:
 // - if addr does not contain a host then the host from the request is used
 // - if addr does not contain a port then port 443 is used.
 func RedirectToHTTPSPort(addr string) Redirect {
-	host, port := SplitHostPort(addr)
+	host, port := splitHostPort(addr)
 	if len(port) == 0 {
 		port = "443"
 	}
 	return Redirect{
 		Description: "redirect to https",
 		Target: func(r *http.Request) (string, int) {
-			h, _ := SplitHostPort(r.Host)
+			h, _ := splitHostPort(r.Host)
 			if len(h) == 0 {
 				h = host
 			}
