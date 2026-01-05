@@ -105,14 +105,16 @@ func NewTLSServerOnly(ctx context.Context, addr string, handler http.Handler, cf
 	return hs
 }
 
-// NewHTTPServer returns a new *http.Server using ParseAddrPortDefaults(addr, "http")
-// to obtain the address to listen on and NewHTTPServerOnly to create the server.
+// NewHTTPServer returns a new *http.Server using
+// netutil.ParseAddrDefaultPort(addr, "http") to obtain the address
+// to listen on and NewHTTPServerOnly to create the server.
 func NewHTTPServer(ctx context.Context, addr string, handler http.Handler) (net.Listener, *http.Server, error) {
 	return newServer(ctx, addr, "http", handler, nil)
 }
 
-// NewTLSServer returns a new *http.Server using addr, "https")
-// to obtain the address to listen on and NewTLSServerOnly to create the server.
+// NewTLSServer returns a new *http.Server using
+// netutil.ParseAddrDefaultPort(addr, "https") to obtain the address
+// to listen on and NewTLSServerOnly to create the server.
 func NewTLSServer(ctx context.Context, addr string, handler http.Handler, cfg *tls.Config) (net.Listener, *http.Server, error) {
 	return newServer(ctx, addr, "https", handler, cfg)
 }

@@ -68,6 +68,7 @@ type HealthzTest struct {
 	// contains filtered or unexported fields
 }
 ```
+HealthzTest can be used to validate /healthz endpoints.
 
 ### Functions
 

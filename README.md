@@ -101,9 +101,9 @@ specified options.
 ```go
 func NewHTTPServer(ctx context.Context, addr string, handler http.Handler) (net.Listener, *http.Server, error)
 ```
-NewHTTPServer returns a new *http.Server using ParseAddrPortDefaults(addr,
-"http") to obtain the address to listen on and NewHTTPServerOnly to create
-the server.
+NewHTTPServer returns a new *http.Server using
+netutil.ParseAddrDefaultPort(addr, "http") to obtain the address to listen
+on and NewHTTPServerOnly to create the server.
 
 ### Func NewHTTPServerOnly
 ```go
@@ -117,8 +117,9 @@ set to log errors via the ctxlog package.
 ```go
 func NewTLSServer(ctx context.Context, addr string, handler http.Handler, cfg *tls.Config) (net.Listener, *http.Server, error)
 ```
-NewTLSServer returns a new *http.Server using addr, "https") to obtain the
-address to listen on and NewTLSServerOnly to create the server.
+NewTLSServer returns a new *http.Server using
+netutil.ParseAddrDefaultPort(addr, "https") to obtain the address to listen
+on and NewTLSServerOnly to create the server.
 
 ### Func NewTLSServerOnly
 ```go
@@ -420,7 +421,7 @@ type Port80Redirect struct {
 }
 ```
 Port80Redirect is a Redirect that that will be registered using
-http.ServeMux with the specified pattern/
+http.ServeMux with the specified pattern.
 
 
 ### Type Redirect
