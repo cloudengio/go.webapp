@@ -37,7 +37,7 @@ func TestWithCustomCAPEMFile(t *testing.T) {
 
 func TestTLSTest(t *testing.T) {
 	ctx := context.Background()
-	ts := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	ts := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		fmt.Fprintln(w, "active")
 	}))
 	defer ts.Close()
