@@ -13,6 +13,7 @@ import (
 	"fmt"
 	"math/big"
 	"net"
+	"os"
 	"regexp"
 	"sync"
 	"time"
@@ -59,10 +60,20 @@ func WithExpandDNSNames(expand bool) Option {
 }
 
 // WithRootCAs returns an option that configures the validator to use the
-// supplied pool of root CAs for verification.
+// supplied pool of root CAs for verification. WithRootCAs takes precedence
+// over WithCustomRootCAPEM.
 func WithRootCAs(rootCAs *x509.CertPool) Option {
 	return func(o *options) {
 		o.rootCAs = rootCAs
+	}
+}
+
+// WithCustomRootCAPEM returns an option that configures the validator to use
+// the root CAs specified in the PEM file for verification. Note that
+// WithRootCAs takes precedence over WithCustomRootCAPEM.
+func WithCustomRootCAPEM(pemFile string) Option {
+	return func(o *options) {
+		o.pemFile = pemFile
 	}
 }
 
@@ -97,6 +108,7 @@ type options struct {
 	issuerREs    []*regexp.Regexp
 	expand       bool
 	rootCAs      *x509.CertPool
+	pemFile      string
 	checkSerial  bool
 	tlsMinVer    uint16
 	ciphersuites []uint16
@@ -116,9 +128,29 @@ func NewValidator(opts ...Option) *Validator {
 	return v
 }
 
+func certPool(pemFile string) (*x509.CertPool, error) {
+	rootCAs := x509.NewCertPool()
+	certs, err := os.ReadFile(pemFile)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read CA file %q: %w", pemFile, err)
+	}
+	// Append the custom certs to the system pool
+	if ok := rootCAs.AppendCertsFromPEM(certs); !ok {
+		return nil, fmt.Errorf("no certs appended from %q", pemFile)
+	}
+	return rootCAs, nil
+}
+
 // Validate performs TLS validation for the given host and port. It may expand
 // the host to multiple IP addresses and will validate each one concurrently.
 func (v *Validator) Validate(ctx context.Context, host, port string) error {
+	if v.opts.rootCAs == nil && len(v.opts.pemFile) > 0 {
+		rootCAs, err := certPool(v.opts.pemFile)
+		if err != nil {
+			return err
+		}
+		v.opts.rootCAs = rootCAs
+	}
 	addrs, err := v.expandHost(host)
 	if err != nil {
 		return err

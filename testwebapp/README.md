@@ -147,10 +147,21 @@ type TLSSpec struct {
 	ValidFor           time.Duration `yaml:"valid-for"`            // see tlsvalidate.WithValidForAtLeast
 	TLSMinVersion      uint16        `yaml:"tls-min-version"`      // see tlsvalidate.WithTLSMinVersion
 	IssuerREs          []string      `yaml:"issuer-res"`           // see tlsvalidate.WithIssuerRegexps
+	CustomCAPEM        string        `yaml:"custom-ca-pem"`        // used tlsvalidate.WithCustomRootCAPEM
 	// contains filtered or unexported fields
 }
 ```
 TLSSpec represents a specification for a TLS test.
+
+### Functions
+
+```go
+func WithCustomCAPEMFile(s []TLSSpec, pemFile string) []TLSSpec
+```
+WithCustomCAPEMFile sets the custom CA PEM file for all specs if not already
+set in each/any spec.
+
+
 
 
 ### Type TLSTest
@@ -164,7 +175,7 @@ TLSTest can be used to validate TLS certificates for a set of hosts.
 ### Functions
 
 ```go
-func NewTLSTest(client *http.Client, specs ...TLSSpec) *TLSTest
+func NewTLSTest(specs ...TLSSpec) *TLSTest
 ```
 
 

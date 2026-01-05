@@ -32,6 +32,14 @@ that the ciphersuite used is one of the specified ciphersuites.
 
 
 ```go
+func WithCustomRootCAPEM(pemFile string) Option
+```
+WithCustomRootCAPEM returns an option that configures the validator to
+use the root CAs specified in the PEM file for verification. Note that
+WithRootCAs takes precedence over WithCustomRootCAPEM.
+
+
+```go
 func WithExpandDNSNames(expand bool) Option
 ```
 WithExpandDNSNames returns an option that configures the validator to expand
@@ -58,7 +66,8 @@ expressions.
 func WithRootCAs(rootCAs *x509.CertPool) Option
 ```
 WithRootCAs returns an option that configures the validator to use the
-supplied pool of root CAs for verification.
+supplied pool of root CAs for verification. WithRootCAs takes precedence
+over WithCustomRootCAPEM.
 
 
 ```go

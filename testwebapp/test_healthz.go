@@ -35,6 +35,15 @@ func NewHealthzTest(client *http.Client, specs ...HealthzSpec) *HealthzTest {
 func (h HealthzTest) Run(ctx context.Context) error {
 	var g errgroup.T
 	for _, spec := range h.specs {
+		if spec.NumHealthChecks == 0 {
+			spec.NumHealthChecks = 1
+		}
+		if spec.Interval == 0 {
+			spec.Interval = time.Second
+		}
+		if spec.Timeout == 0 {
+			spec.Timeout = time.Second
+		}
 		g.Go(func() error {
 			return h.run(ctx, spec)
 		})
@@ -43,18 +52,15 @@ func (h HealthzTest) Run(ctx context.Context) error {
 }
 
 func (h HealthzTest) run(ctx context.Context, spec HealthzSpec) error {
-	timeout := spec.Timeout
-	if timeout == 0 {
-		timeout = time.Second
-	}
 	for i := 0; i < spec.NumHealthChecks; i++ {
 		ctxlog.Info(ctx, "healthz: checking", "url", spec.URL, "attempt", i+1)
-		req, err := http.NewRequestWithContext(ctx, "GET", spec.URL, nil)
+		reqCtx, reqCancel := context.WithTimeout(ctx, spec.Timeout)
+		defer reqCancel()
+		req, err := http.NewRequestWithContext(reqCtx, "GET", spec.URL, nil)
 		if err != nil {
 			return fmt.Errorf("healthz: creating request: %w", err)
 		}
-		ctx, cancel := context.WithTimeout(ctx, timeout)
-		defer cancel()
+
 		resp, err := h.client.Do(req)
 		if err != nil {
 			return fmt.Errorf("healthz: performing request: %w", err)
@@ -77,7 +83,7 @@ func (h HealthzTest) run(ctx context.Context, spec HealthzSpec) error {
 			case <-timer.C:
 			case <-ctx.Done():
 				timer.Stop()
-				return ctx.Err()
+				return fmt.Errorf("healthz: %v: %w", spec.URL, ctx.Err())
 			}
 		}
 	}

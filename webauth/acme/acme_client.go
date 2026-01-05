@@ -126,7 +126,7 @@ func (s *Client) refreshHost(ctx context.Context, logger *slog.Logger, host stri
 	logger.Info("refreshing certificate using tls hello", "host", host)
 	cert, err := s.mgr.GetCertificate(&hello)
 	if err != nil {
-		s.opts.refreshMetric(ctx, host, err.Error())
+		s.opts.refreshMetric(ctx, host, "failed")
 		return err
 	}
 	leaf := cert.Leaf
