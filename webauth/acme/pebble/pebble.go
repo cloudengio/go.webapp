@@ -29,7 +29,7 @@ import (
 type ServerOption func(*serverOptions)
 
 type serverOptions struct {
-	// future options
+	noSleep bool
 }
 
 // ConfigOption represents an option for configuring a new Config instance.
@@ -54,6 +54,14 @@ func WithAlternatePorts(managementPort, serverPort int) ConfigOption {
 	return func(o *configOption) {
 		o.managementPort = managementPort
 		o.serverPort = serverPort
+	}
+}
+
+// WithNoSleep returns a ServerOption that disables sleeps in pebble
+// to speed up testing.
+func WithNoSleep() ServerOption {
+	return func(o *serverOptions) {
+		o.noSleep = true
 	}
 }
 
@@ -91,6 +99,9 @@ func (p *T) Start(ctx context.Context, dir, cfg string, forward io.WriteCloser) 
 	p.cmd.Dir = dir
 	p.cmd.Stdout = filter
 	p.cmd.Stderr = filter
+	if p.opts.noSleep {
+		p.cmd.Env = append(p.cmd.Env, "PEBBLE_VA_NOSLEEP=1")
+	}
 	p.closer = filter
 	if err := p.cmd.Start(); err != nil {
 		return fmt.Errorf("failed to start pebble: %w", err)
