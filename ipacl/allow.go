@@ -72,11 +72,11 @@ func WithAddressExtractor(extractor AddressExtractor) Option {
 // IP address is in the deny ACL
 // 2. one that is incremented if the address is not in the allow ACL
 // 3. one that is incremented on error
-func WithCounters(denied, notAllowed, error webapp.CounterInc) Option {
+func WithCounters(deniedCounter, notAllowedCounter, errorCounter webapp.CounterInc) Option {
 	return func(o *options) {
-		o.deniedCounter = denied
-		o.notAllowedCounter = notAllowed
-		o.errorCounter = error
+		o.deniedCounter = deniedCounter
+		o.notAllowedCounter = notAllowedCounter
+		o.errorCounter = errorCounter
 	}
 }
 
@@ -126,10 +126,10 @@ func noopCounter(context.Context) {}
 // passed to the given handler.
 func NewHandler(handler http.Handler, allow, deny Contains, opts ...Option) http.Handler {
 	if allow == nil {
-		allow = func(ip netip.Addr) bool { return true }
+		allow = func(netip.Addr) bool { return true }
 	}
 	if deny == nil {
-		deny = func(ip netip.Addr) bool { return false }
+		deny = func(netip.Addr) bool { return false }
 	}
 	ach := &aclHandler{
 		allowed: allow,
