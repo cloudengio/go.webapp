@@ -9,6 +9,7 @@ import (
 
 	"cloudeng.io/errors"
 	"cloudeng.io/logging/ctxlog"
+	"cloudeng.io/webapp"
 	"cloudeng.io/webapp/tlsvalidate"
 )
 
@@ -21,7 +22,24 @@ type TLSSpec struct {
 	ValidFor           time.Duration `yaml:"valid-for"`            // see tlsvalidate.WithValidForAtLeast
 	TLSMinVersion      uint16        `yaml:"tls-min-version"`      // see tlsvalidate.WithTLSMinVersion
 	IssuerREs          []string      `yaml:"issuer-res"`           // see tlsvalidate.WithIssuerRegexps
+	CustomCAPEM        string        `yaml:"custom-ca-pem"`        // used tlsvalidate.WithCustomRootCAPEM
 	issuerREs          []*regexp.Regexp
+	client             *http.Client
+}
+
+// WithCustomCAPEMFile sets the custom CA PEM file for all specs if
+// not already set in each/any spec.
+func WithCustomCAPEMFile(s []TLSSpec, pemFile string) []TLSSpec {
+	if len(pemFile) == 0 {
+		return s
+	}
+	for i := range s {
+		if len(s[i].CustomCAPEM) > 0 {
+			continue
+		}
+		s[i].CustomCAPEM = pemFile
+	}
+	return s
 }
 
 var (
@@ -33,12 +51,11 @@ var (
 
 // TLSTest can be used to validate TLS certificates for a set of hosts.
 type TLSTest struct {
-	client *http.Client // the client to use for making requests
-	specs  []TLSSpec    // the specifications for the TLS tests
+	specs []TLSSpec // the specifications for the TLS tests
 }
 
-func NewTLSTest(client *http.Client, specs ...TLSSpec) *TLSTest {
-	return &TLSTest{client: client, specs: specs}
+func NewTLSTest(specs ...TLSSpec) *TLSTest {
+	return &TLSTest{specs: specs}
 }
 
 func (t *TLSTest) compileREs() error {
@@ -56,8 +73,25 @@ func (t *TLSTest) compileREs() error {
 	return nil
 }
 
+func (t *TLSTest) configureHTTPClients(ctx context.Context) error {
+	for i, spec := range t.specs {
+		t.specs[i].client = http.DefaultClient
+		if len(spec.CustomCAPEM) > 0 {
+			client, err := webapp.NewHTTPClient(ctx, webapp.WithCustomCAPEMFile(spec.CustomCAPEM))
+			if err != nil {
+				return err
+			}
+			t.specs[i].client = client
+		}
+	}
+	return nil
+}
+
 func (t *TLSTest) Run(ctx context.Context) error {
 	if err := t.compileREs(); err != nil {
+		return err
+	}
+	if err := t.configureHTTPClients(ctx); err != nil {
 		return err
 	}
 	var errs errors.M
@@ -80,6 +114,7 @@ func (s TLSSpec) options() []tlsvalidate.Option {
 		tlsvalidate.WithCheckSerialNumbers(s.CheckSerialNumbers),
 		tlsvalidate.WithExpandDNSNames(s.ExpandDNSNames),
 		tlsvalidate.WithTLSMinVersion(s.TLSMinVersion),
+		tlsvalidate.WithCustomRootCAPEM(s.CustomCAPEM),
 	}
 }
 

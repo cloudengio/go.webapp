@@ -118,7 +118,6 @@ func NewTLSServer(ctx context.Context, addr string, handler http.Handler, cfg *t
 }
 
 func newServer(ctx context.Context, addr, port string, handler http.Handler, cfg *tls.Config) (net.Listener, *http.Server, error) {
-	addr = netutil.Resolve(addr)
 	ap, err := netutil.ParseAddrDefaultPort(addr, port)
 	if err != nil {
 		return nil, nil, err

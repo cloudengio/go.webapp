@@ -62,17 +62,29 @@ func (g GoGetTest) Run(ctx context.Context) error
 
 
 
+### Type HealthzSpec
+```go
+type HealthzSpec struct {
+	URL             string        `yaml:"url" json:"url"`
+	Interval        time.Duration `yaml:"interval" json:"interval"`
+	Timeout         time.Duration `yaml:"timeout" json:"timeout"`
+	NumHealthChecks int           `yaml:"num_health_checks" json:"num_health_checks"`
+}
+```
+
+
 ### Type HealthzTest
 ```go
 type HealthzTest struct {
 	// contains filtered or unexported fields
 }
 ```
+HealthzTest can be used to validate /healthz endpoints.
 
 ### Functions
 
 ```go
-func NewHealthzTest(client *http.Client, healthcheckURL string, interval time.Duration, numHealthChecks int) *HealthzTest
+func NewHealthzTest(client *http.Client, specs ...HealthzSpec) *HealthzTest
 ```
 
 
@@ -110,9 +122,9 @@ RedirectTest can be used to validate redirects for a set of URLs.
 ```go
 func NewRedirectTest(client *http.Client, redirects ...RedirectSpec) *RedirectTest
 ```
-NewRedirectTest creates a new RedirectTest, it if client.CheckRedirect is
-nil, it will be set to http.ErrUseLastResponse to ensure that redirects are
-not followed.
+NewRedirectTest creates a new RedirectTest, if client.CheckRedirect is nil,
+it will be set to http.ErrUseLastResponse to ensure that redirects are not
+followed.
 
 
 
@@ -135,10 +147,21 @@ type TLSSpec struct {
 	ValidFor           time.Duration `yaml:"valid-for"`            // see tlsvalidate.WithValidForAtLeast
 	TLSMinVersion      uint16        `yaml:"tls-min-version"`      // see tlsvalidate.WithTLSMinVersion
 	IssuerREs          []string      `yaml:"issuer-res"`           // see tlsvalidate.WithIssuerRegexps
+	CustomCAPEM        string        `yaml:"custom-ca-pem"`        // used tlsvalidate.WithCustomRootCAPEM
 	// contains filtered or unexported fields
 }
 ```
 TLSSpec represents a specification for a TLS test.
+
+### Functions
+
+```go
+func WithCustomCAPEMFile(s []TLSSpec, pemFile string) []TLSSpec
+```
+WithCustomCAPEMFile sets the custom CA PEM file for all specs if not already
+set in each/any spec.
+
+
 
 
 ### Type TLSTest
@@ -152,7 +175,7 @@ TLSTest can be used to validate TLS certificates for a set of hosts.
 ### Functions
 
 ```go
-func NewTLSTest(client *http.Client, specs ...TLSSpec) *TLSTest
+func NewTLSTest(specs ...TLSSpec) *TLSTest
 ```
 
 

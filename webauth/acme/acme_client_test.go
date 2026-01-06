@@ -93,8 +93,8 @@ func TestACMEClient_FullFlow(t *testing.T) {
 	}()
 
 	// Start the client to refresh certs.
-	client := acme.NewClient(mgr, time.Minute, "pebble-test.example.com")
-	stopAcmeClient, err := client.Start(ctx)
+	client := acme.NewClient(mgr, acme.WithRefreshInterval(time.Minute))
+	stopAcmeClient, err := client.Start(ctx, "pebble-test.example.com")
 	if err != nil {
 		t.Fatalf("failed to start acme client: %v", err)
 	}
@@ -109,6 +109,108 @@ func TestACMEClient_FullFlow(t *testing.T) {
 
 	if err := pebbleCfg.ValidateCertificate(ctx, leaf, intermediates); err != nil {
 		t.Fatalf("failed to validate certificate: %v", err)
+	}
+
+	cancel()
+	var errs errors.M
+	errs.Append(<-errCh)
+	errs.Append(stopAcmeClient())
+	if err := errs.Err(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestClientWithMetric(t *testing.T) {
+	ctx, cancel := context.WithCancel(t.Context())
+	ctx = ctxlog.WithLogger(ctx, slog.New(slog.NewJSONHandler(logging.NewJSONFormatter(os.Stderr, "", "  "), &slog.HandlerOptions{AddSource: false})))
+
+	tmpDir := t.TempDir()
+
+	// Start a pebble server.
+	pebbleServer, pebbleCfg, recorder, pebbleCacheDir, pebbleTestDir := pebbletest.Start(ctx, t, tmpDir)
+	defer func() {
+		then := time.Now()
+		if err := pebbleServer.EnsureStopped(context.Background(), time.Second*5); err != nil {
+			t.Errorf("failed to stop pebble server after %v: %v", time.Since(then), err)
+		}
+	}()
+	certDir := filepath.Join(pebbleCacheDir, "certs")
+	// Prepare the autocert manager.
+	lb, err := certcache.NewLocalStore(certDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cache, err := certcache.NewCachingStore(pebbleCacheDir, lb)
+	if err != nil {
+		t.Fatal(err)
+	}
+	mgr, err := acme.NewAutocertManager(cache, acme.AutocertConfig{
+		Provider: pebbleCfg.DirectoryURL(),
+	}, "pebble-test.example.com")
+	if err != nil {
+		t.Fatal(err)
+	}
+	stripPort := certcache.WrapHostPolicyNoPort(mgr.HostPolicy)
+	mgr.HostPolicy = stripPort
+
+	tl := slog.New(slog.NewJSONHandler(logging.NewJSONFormatter(os.Stderr, "", "  "), &slog.HandlerOptions{AddSource: true}))
+	mgr.Client.HTTPClient, err = webapp.NewHTTPClient(ctx,
+		webapp.WithCustomCAPEMFile(filepath.Join(pebbleTestDir, pebbleCfg.CAFile)),
+		webapp.WithTracingTransport(
+			httptracing.WithTraceLogger(tl.With("component", "acme_http_client")),
+			httptracing.WithTraceRequest(httptracing.JSONOrTextRequestLogger),
+			httptracing.WithTraceResponse(httptracing.JSONOrTextResponseLogger)),
+	)
+	if err != nil {
+		t.Fatalf("failed to create acme manager http client: %v", err)
+	}
+	httpHandler := mgr.HTTPHandler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.NotFound(w, r)
+	}))
+
+	// Start HTTP server to handle ACME HTTP-01 challenges.
+	httpListener, httpServer, err := webapp.NewHTTPServer(ctx, fmt.Sprintf(":%d", pebbleCfg.HTTPPort), httpHandler)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	th := httptracing.NewTracingHandler(httpServer.Handler,
+		httptracing.WithTraceHandlerLogger(tl.With("component", "acme_http_server")),
+		httptracing.WithTraceHandlerRequest(httptracing.JSONOrTextHandlerRequestLogger),
+		httptracing.WithTraceHandlerResponse(httptracing.JSONOrTextHandlerResponseLogger),
+	)
+	httpServer.Handler = th
+
+	errCh := make(chan error, 1)
+	go func() {
+		err := webapp.ServeWithShutdown(ctx, httpListener, httpServer, time.Minute)
+		errCh <- err
+	}()
+
+	metricCh := make(chan string, 1)
+	// Start the client to refresh certs.
+	client := acme.NewClient(mgr,
+		acme.WithRefreshInterval(time.Minute),
+		acme.WithRefreshMetric(func(_ context.Context, h ...string) {
+			metricCh <- h[0]
+		}),
+	)
+	stopAcmeClient, err := client.Start(ctx, "pebble-test.example.com")
+	if err != nil {
+		t.Fatalf("failed to start acme client: %v", err)
+	}
+
+	localhostCert := filepath.Join(certDir, "pebble-test.example.com")
+
+	pebbletest.WaitForNewCert(ctx, t, "waiting for cert", localhostCert, "", recorder)
+
+	select {
+	case h := <-metricCh:
+		if got, want := h, "pebble-test.example.com"; got != want {
+			t.Errorf("metric called with %v, want %v", got, want)
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatal("timed out waiting for metric callback")
 	}
 
 	cancel()

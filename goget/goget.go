@@ -11,6 +11,8 @@ import (
 	"net/url"
 	"strings"
 
+	"cloudeng.io/webapp"
+
 	"gopkg.in/yaml.v3"
 )
 
@@ -75,6 +77,7 @@ type handler struct {
 	path    string // no trailing slash
 	content string
 	fb      http.Handler
+	counter webapp.CounterInc
 }
 
 func (h handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -82,25 +85,52 @@ func (h handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		h.fb.ServeHTTP(w, r) //nolint:errcheck
 		return
 	}
-	if r.URL.Hostname() != h.host {
+	if strings.TrimSuffix(r.URL.Path, "/") != h.path {
 		h.fb.ServeHTTP(w, r) //nolint:errcheck
 		return
 	}
-	if strings.TrimSuffix(r.URL.Path, "/") != h.path {
+	if hn := r.URL.Hostname(); len(hn) != 0 && hn != h.host {
 		h.fb.ServeHTTP(w, r) //nolint:errcheck
 		return
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.Write([]byte(h.content)) //nolint:errcheck
+	if h.counter != nil {
+		h.counter(r.Context())
+	}
+}
+
+// Option is used to configure the creation and registration of go-get handlers.
+type Option func(*options)
+
+type options struct {
+	counter webapp.CounterInc
+}
+
+// WithCounter configures the handler to increment the provided metric
+// when a go-get request is handled.
+func WithCounter(counter webapp.CounterInc) Option {
+	return func(o *options) {
+		o.counter = counter
+	}
 }
 
 // NewHandler creates a new http.Handler for a given go-get specification and
 // returns the path that the handler should be registered at, without
 // the trailing slash. The returned handler will call the provided next
-// handler if the request is not a go-get request.
-func (s *Spec) NewHandler(next http.Handler) (http.Handler, error) {
+// handler if the request is not a go-get request. Take care to set the
+// appropriate next handler for the root path "/".
+// The go-get redirect will be served if go-get=1 is present in the query
+// parameters and the request path matches the path component of the import
+// path. If the request includes a host name, it must match the hostname
+// component of the import path.
+func (s *Spec) NewHandler(next http.Handler, opts ...Option) (http.Handler, error) {
 	if next == nil {
 		next = http.NotFoundHandler()
+	}
+	var o options
+	for _, opt := range opts {
+		opt(&o)
 	}
 	var out strings.Builder
 	if err := metaTemplate.Execute(&out, s); err != nil {
@@ -111,6 +141,7 @@ func (s *Spec) NewHandler(next http.Handler) (http.Handler, error) {
 		path:    s.path,
 		content: out.String(),
 		fb:      next,
+		counter: o.counter,
 	}
 	return handler, nil
 }

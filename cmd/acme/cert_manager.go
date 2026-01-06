@@ -125,9 +125,9 @@ func (certManagerCmd) manageCerts(ctx context.Context, flags any, args []string)
 		return fmt.Errorf("http server failed to start: %w", err)
 	}
 
-	acmeClient := acme.NewClient(mgr, cl.RefreshInterval, args...)
+	acmeClient := acme.NewClient(mgr, acme.WithRefreshInterval(cl.RefreshInterval))
 
-	stopAcmeClient, err := acmeClient.Start(ctx)
+	stopAcmeClient, err := acmeClient.Start(ctx, args...)
 	if err != nil {
 		return fmt.Errorf("failed to start acme client: %w", err)
 	}

@@ -129,6 +129,16 @@ type ServerOption func(*serverOptions)
 ```
 ServerOption represents a option for configuring a new Pebble instance.
 
+### Functions
+
+```go
+func WithNoSleep() ServerOption
+```
+WithNoSleep returns a ServerOption that disables sleeps in pebble to speed
+up testing.
+
+
+
 
 ### Type T
 ```go

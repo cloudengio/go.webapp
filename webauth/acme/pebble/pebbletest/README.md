@@ -23,6 +23,25 @@ serial number different from previousSerial.
 
 
 ## Types
+### Type Option
+```go
+type Option func(o *options)
+```
+
+### Functions
+
+```go
+func WithConfigOptions(opts ...pebble.ConfigOption) Option
+```
+
+
+```go
+func WithServerOptions(opts ...pebble.ServerOption) Option
+```
+
+
+
+
 ### Type Recorder
 ```go
 type Recorder struct {
@@ -34,7 +53,7 @@ Recorder is an io.WriteCloser that records all data written to it.
 ### Functions
 
 ```go
-func Start(ctx context.Context, t Testing, tmpDir string, configOpts ...pebble.ConfigOption) (*pebble.T, pebble.Config, *Recorder, string, string)
+func Start(ctx context.Context, t Testing, tmpDir string, opts ...Option) (*pebble.T, pebble.Config, *Recorder, string, string)
 ```
 Start starts a pebble ACME server for testing purposes.
 
