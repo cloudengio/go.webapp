@@ -233,6 +233,26 @@ func (dc *CachingStore) Put(ctx context.Context, name string, data []byte) error
 	return nil
 }
 
+// Implement file.ReadfileFS
+func (dc *CachingStore) ReadFile(name string) ([]byte, error) {
+	return dc.ReadFileCtx(context.Background(), name)
+}
+
+// Implement file.ReadfileFS
+func (dc *CachingStore) ReadFileCtx(ctx context.Context, name string) ([]byte, error) {
+	return dc.Get(ctx, name)
+}
+
+// Implement file.WritefileFS
+func (dc *CachingStore) WriteFile(name string, data []byte, perm fs.FileMode) error {
+	return dc.WriteFileCtx(context.Background(), name, data, perm)
+}
+
+// Implement file.WritefileFS
+func (dc *CachingStore) WriteFileCtx(ctx context.Context, name string, data []byte, perm fs.FileMode) error {
+	return dc.Put(ctx, name, data)
+}
+
 type localCache struct {
 	root string
 }
@@ -248,6 +268,7 @@ func (lc *localCache) path(name string) string {
 	return filepath.Join(lc.root, name)
 }
 
+// Implement autocert.StoreFS.
 func (lc *localCache) ReadFileCtx(_ context.Context, name string) ([]byte, error) {
 	return os.ReadFile(lc.path(name))
 }
