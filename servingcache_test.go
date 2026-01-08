@@ -197,7 +197,7 @@ func TestCertServingCache_GetCertificate(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	cache := webapp.NewCertServingCache(ctx, store, webapp.CertCacheRootCAs(rootCAs))
+	cache := webapp.NewCertServingCache(ctx, store, webapp.WithCertCacheRootCAs(rootCAs))
 
 	// 1. First call: cache miss, should fetch from store.
 	cert, err := cache.GetCertificate(&tls.ClientHelloInfo{ServerName: domain})
@@ -240,9 +240,9 @@ func TestCertServingCache_Expiry(t *testing.T) {
 	nowFunc := func() time.Time { return mockTime }
 
 	cache := webapp.NewCertServingCache(ctx, store,
-		webapp.CertCacheRootCAs(rootCAs),
-		webapp.CertCacheTTL(time.Hour),
-		webapp.CertCacheNowFunc(nowFunc),
+		webapp.WithCertCacheRootCAs(rootCAs),
+		webapp.WithCertCacheTTL(time.Hour),
+		webapp.WithCertCacheNowFunc(nowFunc),
 	)
 
 	// 1. First call to populate cache.
@@ -378,7 +378,7 @@ func TestCertServingCache_Errors(t *testing.T) {
 			cache := webapp.NewCertServingCache(ctx, store)
 			if tc.rootCAs != nil {
 				// Create a new cache for tests that need specific roots.
-				cache = webapp.NewCertServingCache(ctx, store, webapp.CertCacheRootCAs(tc.rootCAs))
+				cache = webapp.NewCertServingCache(ctx, store, webapp.WithCertCacheRootCAs(tc.rootCAs))
 			}
 
 			_, err := cache.GetCertificate(&tls.ClientHelloInfo{ServerName: tc.serverName})
@@ -389,5 +389,31 @@ func TestCertServingCache_Errors(t *testing.T) {
 				t.Errorf("expected error to contain %q, but got %q", tc.wantErr, err.Error())
 			}
 		})
+	}
+}
+
+func TestCertServingCache_AllowedHosts(t *testing.T) {
+	ctx := t.Context()
+	store := newMockCertStore()
+	cache := webapp.NewCertServingCache(ctx, store, webapp.WithCertCacheAllowedHosts("example.com"))
+
+	// 1. Not allowed host
+	_, err := cache.GetCertificate(&tls.ClientHelloInfo{ServerName: "bad.com"})
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	if !strings.Contains(err.Error(), "not in the list of allowed hosts") {
+		t.Errorf("got %v, want error containing 'not in the list of allowed hosts'", err)
+	}
+
+	// 2. Allowed host (should fail with cache miss/store error instead of not allowed)
+	_, err = cache.GetCertificate(&tls.ClientHelloInfo{ServerName: "example.com"})
+	if err == nil {
+		// If we had the cert, it would work. Since we don't, it returns cache miss.
+		// That proves it passed the allowed check.
+		t.Fatal("expected cache miss error, got nil")
+	}
+	if !errors.Is(err, autocert.ErrCacheMiss) {
+		t.Errorf("got %v, want %v", err, autocert.ErrCacheMiss)
 	}
 }

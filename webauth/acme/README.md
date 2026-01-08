@@ -29,21 +29,6 @@ NewAutocertManager creates a new autocert.Manager from the supplied config.
 Any supplied hosts specify the allowed hosts for the manager, ie. those for
 which it will obtain/renew certificates.
 
-### Func WithRefreshInterval
-```go
-func WithRefreshInterval(interval time.Duration) clientOption
-```
-WithRefreshInterval configures the client to refresh certificates at the
-provided interval. The default is 1 hour.
-
-### Func WithRefreshMetric
-```go
-func WithRefreshMetric(refresh webapp.CounterVecInc) clientOption
-```
-WithRefreshMetric configures the client to increment the provided metric
-with the outcome of each refresh operation. The metric will be incremented
-with the labels: host, status.
-
 
 
 ## Types
@@ -83,7 +68,7 @@ for a set of hosts using the provided autocert.Manager.
 ### Functions
 
 ```go
-func NewClient(mgr *autocert.Manager, opts ...clientOption) *Client
+func NewClient(mgr *autocert.Manager, opts ...ClientOption) *Client
 ```
 NewClient creates a new client that refreshes certificates for the provided
 hosts using the autocert.Manager.
@@ -97,6 +82,30 @@ func (s *Client) Start(ctx context.Context, hosts ...string) (func() error, erro
 ```
 Start starts the client, refreshing certificates for the provided hosts.
 It returns a function that can be called to stop the client.
+
+
+
+
+### Type ClientOption
+```go
+type ClientOption func(o *clientOptions)
+```
+
+### Functions
+
+```go
+func WithRefreshInterval(interval time.Duration) ClientOption
+```
+WithRefreshInterval configures the client to refresh certificates at the
+provided interval. The default is 1 hour.
+
+
+```go
+func WithRefreshMetric(refresh webapp.CounterVecInc) ClientOption
+```
+WithRefreshMetric configures the client to increment the provided metric
+with the outcome of each refresh operation. The metric will be incremented
+with the labels: host, status.
 
 
 
