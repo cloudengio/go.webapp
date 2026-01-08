@@ -10,6 +10,7 @@ import (
 	"crypto/x509"
 	"encoding/pem"
 	"fmt"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -31,39 +32,48 @@ type entry struct {
 // reload certificates from the store on a periodic basis (with some jitter)
 // to allow for certificates to be refreshed.
 type CertServingCache struct {
-	ctx       context.Context
-	certStore file.ReadFileFS
-	ttl       time.Duration
-	rootCAs   *x509.CertPool
-	nowFunc   func() time.Time
-	cacheMu   sync.Mutex
-	cache     map[string]entry
+	ctx          context.Context
+	certStore    file.ReadFileFS
+	ttl          time.Duration
+	rootCAs      *x509.CertPool
+	nowFunc      func() time.Time
+	cacheMu      sync.Mutex
+	cache        map[string]entry
+	allowedHosts []string
 }
 
 // CertServingCacheOption represents options to NewCertServingCache.
 type CertServingCacheOption func(*CertServingCache)
 
-// CertCacheRootCAs sets the rootCAs to be used when verifying the validity
+// WithCertCacheRootCAs sets the rootCAs to be used when verifying the validity
 // of the certificate loaded from the back store.
-func CertCacheRootCAs(rootCAs *x509.CertPool) CertServingCacheOption {
+func WithCertCacheRootCAs(rootCAs *x509.CertPool) CertServingCacheOption {
 	return func(cs *CertServingCache) {
 		cs.rootCAs = rootCAs
 	}
 }
 
-// CertCacheTTL sets the in-memory TTL beyond which cache entries are
+// WithCertCacheTTL sets the in-memory TTL beyond which cache entries are
 // refreshed. This is generally only required for testing purposes.
-func CertCacheTTL(ttl time.Duration) CertServingCacheOption {
+func WithCertCacheTTL(ttl time.Duration) CertServingCacheOption {
 	return func(cs *CertServingCache) {
 		cs.ttl = ttl
 	}
 }
 
-// CertCacheNowFunc sets the function used to obtain the current time.
+// WithCertCacheNowFunc sets the function used to obtain the current time.
 // This is generally only required for testing purposes.
-func CertCacheNowFunc(fn func() time.Time) CertServingCacheOption {
+func WithCertCacheNowFunc(fn func() time.Time) CertServingCacheOption {
 	return func(cs *CertServingCache) {
 		cs.nowFunc = fn
+	}
+}
+
+// WithCertCacheAllowedHosts sets the allowed hosts that the cache will
+// serve certificates for.
+func WithCertCacheAllowedHosts(hosts ...string) CertServingCacheOption {
+	return func(cs *CertServingCache) {
+		cs.allowedHosts = hosts
 	}
 }
 
@@ -117,6 +127,10 @@ func (m *CertServingCache) GetCertificate(hello *tls.ClientHelloInfo) (*tls.Cert
 	name, err := idna.Lookup.ToASCII(name)
 	if err != nil {
 		return nil, fmt.Errorf("server name contains invalid character")
+	}
+
+	if len(m.allowedHosts) > 0 && !slices.Contains(m.allowedHosts, name) {
+		return nil, fmt.Errorf("server name %q is not in the list of allowed hosts", name)
 	}
 
 	now := m.nowFunc()
