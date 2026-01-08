@@ -9,7 +9,7 @@ import (
 	"crypto/tls"
 	"fmt"
 
-	"golang.org/x/crypto/acme/autocert"
+	"cloudeng.io/file"
 )
 
 // TLSCertFlags defines commonly used flags for obtaining TLS/SSL certificates.
@@ -101,7 +101,7 @@ var PreferredSignatureSchemes = []tls.SignatureScheme{
 // TLSConfigUsingCertStore returns a tls.Config configured with the
 // certificate obtained from the specified certificate store accessed
 // via a CertServingCache created with the supplied options.
-func TLSConfigUsingCertStore(ctx context.Context, store autocert.Cache, cacheOpts ...CertServingCacheOption) (*tls.Config, error) {
+func TLSConfigUsingCertStore(ctx context.Context, store file.ReadFileFS, cacheOpts ...CertServingCacheOption) (*tls.Config, error) {
 	return &tls.Config{
 		GetCertificate:   NewCertServingCache(ctx, store, cacheOpts...).GetCertificate,
 		MinVersion:       PreferredTLSMinVersion,

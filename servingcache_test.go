@@ -39,7 +39,10 @@ func newMockCertStore() *mockCertStore {
 	}
 }
 
-func (s *mockCertStore) Get(_ context.Context, name string) ([]byte, error) {
+func (s *mockCertStore) ReadFile(name string) ([]byte, error) {
+	return s.ReadFileCtx(context.Background(), name)
+}
+func (s *mockCertStore) ReadFileCtx(_ context.Context, name string) ([]byte, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.storeErr != nil {
