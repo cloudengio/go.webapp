@@ -14,7 +14,7 @@ import (
 	"sync"
 	"time"
 
-	"golang.org/x/crypto/acme/autocert"
+	"cloudeng.io/file"
 	"golang.org/x/net/idna"
 )
 
@@ -32,7 +32,7 @@ type entry struct {
 // to allow for certificates to be refreshed.
 type CertServingCache struct {
 	ctx       context.Context
-	certStore autocert.Cache
+	certStore file.ReadFileFS
 	ttl       time.Duration
 	rootCAs   *x509.CertPool
 	nowFunc   func() time.Time
@@ -68,10 +68,10 @@ func CertCacheNowFunc(fn func() time.Time) CertServingCacheOption {
 }
 
 // NewCertServingCache returns a new instance of CertServingCache that
-// uses the supplied CertStore. The supplied context is cached and used by
+// uses the supplied file.ReadFileFS. The supplied context is cached and used by
 // the GetCertificate method, this allows for credentials etc to be passed
-// to the CertStore.Get method called by GetCertificate via the context.
-func NewCertServingCache(ctx context.Context, certStore autocert.Cache, opts ...CertServingCacheOption) *CertServingCache {
+// to the ReadFileCtx method called by GetCertificate via the context.
+func NewCertServingCache(ctx context.Context, certStore file.ReadFileFS, opts ...CertServingCacheOption) *CertServingCache {
 	sc := &CertServingCache{
 		ctx:       ctx,
 		cache:     map[string]entry{},
@@ -124,7 +124,7 @@ func (m *CertServingCache) GetCertificate(hello *tls.ClientHelloInfo) (*tls.Cert
 		return cert, nil
 	}
 
-	data, err := m.certStore.Get(m.ctx, name)
+	data, err := m.certStore.ReadFileCtx(m.ctx, name)
 	if err != nil {
 		return nil, err
 	}
