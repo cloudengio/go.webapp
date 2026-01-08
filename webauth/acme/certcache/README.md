@@ -131,6 +131,30 @@ func (dc *CachingStore) Put(ctx context.Context, name string, data []byte) error
 Put implements autocert.Cache.
 
 
+```go
+func (dc *CachingStore) ReadFile(name string) ([]byte, error)
+```
+Implement file.ReadfileFS“
+
+
+```go
+func (dc *CachingStore) ReadFileCtx(ctx context.Context, name string) ([]byte, error)
+```
+Implement file.ReadfileFS
+
+
+```go
+func (dc *CachingStore) WriteFile(name string, data []byte, perm fs.FileMode) error
+```
+Implement file.WritefileFS
+
+
+```go
+func (dc *CachingStore) WriteFileCtx(ctx context.Context, name string, data []byte, _ fs.FileMode) error
+```
+Implement file.WritefileFS
+
+
 
 
 ### Type Option

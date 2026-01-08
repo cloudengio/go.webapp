@@ -203,7 +203,7 @@ read from the supplied files.
 
 ### Func TLSConfigUsingCertStore
 ```go
-func TLSConfigUsingCertStore(ctx context.Context, store autocert.Cache, cacheOpts ...CertServingCacheOption) (*tls.Config, error)
+func TLSConfigUsingCertStore(ctx context.Context, store file.ReadFileFS, cacheOpts ...CertServingCacheOption) (*tls.Config, error)
 ```
 TLSConfigUsingCertStore returns a tls.Config configured with the
 certificate obtained from the specified certificate store accessed via a
@@ -251,12 +251,12 @@ in-memory cache will reload certificates from the store on a periodic basis
 ### Functions
 
 ```go
-func NewCertServingCache(ctx context.Context, certStore autocert.Cache, opts ...CertServingCacheOption) *CertServingCache
+func NewCertServingCache(ctx context.Context, certStore file.ReadFileFS, opts ...CertServingCacheOption) *CertServingCache
 ```
 NewCertServingCache returns a new instance of CertServingCache that uses
-the supplied CertStore. The supplied context is cached and used by the
+the supplied file.ReadFileFS. The supplied context is cached and used by the
 GetCertificate method, this allows for credentials etc to be passed to the
-CertStore.Get method called by GetCertificate via the context.
+ReadFileCtx method called by GetCertificate via the context.
 
 
 
@@ -279,23 +279,30 @@ CertServingCacheOption represents options to NewCertServingCache.
 ### Functions
 
 ```go
-func CertCacheNowFunc(fn func() time.Time) CertServingCacheOption
+func WithCertCacheAllowedHosts(hosts ...string) CertServingCacheOption
 ```
-CertCacheNowFunc sets the function used to obtain the current time. This is
-generally only required for testing purposes.
+WithCertCacheAllowedHosts sets the allowed hosts that the cache will serve
+certificates for.
 
 
 ```go
-func CertCacheRootCAs(rootCAs *x509.CertPool) CertServingCacheOption
+func WithCertCacheNowFunc(fn func() time.Time) CertServingCacheOption
 ```
-CertCacheRootCAs sets the rootCAs to be used when verifying the validity of
-the certificate loaded from the back store.
+WithCertCacheNowFunc sets the function used to obtain the current time.
+This is generally only required for testing purposes.
 
 
 ```go
-func CertCacheTTL(ttl time.Duration) CertServingCacheOption
+func WithCertCacheRootCAs(rootCAs *x509.CertPool) CertServingCacheOption
 ```
-CertCacheTTL sets the in-memory TTL beyond which cache entries are
+WithCertCacheRootCAs sets the rootCAs to be used when verifying the validity
+of the certificate loaded from the back store.
+
+
+```go
+func WithCertCacheTTL(ttl time.Duration) CertServingCacheOption
+```
+WithCertCacheTTL sets the in-memory TTL beyond which cache entries are
 refreshed. This is generally only required for testing purposes.
 
 
