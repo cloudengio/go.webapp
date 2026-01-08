@@ -70,7 +70,7 @@ func CertCacheNowFunc(fn func() time.Time) CertServingCacheOption {
 // NewCertServingCache returns a new instance of CertServingCache that
 // uses the supplied file.ReadFileFS. The supplied context is cached and used by
 // the GetCertificate method, this allows for credentials etc to be passed
-// to the file.ReadFileFS method called by GetCertificate via the context.
+// to the ReadFileCtx method called by GetCertificate via the context.
 func NewCertServingCache(ctx context.Context, certStore file.ReadFileFS, opts ...CertServingCacheOption) *CertServingCache {
 	sc := &CertServingCache{
 		ctx:       ctx,

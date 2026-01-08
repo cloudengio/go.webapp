@@ -233,7 +233,7 @@ func (dc *CachingStore) Put(ctx context.Context, name string, data []byte) error
 	return nil
 }
 
-// Implement file.ReadfileFS
+// Implement file.ReadfileFS“
 func (dc *CachingStore) ReadFile(name string) ([]byte, error) {
 	return dc.ReadFileCtx(context.Background(), name)
 }
@@ -249,7 +249,7 @@ func (dc *CachingStore) WriteFile(name string, data []byte, perm fs.FileMode) er
 }
 
 // Implement file.WritefileFS
-func (dc *CachingStore) WriteFileCtx(ctx context.Context, name string, data []byte, perm fs.FileMode) error {
+func (dc *CachingStore) WriteFileCtx(ctx context.Context, name string, data []byte, _ fs.FileMode) error {
 	return dc.Put(ctx, name, data)
 }
 
