@@ -268,6 +268,44 @@ func TestServeWithShutdown_ShutdownError(t *testing.T) {
 	}
 }
 
+func TestBaseContext(t *testing.T) {
+	type contextKey int
+	const myKey contextKey = 0
+
+	ctx := t.Context()
+	ctx = context.WithValue(ctx, myKey, "myValue")
+
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		val := r.Context().Value(myKey)
+		if val != "myValue" {
+			t.Errorf("expected context value 'myValue', got %v", val)
+		}
+		fmt.Fprint(w, "ok")
+	})
+
+	ln, srv, err := webapp.NewHTTPServer(ctx, "127.0.0.1:0", handler)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	go func() {
+		if err := webapp.ServeWithShutdown(ctx, ln, srv, time.Second); err != nil {
+			t.Errorf("ServeWithShutdown returned an unexpected error: %v", err)
+		}
+	}()
+
+	client := http.Client{}
+	resp, err := client.Get("http://" + ln.Addr().String())
+	if err != nil {
+		t.Fatalf("http.Get: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		t.Errorf("expected status OK, got %v", resp.Status)
+	}
+}
+
 func ExampleServeWithShutdown() {
 	ctx := context.Background()
 
