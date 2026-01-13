@@ -28,8 +28,9 @@ type Client struct {
 type ClientOption func(o *clientOptions)
 
 type clientOptions struct {
-	refreshInterval time.Duration
-	refreshMetric   webapp.CounterVecInc
+	refreshInterval  time.Duration
+	refreshMetric    webapp.CounterVecInc
+	refreshOnFailure time.Duration
 }
 
 // WithRefreshInterval configures the client to refresh certificates
@@ -49,6 +50,15 @@ func WithRefreshMetric(refresh webapp.CounterVecInc) ClientOption {
 	}
 }
 
+// WithRefreshOnFailure configures the client to refresh certificates
+// at the provided interval when a refresh fails. If not set, the default
+// is 1 minute.
+func WithRefreshOnFailure(interval time.Duration) ClientOption {
+	return func(o *clientOptions) {
+		o.refreshOnFailure = interval
+	}
+}
+
 // NewClient creates a new client that refreshes certificates for the
 // provided hosts using the autocert.Manager.
 func NewClient(mgr *autocert.Manager, opts ...ClientOption) *Client {
@@ -58,7 +68,10 @@ func NewClient(mgr *autocert.Manager, opts ...ClientOption) *Client {
 		opt(&o)
 	}
 	if o.refreshInterval <= 0 {
-		o.refreshInterval = 1 * time.Hour
+		o.refreshInterval = time.Hour
+	}
+	if o.refreshOnFailure <= 0 {
+		o.refreshOnFailure = time.Minute
 	}
 	return &Client{
 		mgr:  mgr,
@@ -96,6 +109,23 @@ func (s *Client) stop(logger *slog.Logger, cancel func(), errCh <-chan error) er
 	}
 }
 
+func (s *Client) getCertificate(ctx context.Context, logger *slog.Logger, host string) {
+	ticker := time.NewTicker(s.opts.refreshOnFailure)
+	defer ticker.Stop()
+	for {
+		err := s.refreshHost(ctx, logger, host)
+		if err == nil {
+			return
+		}
+		logger.Error("failed to refresh certificate using tls hello", "host", host, "error", err)
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+		}
+	}
+}
+
 func (s *Client) refresh(ctx context.Context, logger *slog.Logger, errCh chan<- error, hosts []string) {
 	grp := &errgroup.T{}
 	for _, host := range hosts {
@@ -105,9 +135,7 @@ func (s *Client) refresh(ctx context.Context, logger *slog.Logger, errCh chan<- 
 			ticker := time.NewTicker(s.opts.refreshInterval)
 			defer ticker.Stop()
 			for {
-				if err := s.refreshHost(ctx, logger, h); err != nil {
-					logger.Error("failed to refresh certificate using tls hello", "host", h, "error", err)
-				}
+				s.getCertificate(ctx, logger, h)
 				select {
 				case <-ctx.Done():
 					return nil

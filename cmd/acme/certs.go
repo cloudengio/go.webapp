@@ -12,6 +12,7 @@ import (
 
 	"cloudeng.io/aws/awsconfig"
 	"cloudeng.io/aws/awssecretsfs"
+	"cloudeng.io/logging/ctxlog"
 	"cloudeng.io/webapp/webauth/acme/certcache"
 )
 
@@ -65,7 +66,9 @@ func newCertStore(ctx context.Context, cl TLSCertStoreFlags, awscl awsconfig.AWS
 
 func getCert(ctx context.Context, values any, args []string) error {
 	cl := values.(*getCertFlags)
-	store, err := newCertStore(ctx, cl.TLSCertStoreFlags, cl.AWSFlags, certcache.WithReadonly(true))
+	store, err := newCertStore(ctx, cl.TLSCertStoreFlags, cl.AWSFlags,
+		certcache.WithReadonly(true),
+		certcache.WithLogger(ctxlog.Logger(ctx)))
 	if err != nil {
 		return err
 	}
@@ -80,7 +83,9 @@ func getCert(ctx context.Context, values any, args []string) error {
 
 func putCert(ctx context.Context, values any, args []string) error {
 	cl := values.(*putCertFlags)
-	store, err := newCertStore(ctx, cl.TLSCertStoreFlags, cl.AWSFlags, certcache.WithReadonly(false))
+	store, err := newCertStore(ctx, cl.TLSCertStoreFlags, cl.AWSFlags,
+		certcache.WithReadonly(false),
+		certcache.WithLogger(ctxlog.Logger(ctx)))
 	if err != nil {
 		return err
 	}
