@@ -80,6 +80,10 @@ func HasReadonlyOption(opts []Option) bool {
 	return o.readonly
 }
 
+// WithLogger sets the logger to use for logging cache operations.
+// This is the only way to set a logger since the context passed used
+// when invoking autocert.Cache methods is derived from context.Background()
+// and cannot be otherwise specified.
 func WithLogger(logger *slog.Logger) Option {
 	return func(o *options) {
 		o.logger = logger
