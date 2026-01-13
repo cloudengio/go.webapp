@@ -23,6 +23,9 @@ import (
 // waits for the context to be canceled. It will then attempt to shutdown
 // the web server within the specified grace period.
 func ServeWithShutdown(ctx context.Context, ln net.Listener, srv *http.Server, grace time.Duration) error {
+	srv.BaseContext = func(_ net.Listener) context.Context {
+		return ctx
+	}
 	return serveWithShutdown(ctx, srv, grace, func() error {
 		return srv.Serve(ln)
 	})
@@ -34,6 +37,9 @@ func ServeWithShutdown(ctx context.Context, ln net.Listener, srv *http.Server, g
 func ServeTLSWithShutdown(ctx context.Context, ln net.Listener, srv *http.Server, grace time.Duration) error {
 	if srv.TLSConfig == nil {
 		return fmt.Errorf("ServeTLSWithShutdown requires a non-nil TLSConfig in the http.Server")
+	}
+	srv.BaseContext = func(_ net.Listener) context.Context {
+		return ctx
 	}
 	return serveWithShutdown(ctx, srv, grace, func() error {
 		return srv.ServeTLS(ln, "", "")
@@ -155,12 +161,12 @@ func WaitForServers(ctx context.Context, interval time.Duration, addrs ...string
 
 func ping(ctx context.Context, interval time.Duration, addr string) error {
 	for {
-		ctxlog.Logger(ctx).Info("ping: server", "addr", addr)
+		ctxlog.Logger(ctx).Info("waitForServers: server", "addr", addr)
 		_, err := net.DialTimeout("tcp", addr, time.Second)
 		if err == nil {
 			return nil
 		}
-		ctxlog.Logger(ctx).Debug("ping: server not available yet", "addr", addr, "error", err.Error())
+		ctxlog.Logger(ctx).Debug("waitForServers: server not available yet", "addr", addr, "error", err.Error())
 		if errors.Is(err, context.Canceled) {
 			return err
 		}
@@ -168,7 +174,7 @@ func ping(ctx context.Context, interval time.Duration, addr string) error {
 		case <-ctx.Done():
 			return ctx.Err()
 		case <-time.After(interval):
-			ctxlog.Info(ctx, "ping: server timeout", "addr", addr, "duration", interval.String())
+			ctxlog.Info(ctx, "waitForServers: server timeout", "addr", addr, "duration", interval.String())
 
 		}
 	}
@@ -177,27 +183,29 @@ func ping(ctx context.Context, interval time.Duration, addr string) error {
 // WaitForURLs waits for all supplied URLs to be available
 // by attempting to perform HTTP GET requests to each URL
 // at the specified interval.
-func WaitForURLs(ctx context.Context, interval time.Duration, urls ...string) error {
+func WaitForURLs(ctx context.Context, client *http.Client, interval time.Duration, urls ...string) error {
+	if client == nil {
+		client = &http.Client{
+			Timeout: time.Second,
+		}
+	}
 	switch len(urls) {
 	case 0:
 		return nil
 	case 1:
-		return pingURL(ctx, interval, urls[0])
+		return pingURL(ctx, client, interval, urls[0])
 	}
 	g, ctx := errgroup.WithContext(ctx)
 	for _, url := range urls {
 		g.Go(func() error {
-			return pingURL(ctx, interval, url)
+			return pingURL(ctx, client, interval, url)
 		})
 	}
 	return g.Wait()
 }
 
-func pingURL(ctx context.Context, interval time.Duration, url string) error {
+func pingURL(ctx context.Context, client *http.Client, interval time.Duration, url string) error {
 	{
-		client := &http.Client{
-			Timeout: time.Millisecond * 250,
-		}
 		for {
 			ctxlog.Logger(ctx).Info("ping: url", "url", url)
 			resp, err := client.Get(url)
