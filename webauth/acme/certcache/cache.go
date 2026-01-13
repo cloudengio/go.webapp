@@ -17,6 +17,7 @@ import (
 	"strings"
 
 	"cloudeng.io/errors"
+	"cloudeng.io/logging/ctxlog"
 	"cloudeng.io/os/lockedfile"
 	"golang.org/x/crypto/acme/autocert"
 )
@@ -151,21 +152,22 @@ var (
 // Delete implements autocert.Cache.
 func (dc *CachingStore) Delete(ctx context.Context, name string) error {
 	if dc.opts.readonly {
-		return fmt.Errorf("delete %q: %w", name, ErrReadonlyCache)
+		return fmt.Errorf("webauth/acme/certcache: delete %q: %w", name, ErrReadonlyCache)
 	}
+	ctxlog.Warn(ctx, "webauth/acme/certcache: delete", "key", name)
 	if !IsLocalName(name) {
 		if err := dc.backingStore.Delete(ctx, name); err != nil {
-			return fmt.Errorf("delete %q: %w", name, errors.NewM(err, ErrBackingOperation))
+			return fmt.Errorf("webauth/acme/certcache: delete %q: %w", name, errors.NewM(err, ErrBackingOperation))
 		}
 		return nil
 	}
 	unlock, err := dc.lock.Lock()
 	if err != nil {
-		return errors.NewM(fmt.Errorf("lock acquisition failed: %w", err), ErrLockFailed)
+		return errors.NewM(fmt.Errorf("webauth/acme/certcache: delete %q: lock acquisition failed: %w", name, err), ErrLockFailed)
 	}
 	defer unlock()
 	if err := dc.localCache.Delete(ctx, name); err != nil {
-		return fmt.Errorf("delete %q: %w", name, errors.NewM(err, ErrLocalOperation))
+		return fmt.Errorf("webauth/acme/certcache: delete %q: %w", name, errors.NewM(err, ErrLocalOperation))
 	}
 	return nil
 
@@ -180,14 +182,13 @@ func (dc *CachingStore) translateCacheMiss(err error) error {
 
 // Get implements autocert.Cache.
 func (dc *CachingStore) Get(ctx context.Context, name string) ([]byte, error) {
-	name, backingStore := dc.useBackingStore(name)
-	if backingStore {
-		data, err := dc.backingStore.ReadFileCtx(ctx, name)
+	if bname, backingStore := dc.useBackingStore(name); backingStore {
+		data, err := dc.backingStore.ReadFileCtx(ctx, bname)
 		if err != nil {
 			if err = dc.translateCacheMiss(err); err == ErrCacheMiss {
 				return nil, ErrCacheMiss
 			}
-			return nil, fmt.Errorf("get %q: %w", name, errors.NewM(err, ErrBackingOperation))
+			return nil, fmt.Errorf("webauth/acme/certcache: get %q: backing store name %q: %w", name, bname, errors.NewM(err, ErrBackingOperation))
 		}
 		return data, nil
 	}
@@ -199,7 +200,7 @@ func (dc *CachingStore) Get(ctx context.Context, name string) ([]byte, error) {
 		unlock, err = dc.lock.Lock()
 	}
 	if err != nil {
-		return nil, errors.NewM(fmt.Errorf("lock acquisition failed: %w", err), ErrLockFailed)
+		return nil, errors.NewM(fmt.Errorf("webauth/acme/certcache: get lock acquisition failed: %w", err), ErrLockFailed)
 	}
 	defer unlock()
 	data, err := dc.localCache.Get(ctx, name)
@@ -207,7 +208,7 @@ func (dc *CachingStore) Get(ctx context.Context, name string) ([]byte, error) {
 		if err = dc.translateCacheMiss(err); err == ErrCacheMiss {
 			return nil, ErrCacheMiss
 		}
-		return nil, fmt.Errorf("get %q: %w", name, errors.NewM(err, ErrLocalOperation))
+		return nil, fmt.Errorf("webauth/acme/certcache: get %q: %w", name, errors.NewM(err, ErrLocalOperation))
 	}
 	return data, nil
 }
@@ -228,26 +229,24 @@ func (dc *CachingStore) Put(ctx context.Context, name string, data []byte) error
 		dc.opts.logger.Error("webauth/acme/certcache: readonly cache", "key", name)
 		return fmt.Errorf("put %q: %w", name, ErrReadonlyCache)
 	}
-	oname := name
-	name, backingStore := dc.useBackingStore(name)
-	if backingStore {
-		if err := dc.backingStore.WriteFileCtx(ctx, name, data, 0600); err != nil {
-			dc.opts.logger.Error("webauth/acme/certcache: backing store failed", "key", oname, "backing store name", name, "error", err)
-			return fmt.Errorf("put %q, backing store name: %q: %w", oname, name, errors.NewM(err, ErrBackingOperation))
+	if bname, backingStore := dc.useBackingStore(name); backingStore {
+		if err := dc.backingStore.WriteFileCtx(ctx, bname, data, 0600); err != nil {
+			dc.opts.logger.Error("webauth/acme/certcache: backing store failed", "key", name, "backing store name", bname, "error", err)
+			return fmt.Errorf("put %q, backing store name: %q: %w", name, bname, errors.NewM(err, ErrBackingOperation))
 		}
-		dc.opts.logger.Info("webauth/acme/certcache: backing store succeeded", "key", oname, "backing store name", name)
+		dc.opts.logger.Info("webauth/acme/certcache: backing store succeeded", "key", name, "backing store name", bname)
 		return nil
 	}
 	unlock, err := dc.lock.Lock()
 	if err != nil {
-		return errors.NewM(fmt.Errorf("webauth/acme/certcache:lock acquisition failed: %w", err), ErrLockFailed)
+		return errors.NewM(fmt.Errorf("webauth/acme/certcache: lock acquisition failed: %w", err), ErrLockFailed)
 	}
 	defer unlock()
 	if err := dc.localCache.Put(ctx, name, data); err != nil {
-		dc.opts.logger.Error("webauth/acme/certcache: local cache failed", "key", oname, "error", err)
+		dc.opts.logger.Error("webauth/acme/certcache: local cache failed", "key", name, "error", err)
 		return fmt.Errorf("put %q: %w", name, errors.NewM(err, ErrLocalOperation))
 	}
-	dc.opts.logger.Info("webauth/acme/certcache: local cache succeeded", "key", oname)
+	dc.opts.logger.Info("webauth/acme/certcache: local cache succeeded", "key", name)
 	return nil
 }
 
