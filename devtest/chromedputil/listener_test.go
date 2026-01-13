@@ -424,7 +424,7 @@ func TestRunLoggingListenerClaude(t *testing.T) {
 		chromedputil.WithAnyEventLogging(),
 	)
 
-	if err := webapp.WaitForURLs(ctx, time.Second, serverURL); err != nil {
+	if err := webapp.WaitForURLs(ctx, nil, time.Second, serverURL); err != nil {
 		t.Fatalf("Failed to wait for server URL: %v", err)
 	}
 

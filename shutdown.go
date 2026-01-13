@@ -22,8 +22,9 @@ import (
 // ServeWithShutdown runs srv.ListenAndServe in background and then
 // waits for the context to be canceled. It will then attempt to shutdown
 // the web server within the specified grace period.
+// If srv.BaseContext is nil it will be set to return ctx.
 func ServeWithShutdown(ctx context.Context, ln net.Listener, srv *http.Server, grace time.Duration) error {
-	return serveWithShutdown(ctx, srv, grace, func() error {
+	return serveWithShutdown(ctx, srv, ln, grace, func(srv *http.Server, ln net.Listener) error {
 		return srv.Serve(ln)
 	})
 }
@@ -31,19 +32,27 @@ func ServeWithShutdown(ctx context.Context, ln net.Listener, srv *http.Server, g
 // ServeTLSWithShutdown is like ServeWithShutdown except for a TLS server.
 // Note that any TLS options must be configured prior to calling this
 // function via the TLSConfig field in http.Server.
+// If srv.BaseContext is nil it will be set to return ctx.
 func ServeTLSWithShutdown(ctx context.Context, ln net.Listener, srv *http.Server, grace time.Duration) error {
 	if srv.TLSConfig == nil {
 		return fmt.Errorf("ServeTLSWithShutdown requires a non-nil TLSConfig in the http.Server")
 	}
-	return serveWithShutdown(ctx, srv, grace, func() error {
+	return serveWithShutdown(ctx, srv, ln, grace, func(srv *http.Server, ln net.Listener) error {
 		return srv.ServeTLS(ln, "", "")
 	})
 }
 
-func serveWithShutdown(ctx context.Context, srv *http.Server, grace time.Duration, fn func() error) error {
+func serveWithShutdown(ctx context.Context, srv *http.Server, ln net.Listener, grace time.Duration, fn func(srv *http.Server, ln net.Listener) error) error {
+
+	if srv.BaseContext == nil {
+		srv.BaseContext = func(_ net.Listener) context.Context {
+			return ctx
+		}
+	}
+
 	serveErrCh := make(chan error, 1)
 	go func() {
-		err := fn()
+		err := fn(srv, ln)
 		if err != nil && !errors.Is(err, http.ErrServerClosed) {
 			serveErrCh <- err
 			return
@@ -155,12 +164,12 @@ func WaitForServers(ctx context.Context, interval time.Duration, addrs ...string
 
 func ping(ctx context.Context, interval time.Duration, addr string) error {
 	for {
-		ctxlog.Logger(ctx).Info("ping: server", "addr", addr)
+		ctxlog.Logger(ctx).Info("waitForServers: server", "addr", addr)
 		_, err := net.DialTimeout("tcp", addr, time.Second)
 		if err == nil {
 			return nil
 		}
-		ctxlog.Logger(ctx).Debug("ping: server not available yet", "addr", addr, "error", err.Error())
+		ctxlog.Logger(ctx).Debug("waitForServers: server not available yet", "addr", addr, "error", err.Error())
 		if errors.Is(err, context.Canceled) {
 			return err
 		}
@@ -168,7 +177,7 @@ func ping(ctx context.Context, interval time.Duration, addr string) error {
 		case <-ctx.Done():
 			return ctx.Err()
 		case <-time.After(interval):
-			ctxlog.Info(ctx, "ping: server timeout", "addr", addr, "duration", interval.String())
+			ctxlog.Info(ctx, "waitForServers: server timeout", "addr", addr, "duration", interval.String())
 
 		}
 	}
@@ -177,30 +186,36 @@ func ping(ctx context.Context, interval time.Duration, addr string) error {
 // WaitForURLs waits for all supplied URLs to be available
 // by attempting to perform HTTP GET requests to each URL
 // at the specified interval.
-func WaitForURLs(ctx context.Context, interval time.Duration, urls ...string) error {
+func WaitForURLs(ctx context.Context, client *http.Client, interval time.Duration, urls ...string) error {
+	if client == nil {
+		client = &http.Client{
+			Timeout: time.Second,
+		}
+	}
 	switch len(urls) {
 	case 0:
 		return nil
 	case 1:
-		return pingURL(ctx, interval, urls[0])
+		return pingURL(ctx, client, interval, urls[0])
 	}
 	g, ctx := errgroup.WithContext(ctx)
 	for _, url := range urls {
 		g.Go(func() error {
-			return pingURL(ctx, interval, url)
+			return pingURL(ctx, client, interval, url)
 		})
 	}
 	return g.Wait()
 }
 
-func pingURL(ctx context.Context, interval time.Duration, url string) error {
+func pingURL(ctx context.Context, client *http.Client, interval time.Duration, url string) error {
 	{
-		client := &http.Client{
-			Timeout: time.Millisecond * 250,
-		}
 		for {
 			ctxlog.Logger(ctx).Info("ping: url", "url", url)
-			resp, err := client.Get(url)
+			req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+			if err != nil {
+				return fmt.Errorf("failed to create request for %s: %w", url, err)
+			}
+			resp, err := client.Do(req)
 			if err == nil && resp.StatusCode >= 200 && resp.StatusCode < 400 {
 				return nil
 			}
