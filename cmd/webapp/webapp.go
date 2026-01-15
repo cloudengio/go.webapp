@@ -100,7 +100,7 @@ func main() {
 func serveContent(router chi.Router) {
 	assets := webassets.NewAssets("webapp-sample/build/", webpackedAssets)
 	router.Handle("/static/*", http.FileServer(http.FS(assets)))
-	router.NotFound(serveIndexHTML(assets)) // serve index.html on all urls.
+	router.NotFound(serveIndexHTML(assets).ServeHTTP) // serve index.html on all urls.
 }
 
 func prodServe(ctx context.Context, values any, _ []string) error {
@@ -192,15 +192,8 @@ func configureAPIEndpoints(router chi.Router) {
 	})
 }
 
-func serveIndexHTML(fsys fs.FS) http.HandlerFunc {
-	return func(w http.ResponseWriter, _ *http.Request) {
-		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		code, err := webassets.ServeFile(w, fsys, "index.html")
-		w.WriteHeader(code)
-		if err != nil {
-			log.Printf("index.html: %v %v", code, err)
-		}
-	}
+func serveIndexHTML(fsys fs.FS) http.Handler {
+	return http.FileServer(webapp.NewSameFileHTTPFilesystem(fsys, "index.html"))
 }
 
 func runWebpackDevServer(ctx context.Context, webpackDir string) (*url.URL, error) {
