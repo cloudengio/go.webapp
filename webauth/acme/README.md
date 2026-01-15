@@ -108,6 +108,13 @@ with the outcome of each refresh operation. The metric will be incremented
 with the labels: host, status.
 
 
+```go
+func WithRefreshOnFailure(interval time.Duration) ClientOption
+```
+WithRefreshOnFailure configures the client to refresh certificates at the
+provided interval when a refresh fails. If not set, the default is 1 minute.
+
+
 
 
 ### Type ServiceFlags
