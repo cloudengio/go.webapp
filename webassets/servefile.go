@@ -30,6 +30,6 @@ func NewSameFileHTTPFilesystem(fs fs.FS, filename string) http.FileSystem {
 }
 
 // Open implements http.FileSystem.
-func (sff *SameFileHTTPFilesystem) Open(name string) (http.File, error) {
+func (sff *SameFileHTTPFilesystem) Open(string) (http.File, error) {
 	return sff.fs.Open(sff.filename)
 }
