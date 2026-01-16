@@ -184,7 +184,8 @@ func ServeTLSWithShutdown(ctx context.Context, ln net.Listener, srv *http.Server
 ```
 ServeTLSWithShutdown is like ServeWithShutdown except for a TLS server.
 Note that any TLS options must be configured prior to calling this function
-via the TLSConfig field in http.Server.
+via the TLSConfig field in http.Server. If srv.BaseContext is nil it will be
+set to return ctx.
 
 ### Func ServeWithShutdown
 ```go
@@ -192,7 +193,8 @@ func ServeWithShutdown(ctx context.Context, ln net.Listener, srv *http.Server, g
 ```
 ServeWithShutdown runs srv.ListenAndServe in background and then waits for
 the context to be canceled. It will then attempt to shutdown the web server
-within the specified grace period.
+within the specified grace period. If srv.BaseContext is nil it will be set
+to return ctx.
 
 ### Func TLSConfigUsingCertFiles
 ```go
@@ -227,7 +229,7 @@ interval.
 
 ### Func WaitForURLs
 ```go
-func WaitForURLs(ctx context.Context, interval time.Duration, urls ...string) error
+func WaitForURLs(ctx context.Context, client *http.Client, interval time.Duration, urls ...string) error
 ```
 WaitForURLs waits for all supplied URLs to be available by attempting to
 perform HTTP GET requests to each URL at the specified interval.

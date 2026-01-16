@@ -5,24 +5,31 @@
 package webassets
 
 import (
-	"io"
 	"io/fs"
 	"net/http"
-	"os"
 )
 
-// ServeFile writes the specified file from the supplied fs.FS returning
-// to the supplied writer, returning an appropriate http status code.
-func ServeFile(wr io.Writer, fsys fs.FS, name string) (int, error) {
-	f, err := fsys.Open(name)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return http.StatusNotFound, err
-		}
-		return http.StatusInternalServerError, err
+// SameFileHTTPFilesystem is an http.FileSystem that always returns the same
+// file regardless of the name used to open it. It is typically used
+// to serve index.html, or any other single file regardless of
+// the requested path, eg:
+//
+// http.Handle("/", http.FileServer(SameFileHTTPFilesystem(assets, "index.html")))
+type SameFileHTTPFilesystem struct {
+	filename string
+	fs       http.FileSystem
+}
+
+// NewSameFileHTTPFilesystem returns a new SameFileHTTPFilesystem that always returns
+// the specified filename when opened.
+func NewSameFileHTTPFilesystem(fs fs.FS, filename string) http.FileSystem {
+	return &SameFileHTTPFilesystem{
+		filename: filename,
+		fs:       http.FS(fs),
 	}
-	if _, err := io.Copy(wr, f); err != nil {
-		return http.StatusInternalServerError, err
-	}
-	return http.StatusOK, nil
+}
+
+// Open implements http.FileSystem.
+func (sff *SameFileHTTPFilesystem) Open(string) (http.File, error) {
+	return sff.fs.Open(sff.filename)
 }

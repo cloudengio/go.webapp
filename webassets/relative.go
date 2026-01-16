@@ -6,25 +6,25 @@ package webassets
 
 import (
 	"io/fs"
+	"log/slog"
 	"path"
-
-	"cloudeng.io/io/reloadfs"
 )
 
 type relative struct {
 	prefix string
-	logger func(action reloadfs.Action, name, path string, err error)
 	fs     fs.FS
+	logger *slog.Logger
 }
 
 // Open implements fs.FS.
 func (r *relative) Open(name string) (fs.File, error) {
 	full := path.Join(r.prefix, name)
-	fs, err := r.fs.Open(full)
-	if r.logger != nil {
-		r.logger(reloadfs.Reused, name, full, err)
+	f, err := r.fs.Open(full)
+	if err != nil {
+		r.logger.Error("failed to open", "name", name, "path", full, "error", err)
+		return nil, err
 	}
-	return fs, err
+	return f, nil
 }
 
 // RelativeFS wraps the supplied FS so that prefix is prepended
@@ -33,9 +33,13 @@ func (r *relative) Open(name string) (fs.File, error) {
 // is created from 'assets/...' but the URL path to access them
 // is at the root. So /index.html can be mapped to assets/index.html.
 func RelativeFS(prefix string, fs fs.FS) fs.FS {
-	return relativeFS(prefix, fs)
+	return relativeFS(prefix, fs, nil)
 }
 
-func relativeFS(prefix string, fs fs.FS) *relative {
-	return &relative{prefix: prefix, logger: nil, fs: fs}
+func relativeFS(prefix string, fs fs.FS, logger *slog.Logger) *relative {
+	if logger == nil {
+		logger = slog.Default()
+	}
+	logger = logger.With("pkg", "webapp/webassets.relativeFS")
+	return &relative{prefix: prefix, fs: fs, logger: logger}
 }

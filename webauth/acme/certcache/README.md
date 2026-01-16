@@ -165,6 +165,15 @@ type Option func(o *options)
 ### Functions
 
 ```go
+func WithLogger(logger *slog.Logger) Option
+```
+WithLogger sets the logger to use for logging cache operations. This is
+the only way to set a logger since the context passed used when invoking
+autocert.Cache methods is derived from context.Background() and cannot be
+otherwise specified.
+
+
+```go
 func WithReadonly(readonly bool) Option
 ```
 WithReadonly sets whether the caching store is readonly.
