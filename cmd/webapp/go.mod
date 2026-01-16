@@ -2,8 +2,6 @@ module cloudeng.io/webapp/cmd/webapp
 
 go 1.25.5
 
-replace cloudeng.io/webapp => ../..
-
 require (
 	cloudeng.io/cmdutil v0.0.0-20260114060639-052fa943c25b
 	cloudeng.io/webapp v0.0.0-20251211202122-3206a59d8279
@@ -25,3 +23,5 @@ require (
 	golang.org/x/text v0.33.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
+
+replace cloudeng.io/webapp => ../..

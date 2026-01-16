@@ -193,7 +193,7 @@ func configureAPIEndpoints(router chi.Router) {
 }
 
 func serveIndexHTML(fsys fs.FS) http.Handler {
-	return http.FileServer(webapp.NewSameFileHTTPFilesystem(fsys, "index.html"))
+	return http.FileServer(webassets.NewSameFileHTTPFilesystem(fsys, "index.html"))
 }
 
 func runWebpackDevServer(ctx context.Context, webpackDir string) (*url.URL, error) {
