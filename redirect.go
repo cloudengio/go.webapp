@@ -64,7 +64,16 @@ func RedirectAcmeHTTP01(host string) Redirect {
 	}
 }
 
-const ACMEHTTP01Prefix = "/.well-known/acme-challenge/"
+const (
+	// ACMEHTTP01Prefix is the well-known prefix for ACME HTTP-01 challenges.
+	ACMEHTTP01Prefix = "/.well-known/acme-challenge/"
+	// ACMEHTTP01HTTPPrefix is the well-known prefix for ACME HTTP-01 challenges
+	// when used with http.ServeMux
+	ACMEHTTP01HTTPPrefix = ACMEHTTP01Prefix
+	// ACMEHTTP01ChiPrefix is the well-known prefix for ACME HTTP-01 challenges
+	// when used with chi.Router
+	ACMEHTTP01ChiPrefix = ACMEHTTP01Prefix + "*"
+)
 
 func splitHostPort(hostport string) (string, string) {
 	if host, port, err := net.SplitHostPort(hostport); err == nil {

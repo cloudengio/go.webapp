@@ -41,12 +41,18 @@ type JWTCookieLoginManager struct {
 	LoginCookie cookies.Secure // initialized as cookies.T("webauthn_login")
 }
 
-// NewJWTCookieLoginManager creates a new JWTCookieLoginManager instance.
-func NewJWTCookieLoginManager(signer jwtutil.Signer, issuer string, cookie cookies.ScopeAndDuration) JWTCookieLoginManager {
-	p := jwt.NewParser(
+// NewJWTParser creates a new JWT parser with the specified issuer and audience
+// of 'webauthn'.
+func NewJWTParser(issuer string) *jwt.Parser {
+	return jwt.NewParser(
 		jwt.WithIssuer(issuer),
 		jwt.WithAudience("webauthn"),
 	)
+}
+
+// NewJWTCookieLoginManager creates a new JWTCookieLoginManager instance.
+func NewJWTCookieLoginManager(signer jwtutil.Signer, issuer string, cookie cookies.ScopeAndDuration) JWTCookieLoginManager {
+	p := NewJWTParser(issuer)
 	m := JWTCookieLoginManager{
 		signer:      signer,
 		loginCookie: cookie.SetDefaults("", "/", 10*time.Minute),

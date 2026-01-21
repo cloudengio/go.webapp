@@ -1,5 +1,4 @@
-cloudeng.io/algo v0.0.0-20260114060639-052fa943c25b h1:JnFA2klVw//I3TcZS18F4zRieZSvOmswRFX2AQ5K90c=
-cloudeng.io/algo v0.0.0-20260114060639-052fa943c25b/go.mod h1:pjXLOZUvlHDj9nF7WsB2ECQVxmwneZ/VVOAkMAnaxaE=
+cloudeng.io/algo v0.0.0-20260118175335-f191a42253cc h1:RYBAojaXHPYbBWJ0RHnSIrlEc+h/j0sNj5ATETedxOk=
 cloudeng.io/cmdutil v0.0.0-20260114060639-052fa943c25b h1:a74PZDVenRv0mYEgH7dEQN+4WH8rCCbfthf3E4JduhE=
 cloudeng.io/cmdutil v0.0.0-20260114060639-052fa943c25b/go.mod h1:xXGgWkOKW9/WnwGqtziuGXWTqeDSagkh7mSCNq0uWlU=
 cloudeng.io/debug v0.0.0-20260114020737-744f6c0f8e64 h1:HasXXdNduLmbkgEI/TCikpckH+g3J8EaNVtgP/7TXzs=
@@ -10,16 +9,14 @@ cloudeng.io/file v0.0.0-20260114060639-052fa943c25b h1:9av2Jx5Svrc/ZxVYhYYs7/uyt
 cloudeng.io/file v0.0.0-20260114060639-052fa943c25b/go.mod h1:jzznsLg6mtZr7CcBMlziirBx+ldZrkzFUbsvxQ+s5Sk=
 cloudeng.io/io v0.0.0-20260114060639-052fa943c25b h1:IDmiIWbvG6CjLxVopiPjVotJ64oMO4wfd0h5HYr7Zyo=
 cloudeng.io/io v0.0.0-20260114060639-052fa943c25b/go.mod h1:w7V/+HjSoSXAjlKc2HDAE7y9HfJ8isxzKB717JlsEe4=
-cloudeng.io/logging v0.0.0-20260114060639-052fa943c25b h1:cZaDqWcCT5yg+bTXM/lrbH0grxe4rf6FrD07HqEC1vA=
-cloudeng.io/logging v0.0.0-20260114060639-052fa943c25b/go.mod h1:1srNtLRpQsIoLck/p/JmvR/QfwfPbDO/65orqtdh1N0=
+cloudeng.io/logging v0.0.0-20260118175335-f191a42253cc h1:8BDVKFpfOuellQGZY5HA2DGfSMFvSGsEEbtPbtV6yGo=
 cloudeng.io/net v0.0.0-20260114060639-052fa943c25b h1:Dm6CGBEw6QD+nVpYtRXsAYliQ70xToDSNqFdL/Ah4w8=
 cloudeng.io/net v0.0.0-20260114060639-052fa943c25b/go.mod h1:vbBp7CTTwf1mLU5cZefci2EUELfpYTFQ8xkERiTToGs=
 cloudeng.io/os v0.0.0-20260118175335-f191a42253cc h1:j1N5xdsEHwp+QXPwzqzTS7QEvCvJtnFn8xnmJcmBPWU=
 cloudeng.io/os v0.0.0-20260118175335-f191a42253cc/go.mod h1:S9sHRS5g4gc/016s+q4VH9AD+m0ecwdo9NT6+thTlBs=
 cloudeng.io/sync v0.0.9-0.20260114020737-744f6c0f8e64 h1:Mg+W3M/f1eSFtzBbF1l7y7gASv/hFzpvtPubsx1sjUQ=
 cloudeng.io/sync v0.0.9-0.20260114020737-744f6c0f8e64/go.mod h1:0lA6WiBA1Uq3Uvzo0Yyr1xcWIgreeTyX2FxaBIzzvs8=
-cloudeng.io/sys v0.0.0-20260114060639-052fa943c25b h1:Yq2D9LJRQQIKGQZGS989mGt5H8nmSSljftm+x1EEcXY=
-cloudeng.io/sys v0.0.0-20260114060639-052fa943c25b/go.mod h1:LDe7ke+SdFTGgq4tSfReeptDPv0+jdSWkVtoEm6DQtg=
+cloudeng.io/sys v0.0.0-20260118175335-f191a42253cc h1:Pc24Zn+WfNRX1IqM0OFn69x2mKx86HnsWg2NTPVsIbE=
 cloudeng.io/windows v0.0.0-20251203211350-c30caae1cc5e h1:88FLgbskFkcsZSgh3jncYqYBg1J2eLHGzmdp74APrCQ=
 cloudeng.io/windows v0.0.0-20251203211350-c30caae1cc5e/go.mod h1:tUOArMXLISe8OY+lHimWwdHMev5N7MwQGczQgTYZb3Y=
 github.com/chromedp/cdproto v0.0.0-20250803210736-d308e07a266d h1:ZtA1sedVbEW7EW80Iz2GR3Ye6PwbJAJXjv7D74xG6HU=

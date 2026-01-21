@@ -226,27 +226,27 @@ func (dc *CachingStore) useBackingStore(name string) (string, bool) {
 // Put implements autocert.Cache.
 func (dc *CachingStore) Put(ctx context.Context, name string, data []byte) error {
 	if dc.opts.readonly {
-		dc.opts.logger.Error("webauth/acme/certcache: readonly cache", "key", name)
+		dc.opts.logger.Error("webauth/acme/certcache: put readonly cache", "key", name)
 		return fmt.Errorf("put %q: %w", name, ErrReadonlyCache)
 	}
 	if bname, backingStore := dc.useBackingStore(name); backingStore {
 		if err := dc.backingStore.WriteFileCtx(ctx, bname, data, 0600); err != nil {
-			dc.opts.logger.Error("webauth/acme/certcache: backing store failed", "key", name, "backing store name", bname, "error", err)
+			dc.opts.logger.Error("webauth/acme/certcache: put backing store failed", "key", name, "backing store name", bname, "error", err)
 			return fmt.Errorf("put %q, backing store name: %q: %w", name, bname, errors.NewM(err, ErrBackingOperation))
 		}
-		dc.opts.logger.Info("webauth/acme/certcache: backing store succeeded", "key", name, "backing store name", bname)
+		dc.opts.logger.Info("webauth/acme/certcache: put backing store succeeded", "key", name, "backing store name", bname)
 		return nil
 	}
 	unlock, err := dc.lock.Lock()
 	if err != nil {
-		return errors.NewM(fmt.Errorf("webauth/acme/certcache: lock acquisition failed: %w", err), ErrLockFailed)
+		return errors.NewM(fmt.Errorf("webauth/acme/certcache: put lock acquisition failed: %w", err), ErrLockFailed)
 	}
 	defer unlock()
 	if err := dc.localCache.Put(ctx, name, data); err != nil {
-		dc.opts.logger.Error("webauth/acme/certcache: local cache failed", "key", name, "error", err)
+		dc.opts.logger.Error("webauth/acme/certcache: put local cache failed", "key", name, "error", err)
 		return fmt.Errorf("put %q: %w", name, errors.NewM(err, ErrLocalOperation))
 	}
-	dc.opts.logger.Info("webauth/acme/certcache: local cache succeeded", "key", name)
+	dc.opts.logger.Info("webauth/acme/certcache: put local cache succeeded", "key", name)
 	return nil
 }
 
