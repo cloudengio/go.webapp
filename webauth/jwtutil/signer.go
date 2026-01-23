@@ -12,7 +12,6 @@ package jwtutil
 import (
 	"context"
 	"crypto/ed25519"
-	"fmt"
 
 	"github.com/lestrrat-go/jwx/v3/jwa"
 	"github.com/lestrrat-go/jwx/v3/jwk"
@@ -54,11 +53,7 @@ func NewED25519Signer(priv ed25519.PrivateKey, id string) (ED25519Signer, error)
 	if err := set.AddKey(key); err != nil {
 		return ED25519Signer{}, err
 	}
-	a, _ := key.Algorithm()
-	u, _ := key.KeyUsage()
-	fmt.Printf("key: \t%v\n", key)
-	fmt.Printf("alg: \t%v\n", a)
-	fmt.Printf("use: \t%v\n", u)
+
 	return ED25519Signer{
 		priv: key,
 		set:  set,
@@ -85,6 +80,7 @@ func (s ED25519Signer) ParseAndValidate(ctx context.Context, tokenBytes []byte, 
 	return token, nil
 }
 
+// Valid
 type Validator interface {
 	ParseAndValidate(ctx context.Context, token []byte, validators ...jwt.ValidateOption) (jwt.Token, error)
 }
