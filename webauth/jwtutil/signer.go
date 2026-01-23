@@ -32,44 +32,58 @@ type ED25519Signer struct {
 }
 
 // NewED25519Signer creates a new ED25519Signer instance with the given private key and key ID.
-func NewED25519Signer(priv ed25519.PrivateKey, id string) (ED25519Signer, error) {
-	key, err := jwk.Import(priv)
+func NewED25519Signer(priv ed25519.PrivateKey, id string) (Signer, error) {
+	return NewSigner(priv, id, jwa.EdDSA())
+}
+
+type signer struct {
+	priv jwk.Key
+	set  jwk.Set
+	algo jwa.SignatureAlgorithm
+}
+
+// NewSigner creates a new Signer instance with the given private key and key ID.
+func NewSigner(key any, id string, algo jwa.SignatureAlgorithm) (Signer, error) {
+	jwkKey, err := jwk.Import(key)
 	if err != nil {
-		return ED25519Signer{}, err
+		return nil, err
 	}
+
 	for _, kv := range []struct {
 		k string
 		v any
 	}{
-		{jwk.AlgorithmKey, jwa.EdDSA()},
+		{jwk.AlgorithmKey, algo},
 		{jwk.KeyUsageKey, "sig"},
 		{jwk.KeyIDKey, id},
 	} {
-		if err := key.Set(kv.k, kv.v); err != nil {
-			return ED25519Signer{}, err
+		if err := jwkKey.Set(kv.k, kv.v); err != nil {
+			return nil, err
 		}
 	}
+
 	set := jwk.NewSet()
-	if err := set.AddKey(key); err != nil {
-		return ED25519Signer{}, err
+	if err := set.AddKey(jwkKey); err != nil {
+		return nil, err
 	}
-
-	return ED25519Signer{
-		priv: key,
+	return signer{
+		priv: jwkKey,
 		set:  set,
+		algo: algo,
 	}, nil
+
 }
 
-func (s ED25519Signer) Sign(_ context.Context, token jwt.Token) ([]byte, error) {
-	return jwt.Sign(token, jwt.WithKey(jwa.EdDSA(), s.priv))
+func (s signer) Sign(_ context.Context, token jwt.Token) ([]byte, error) {
+	return jwt.Sign(token, jwt.WithKey(s.algo, s.priv))
 }
 
-func (s ED25519Signer) PublicKey() (jwk.Key, error) {
+func (s signer) PublicKey() (jwk.Key, error) {
 	return s.priv.PublicKey()
 }
 
 // ParseAndValidate parses and validates a JWT using the signer's key set.
-func (s ED25519Signer) ParseAndValidate(_ context.Context, tokenBytes []byte, validators ...jwt.ValidateOption) (jwt.Token, error) {
+func (s signer) ParseAndValidate(_ context.Context, tokenBytes []byte, validators ...jwt.ValidateOption) (jwt.Token, error) {
 	token, err := jwt.Parse(tokenBytes, jwt.WithKeySet(s.set))
 	if err != nil {
 		return nil, err
@@ -89,6 +103,7 @@ type validator struct {
 	set jwk.Set
 }
 
+// NewValidator creates a new Validator instance with the given key set.
 func NewValidator(set jwk.Set) Validator {
 	return validator{
 		set: set,

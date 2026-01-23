@@ -8,6 +8,7 @@ import (
 	"crypto/ed25519"
 	"crypto/rand"
 	"encoding/json"
+	"slices"
 	"testing"
 	"time"
 
@@ -15,6 +16,22 @@ import (
 	"github.com/lestrrat-go/jwx/v3/jwk"
 	"github.com/lestrrat-go/jwx/v3/jwt"
 )
+
+func newToken(t *testing.T) jwt.Token {
+	t.Helper()
+	tok, err := jwt.NewBuilder().
+		Issuer("test-user").
+		Audience([]string{"test"}).
+		Subject("test").
+		Expiration(time.Now().Add(time.Hour)).
+		NotBefore(time.Now()).
+		Claim("scope", "a,b").
+		Build()
+	if err != nil {
+		t.Fatalf("failed to create token: %v", err)
+	}
+	return tok
+}
 
 func TestSignAndVerifyED25519(t *testing.T) {
 	ctx := t.Context()
@@ -30,17 +47,7 @@ func TestSignAndVerifyED25519(t *testing.T) {
 	}
 
 	// 1. Test successful signing.
-	token, err := jwt.NewBuilder().
-		Issuer("test-user").
-		Audience([]string{"test"}).
-		Subject("test").
-		Expiration(time.Now().Add(time.Hour)).
-		NotBefore(time.Now()).
-		Claim("scope", "a,b").
-		Build()
-	if err != nil {
-		t.Fatalf("failed to create token: %v", err)
-	}
+	token := newToken(t)
 
 	tokenBytes, err := signer.Sign(ctx, token)
 	if err != nil {
@@ -50,12 +57,14 @@ func TestSignAndVerifyED25519(t *testing.T) {
 		t.Fatal("Sign() returned an empty token string")
 	}
 
-	parsedToken, err := signer.ParseAndValidate(ctx, tokenBytes,
+	validationOptions := []jwt.ValidateOption{
 		jwt.WithIssuer("test-user"),
 		jwt.WithAudience("test"),
-		jwt.WithAcceptableSkew(1*time.Second),
+		jwt.WithAcceptableSkew(1 * time.Second),
 		jwt.WithClaimValue("scope", "a,b"),
-	)
+	}
+
+	parsedToken, err := signer.ParseAndValidate(ctx, tokenBytes, validationOptions...)
 	if err != nil {
 		t.Fatalf("ParseAndValidate() failed: %v", err)
 	}
@@ -65,7 +74,15 @@ func TestSignAndVerifyED25519(t *testing.T) {
 		t.Errorf("got subject %q, want %q", got, want)
 	}
 
-	// 3. Test successful verification with a separate PublicKeys instance.
+	// 2. Test token corruption
+	corrupted := slices.Clone(tokenBytes)
+	corrupted[4] = 0xff
+	_, err = signer.ParseAndValidate(ctx, corrupted, validationOptions...)
+	if err == nil {
+		t.Fatal("ParseAndValidate() should have failed for corrupted token")
+	}
+
+	// 3. Test successful verification with a separate PublicKey instance.
 	publicKey, err := signer.PublicKey()
 	if err != nil {
 		t.Fatalf("failed to get public key: %v", err)
@@ -82,13 +99,26 @@ func TestSignAndVerifyED25519(t *testing.T) {
 
 	validator := jwtutil.NewValidator(jwks)
 
-	_, err = validator.ParseAndValidate(ctx, tokenBytes,
-		jwt.WithIssuer("test-user"),
-		jwt.WithAudience("test"),
-		jwt.WithAcceptableSkew(1*time.Second),
-		jwt.WithClaimValue("scope", "a,b"),
-	)
+	_, err = validator.ParseAndValidate(ctx, tokenBytes, validationOptions...)
 	if err != nil {
 		t.Fatalf("ParseAndValidate() failed: %v", err)
+	}
+
+	// 4. Test correct use of KeyID
+	diffKey, err := publicKey.Clone()
+	if err != nil {
+		t.Fatalf("failed to clone public key: %v", err)
+	}
+	diffKey.Set(jwk.KeyIDKey, "diff-key")
+
+	set := jwk.NewSet()
+	if err := set.AddKey(diffKey); err != nil {
+		t.Fatalf("failed to add key to set: %v", err)
+	}
+	validator = jwtutil.NewValidator(set)
+
+	_, err = validator.ParseAndValidate(ctx, tokenBytes, validationOptions...)
+	if err == nil {
+		t.Fatal("ParseAndValidate() should have failed for wrong key ID")
 	}
 }
