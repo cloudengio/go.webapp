@@ -94,11 +94,14 @@ func TestPasskeysServer(t *testing.T) {
 	var logged strings.Builder
 	logger := slog.New(slog.NewTextHandler(io.MultiWriter(os.Stderr, &logged), nil))
 	db := passkeys.NewRAMUserDatabase()
-	pubKey, privKey, err := ed25519.GenerateKey(rand.Reader)
+	_, privKey, err := ed25519.GenerateKey(rand.Reader)
 	if err != nil {
 		t.Fatalf("Failed to generate private key: %v", err)
 	}
-	signer := jwtutil.NewED25519Signer(pubKey, privKey, "pkid")
+	signer, err := jwtutil.NewED25519Signer(privKey, "pkid")
+	if err != nil {
+		t.Fatalf("Failed to create signer: %v", err)
+	}
 	scopeAndDuration := cookies.ScopeAndDuration{
 		Domain:   "localhost",
 		Path:     "/",

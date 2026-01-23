@@ -225,7 +225,7 @@ func (m JWTCookieLoginManager) AuthenticateUser(r *http.Request) (UserID, error)
 
 
 ```go
-func (m JWTCookieLoginManager) UserAuthenticated(rw http.ResponseWriter, user UserID) error
+func (m JWTCookieLoginManager) UserAuthenticated(r *http.Request, rw http.ResponseWriter, user UserID) error
 ```
 
 
@@ -238,7 +238,7 @@ type LoginManager interface {
 	// It should be used to set a session Cookie, or a JWT token to be validated
 	// on subsequent requests. The expiration parameter indicates how long the
 	// login session should be valid.
-	UserAuthenticated(rw http.ResponseWriter, user UserID) error
+	UserAuthenticated(r *http.Request, rw http.ResponseWriter, user UserID) error
 
 	// AuthenticateUser is called to validate the user based on the request.
 	// It should return the UserID of the authenticated user or an error if authentication fails.
