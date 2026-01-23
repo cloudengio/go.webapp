@@ -28,7 +28,6 @@ func TestSignAndVerifyED25519(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to create signer: %v", err)
 	}
-	var _ jwtutil.Signer = signer
 
 	// 1. Test successful signing.
 	token, err := jwt.NewBuilder().
@@ -43,15 +42,15 @@ func TestSignAndVerifyED25519(t *testing.T) {
 		t.Fatalf("failed to create token: %v", err)
 	}
 
-	tokenString, err := signer.Sign(ctx, token)
+	tokenBytes, err := signer.Sign(ctx, token)
 	if err != nil {
 		t.Fatalf("Sign() failed: %v", err)
 	}
-	if len(tokenString) == 0 {
+	if len(tokenBytes) == 0 {
 		t.Fatal("Sign() returned an empty token string")
 	}
 
-	parsedToken, err := signer.ParseAndValidate(ctx, []byte(tokenString),
+	parsedToken, err := signer.ParseAndValidate(ctx, tokenBytes,
 		jwt.WithIssuer("test-user"),
 		jwt.WithAudience("test"),
 		jwt.WithAcceptableSkew(1*time.Second),
@@ -82,9 +81,8 @@ func TestSignAndVerifyED25519(t *testing.T) {
 	}
 
 	validator := jwtutil.NewValidator(jwks)
-	var _ jwtutil.Validator = validator
 
-	_, err = validator.ParseAndValidate(ctx, []byte(tokenString),
+	_, err = validator.ParseAndValidate(ctx, tokenBytes,
 		jwt.WithIssuer("test-user"),
 		jwt.WithAudience("test"),
 		jwt.WithAcceptableSkew(1*time.Second),

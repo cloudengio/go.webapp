@@ -69,7 +69,7 @@ func (s ED25519Signer) PublicKey() (jwk.Key, error) {
 }
 
 // ParseAndValidate parses and validates a JWT using the signer's key set.
-func (s ED25519Signer) ParseAndValidate(ctx context.Context, tokenBytes []byte, validators ...jwt.ValidateOption) (jwt.Token, error) {
+func (s ED25519Signer) ParseAndValidate(_ context.Context, tokenBytes []byte, validators ...jwt.ValidateOption) (jwt.Token, error) {
 	token, err := jwt.Parse(tokenBytes, jwt.WithKeySet(s.set))
 	if err != nil {
 		return nil, err
@@ -95,7 +95,7 @@ func NewValidator(set jwk.Set) Validator {
 	}
 }
 
-func (v validator) ParseAndValidate(ctx context.Context, tokenBytes []byte, validators ...jwt.ValidateOption) (jwt.Token, error) {
+func (v validator) ParseAndValidate(_ context.Context, tokenBytes []byte, validators ...jwt.ValidateOption) (jwt.Token, error) {
 	token, err := jwt.Parse(tokenBytes, jwt.WithKeySet(v.set))
 	if err != nil {
 		return nil, err
