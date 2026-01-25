@@ -3,13 +3,13 @@ module cloudeng.io/webapp
 go 1.25.5
 
 require (
-	cloudeng.io/cmdutil v0.0.0-20260122210631-cc9df8b8152d
+	cloudeng.io/cmdutil v0.0.0-20260125000322-a246891e8dba
 	cloudeng.io/errors v0.0.14-0.20260118175335-f191a42253cc
-	cloudeng.io/file v0.0.0-20260122210631-cc9df8b8152d
+	cloudeng.io/file v0.0.0-20260125000322-a246891e8dba
 	cloudeng.io/io v0.0.0-20260125000322-a246891e8dba
 	cloudeng.io/logging v0.0.0-20260125000322-a246891e8dba
 	cloudeng.io/net v0.0.0-20260125000322-a246891e8dba
-	cloudeng.io/os v0.0.0-20260122210631-cc9df8b8152d
+	cloudeng.io/os v0.0.0-20260125000322-a246891e8dba
 	cloudeng.io/sync v0.0.9-0.20260114020737-744f6c0f8e64
 	github.com/chromedp/cdproto v0.0.0-20250803210736-d308e07a266d
 	github.com/chromedp/chromedp v0.14.2
@@ -24,8 +24,8 @@ require (
 )
 
 require (
-	cloudeng.io/algo v0.0.0-20260122210631-cc9df8b8152d // indirect
-	cloudeng.io/sys v0.0.0-20260122210631-cc9df8b8152d // indirect
+	cloudeng.io/algo v0.0.0-20260125000322-a246891e8dba // indirect
+	cloudeng.io/sys v0.0.0-20260125000322-a246891e8dba // indirect
 	github.com/chromedp/sysutil v1.1.0 // indirect
 	github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc // indirect
 	github.com/decred/dcrd/dcrec/secp256k1/v4 v4.4.0 // indirect

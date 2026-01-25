@@ -37,8 +37,8 @@ func NewED25519Signer(priv ed25519.PrivateKey, id string) (Signer, error) {
 type signer struct {
 	opt  jwt.SignOption
 	pk   jwk.Key
-	set  jwk.Set
 	algo jwa.SignatureAlgorithm
+	validator
 }
 
 // NewSigner creates a new Signer instance with the given private key and key ID.
@@ -65,10 +65,10 @@ func NewSigner(jwkKey jwk.Key, id string, algo jwa.SignatureAlgorithm) (Signer, 
 		return nil, err
 	}
 	return signer{
-		pk:   pk,
-		opt:  jwt.WithKey(algo, jwkKey),
-		set:  set,
-		algo: algo,
+		pk:        pk,
+		opt:       jwt.WithKey(algo, jwkKey),
+		validator: validator{set: set},
+		algo:      algo,
 	}, nil
 
 }
@@ -79,18 +79,6 @@ func (s signer) Sign(_ context.Context, token jwt.Token) ([]byte, error) {
 
 func (s signer) PublicKey() (jwk.Key, error) {
 	return s.pk, nil
-}
-
-// ParseAndValidate parses and validates a JWT using the signer's key set.
-func (s signer) ParseAndValidate(_ context.Context, tokenBytes []byte, validators ...jwt.ValidateOption) (jwt.Token, error) {
-	token, err := jwt.Parse(tokenBytes, jwt.WithKeySet(s.set))
-	if err != nil {
-		return nil, err
-	}
-	if err := jwt.Validate(token, validators...); err != nil {
-		return nil, err
-	}
-	return token, nil
 }
 
 // Validator is an interface for validating JWTs.
@@ -109,6 +97,7 @@ func NewValidator(set jwk.Set) Validator {
 	}
 }
 
+// ParseAndValidate parses and validates a JWT using the signer's key set.
 func (v validator) ParseAndValidate(_ context.Context, tokenBytes []byte, validators ...jwt.ValidateOption) (jwt.Token, error) {
 	token, err := jwt.Parse(tokenBytes, jwt.WithKeySet(v.set))
 	if err != nil {
