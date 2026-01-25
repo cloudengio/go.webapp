@@ -33,12 +33,18 @@ func newToken(t *testing.T) jwt.Token {
 	return tok
 }
 
-func TestSignAndVerifyED25519(t *testing.T) {
-	ctx := t.Context()
+func newKey(t *testing.T) ed25519.PrivateKey {
+	t.Helper()
 	_, priv, err := ed25519.GenerateKey(rand.Reader)
 	if err != nil {
 		t.Fatalf("failed to generate ed25519 key pair: %v", err)
 	}
+	return priv
+}
+
+func TestSignAndVerifyED25519(t *testing.T) {
+	ctx := t.Context()
+	priv := newKey(t)
 
 	keyID := "test-key-001"
 	signer, err := jwtutil.NewED25519Signer(priv, keyID)
