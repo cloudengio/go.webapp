@@ -33,22 +33,22 @@ type ED25519Signer struct {
 
 // NewED25519Signer creates a new ED25519Signer instance with the given private key and key ID.
 func NewED25519Signer(priv ed25519.PrivateKey, id string) (Signer, error) {
-	return NewSigner(priv, id, jwa.EdDSA())
+	jwkKey, err := jwk.Import(priv)
+	if err != nil {
+		return nil, err
+	}
+	return NewSigner(jwkKey, id, jwa.EdDSA())
 }
 
 type signer struct {
-	priv jwk.Key
+	opt  jwt.SignOption
+	pk   jwk.Key
 	set  jwk.Set
 	algo jwa.SignatureAlgorithm
 }
 
 // NewSigner creates a new Signer instance with the given private key and key ID.
-func NewSigner(key any, id string, algo jwa.SignatureAlgorithm) (Signer, error) {
-	jwkKey, err := jwk.Import(key)
-	if err != nil {
-		return nil, err
-	}
-
+func NewSigner(jwkKey jwk.Key, id string, algo jwa.SignatureAlgorithm) (Signer, error) {
 	for _, kv := range []struct {
 		k string
 		v any
@@ -61,13 +61,18 @@ func NewSigner(key any, id string, algo jwa.SignatureAlgorithm) (Signer, error) 
 			return nil, err
 		}
 	}
+	pk, err := jwkKey.PublicKey()
+	if err != nil {
+		return nil, err
+	}
 
 	set := jwk.NewSet()
 	if err := set.AddKey(jwkKey); err != nil {
 		return nil, err
 	}
 	return signer{
-		priv: jwkKey,
+		pk:   pk,
+		opt:  jwt.WithKey(algo, jwkKey),
 		set:  set,
 		algo: algo,
 	}, nil
@@ -75,11 +80,11 @@ func NewSigner(key any, id string, algo jwa.SignatureAlgorithm) (Signer, error) 
 }
 
 func (s signer) Sign(_ context.Context, token jwt.Token) ([]byte, error) {
-	return jwt.Sign(token, jwt.WithKey(s.algo, s.priv))
+	return jwt.Sign(token, s.opt)
 }
 
 func (s signer) PublicKey() (jwk.Key, error) {
-	return s.priv.PublicKey()
+	return s.pk, nil
 }
 
 // ParseAndValidate parses and validates a JWT using the signer's key set.
@@ -94,7 +99,7 @@ func (s signer) ParseAndValidate(_ context.Context, tokenBytes []byte, validator
 	return token, nil
 }
 
-// Valid
+// Validi
 type Validator interface {
 	ParseAndValidate(ctx context.Context, token []byte, validators ...jwt.ValidateOption) (jwt.Token, error)
 }

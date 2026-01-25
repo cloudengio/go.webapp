@@ -10,6 +10,8 @@ cloudeng.io/file v0.0.0-20260122210631-cc9df8b8152d h1:7BiLzoXeAZPlYHKLzjS7tedI+
 cloudeng.io/file v0.0.0-20260122210631-cc9df8b8152d/go.mod h1:Ol47yC0UouP7jBJ0fkZwrQkV4j3H1Gfl/3yP05fm1dE=
 cloudeng.io/io v0.0.0-20260122210631-cc9df8b8152d h1:J9RntoT/EhYkHnJNJZTNggvP5xzuiTNp8Sy8jZm1iiA=
 cloudeng.io/io v0.0.0-20260122210631-cc9df8b8152d/go.mod h1:aMuH0pxWtVPxUD7IkJsqTGdDH+acoDG/5T0j9gU8LSI=
+cloudeng.io/io v0.0.0-20260125000322-a246891e8dba h1:krT0oZrBx+WnegRKcazk+5/PtArzFjkovOFkHBODg3k=
+cloudeng.io/io v0.0.0-20260125000322-a246891e8dba/go.mod h1:aMuH0pxWtVPxUD7IkJsqTGdDH+acoDG/5T0j9gU8LSI=
 cloudeng.io/logging v0.0.0-20260122210631-cc9df8b8152d h1:idkYjsNhNXu71HiNmqby0JPhIUm29mtlEgtevQuEBUg=
 cloudeng.io/logging v0.0.0-20260122210631-cc9df8b8152d/go.mod h1:1srNtLRpQsIoLck/p/JmvR/QfwfPbDO/65orqtdh1N0=
 cloudeng.io/net v0.0.0-20260122210631-cc9df8b8152d h1:TeIttcnUBWE9Tx16x2bbe5PaAy50ji/lg0RQgnIgEOE=

@@ -6,7 +6,7 @@ require (
 	cloudeng.io/cmdutil v0.0.0-20260122210631-cc9df8b8152d
 	cloudeng.io/errors v0.0.14-0.20260118175335-f191a42253cc
 	cloudeng.io/file v0.0.0-20260122210631-cc9df8b8152d
-	cloudeng.io/io v0.0.0-20260122210631-cc9df8b8152d
+	cloudeng.io/io v0.0.0-20260125000322-a246891e8dba
 	cloudeng.io/logging v0.0.0-20260122210631-cc9df8b8152d
 	cloudeng.io/net v0.0.0-20260122210631-cc9df8b8152d
 	cloudeng.io/os v0.0.0-20260122210631-cc9df8b8152d
