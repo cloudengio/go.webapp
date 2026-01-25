@@ -11,9 +11,9 @@ require (
 require (
 	cloudeng.io/errors v0.0.14-0.20260118175335-f191a42253cc // indirect
 	cloudeng.io/file v0.0.0-20260122210631-cc9df8b8152d // indirect
-	cloudeng.io/io v0.0.0-20260122210631-cc9df8b8152d // indirect
-	cloudeng.io/logging v0.0.0-20260122210631-cc9df8b8152d // indirect
-	cloudeng.io/net v0.0.0-20260122210631-cc9df8b8152d // indirect
+	cloudeng.io/io v0.0.0-20260125000322-a246891e8dba // indirect
+	cloudeng.io/logging v0.0.0-20260125000322-a246891e8dba // indirect
+	cloudeng.io/net v0.0.0-20260125000322-a246891e8dba // indirect
 	cloudeng.io/os v0.0.0-20260122210631-cc9df8b8152d // indirect
 	cloudeng.io/sync v0.0.9-0.20260114020737-744f6c0f8e64 // indirect
 	cloudeng.io/text v0.0.14 // indirect

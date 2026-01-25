@@ -109,7 +109,9 @@ func TestSignAndVerifyED25519(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to clone public key: %v", err)
 	}
-	diffKey.Set(jwk.KeyIDKey, "diff-key")
+	if err := diffKey.Set(jwk.KeyIDKey, "diff-key"); err != nil {
+		t.Fatalf("failed to set key ID: %v", err)
+	}
 
 	set := jwk.NewSet()
 	if err := set.AddKey(diffKey); err != nil {

@@ -10,44 +10,6 @@ package provides simplified wrappers around the JWT signing and verification
 process to allow for more convenient usage in web applications.
 
 ## Types
-### Type ED25519Signer
-```go
-type ED25519Signer struct {
-	// contains filtered or unexported fields
-}
-```
-ED25519Signer implements the Signer interface using an Ed25519 private key.
-
-### Functions
-
-```go
-func NewED25519Signer(priv ed25519.PrivateKey, id string) (ED25519Signer, error)
-```
-NewED25519Signer creates a new ED25519Signer instance with the given private
-key and key ID.
-
-
-
-### Methods
-
-```go
-func (s ED25519Signer) ParseAndValidate(ctx context.Context, tokenBytes []byte, validators ...jwt.ValidateOption) (jwt.Token, error)
-```
-ParseAndValidate parses and validates a JWT using the signer's key set.
-
-
-```go
-func (s ED25519Signer) PublicKey() (jwk.Key, error)
-```
-
-
-```go
-func (s ED25519Signer) Sign(_ context.Context, token jwt.Token) ([]byte, error)
-```
-
-
-
-
 ### Type Signer
 ```go
 type Signer interface {
@@ -58,6 +20,23 @@ type Signer interface {
 ```
 Signer is an interface for signing and verifying JWTs.
 
+### Functions
+
+```go
+func NewED25519Signer(priv ed25519.PrivateKey, id string) (Signer, error)
+```
+NewED25519Signer creates a new ED25519Signer instance with the given private
+key and key ID.
+
+
+```go
+func NewSigner(jwkKey jwk.Key, id string, algo jwa.SignatureAlgorithm) (Signer, error)
+```
+NewSigner creates a new Signer instance with the given private key and key
+ID.
+
+
+
 
 ### Type Validator
 ```go
@@ -65,12 +44,14 @@ type Validator interface {
 	ParseAndValidate(ctx context.Context, token []byte, validators ...jwt.ValidateOption) (jwt.Token, error)
 }
 ```
+Validator is an interface for validating JWTs.
 
 ### Functions
 
 ```go
 func NewValidator(set jwk.Set) Validator
 ```
+NewValidator creates a new Validator instance with the given key set.
 
 
 

@@ -1,7 +1,7 @@
 cloudeng.io/algo v0.0.0-20260122210631-cc9df8b8152d h1:IBXYK5/fNpx/Ikznc9eNVwQcCiyGlyddQXnwvS4j8rA=
 cloudeng.io/algo v0.0.0-20260122210631-cc9df8b8152d/go.mod h1:pjXLOZUvlHDj9nF7WsB2ECQVxmwneZ/VVOAkMAnaxaE=
-cloudeng.io/aws v0.0.0-20260122210631-cc9df8b8152d h1:M90+SX7n5sjZ2yvGGDqPrb5SgdsUBVNvMEOR8tA5k3U=
-cloudeng.io/aws v0.0.0-20260122210631-cc9df8b8152d/go.mod h1:7Omhc0htV87bC30YScg4+wJO8/IBKSeXT6PEUU2MLjE=
+cloudeng.io/aws v0.0.0-20260125000322-a246891e8dba h1:MdD0Onh1HNADXtLxNUx3c0RNwOI2n53CR+AkBagWoC0=
+cloudeng.io/aws v0.0.0-20260125000322-a246891e8dba/go.mod h1:5vgma4pw1A/78dzbmNwoS8MWBWfDQRkdZjtTQlaDK/4=
 cloudeng.io/cmdutil v0.0.0-20260122210631-cc9df8b8152d h1:i2SAyrP3ZL4voUXFpyCcG02eAYC1q4wyRThrczSmpr8=
 cloudeng.io/cmdutil v0.0.0-20260122210631-cc9df8b8152d/go.mod h1:9wyDlD7vnLgkzd3LCW8sEw+ehScSlNLAYIMi/8tdOLo=
 cloudeng.io/debug v0.0.0-20260114020737-744f6c0f8e64 h1:HasXXdNduLmbkgEI/TCikpckH+g3J8EaNVtgP/7TXzs=
@@ -10,10 +10,10 @@ cloudeng.io/errors v0.0.14-0.20260118175335-f191a42253cc h1:72rMkKasoDX95CNFZq9F
 cloudeng.io/errors v0.0.14-0.20260118175335-f191a42253cc/go.mod h1:6TivTMjXopNNZ0eNsac9MfYij1WC6R0gJcsSIxcunIA=
 cloudeng.io/file v0.0.0-20260122210631-cc9df8b8152d h1:7BiLzoXeAZPlYHKLzjS7tedI+4La6mkuRd7Pq/RBKBM=
 cloudeng.io/file v0.0.0-20260122210631-cc9df8b8152d/go.mod h1:Ol47yC0UouP7jBJ0fkZwrQkV4j3H1Gfl/3yP05fm1dE=
-cloudeng.io/logging v0.0.0-20260122210631-cc9df8b8152d h1:idkYjsNhNXu71HiNmqby0JPhIUm29mtlEgtevQuEBUg=
-cloudeng.io/logging v0.0.0-20260122210631-cc9df8b8152d/go.mod h1:1srNtLRpQsIoLck/p/JmvR/QfwfPbDO/65orqtdh1N0=
-cloudeng.io/net v0.0.0-20260122210631-cc9df8b8152d h1:TeIttcnUBWE9Tx16x2bbe5PaAy50ji/lg0RQgnIgEOE=
-cloudeng.io/net v0.0.0-20260122210631-cc9df8b8152d/go.mod h1:8GqIlYlvl1wVQHGYgN8B7L9IqyLmDUlDnf1KP0qAjVg=
+cloudeng.io/logging v0.0.0-20260125000322-a246891e8dba h1:hhe5Mie5ZAYJZgLye1gWxTqGQnAlXSDEQjkbcuDW4uo=
+cloudeng.io/logging v0.0.0-20260125000322-a246891e8dba/go.mod h1:1srNtLRpQsIoLck/p/JmvR/QfwfPbDO/65orqtdh1N0=
+cloudeng.io/net v0.0.0-20260125000322-a246891e8dba h1:qhvgTEKPeujUoJJau4tt3QYeIcDfXOOhQAEnWA0zIy0=
+cloudeng.io/net v0.0.0-20260125000322-a246891e8dba/go.mod h1:8GqIlYlvl1wVQHGYgN8B7L9IqyLmDUlDnf1KP0qAjVg=
 cloudeng.io/os v0.0.0-20260122210631-cc9df8b8152d h1:wOCuPnQQPiqFRd1n0XzVecgAlZKCUkBRSm3DVLnpc6A=
 cloudeng.io/os v0.0.0-20260122210631-cc9df8b8152d/go.mod h1:S9sHRS5g4gc/016s+q4VH9AD+m0ecwdo9NT6+thTlBs=
 cloudeng.io/sync v0.0.9-0.20260114020737-744f6c0f8e64 h1:Mg+W3M/f1eSFtzBbF1l7y7gASv/hFzpvtPubsx1sjUQ=
@@ -52,6 +52,8 @@ github.com/aws/aws-sdk-go-v2/service/internal/presigned-url v1.13.17 h1:RuNSMooz
 github.com/aws/aws-sdk-go-v2/service/internal/presigned-url v1.13.17/go.mod h1:F2xxQ9TZz5gDWsclCtPQscGpP0VUOc8RqgFM3vDENmU=
 github.com/aws/aws-sdk-go-v2/service/internal/s3shared v1.19.17 h1:bGeHBsGZx0Dvu/eJC0Lh9adJa3M1xREcndxLNZlve2U=
 github.com/aws/aws-sdk-go-v2/service/internal/s3shared v1.19.17/go.mod h1:dcW24lbU0CzHusTE8LLHhRLI42ejmINN8Lcr22bwh/g=
+github.com/aws/aws-sdk-go-v2/service/kms v1.49.5 h1:DKibav4XF66XSeaXcrn9GlWGHos6D/vJ4r7jsK7z5CE=
+github.com/aws/aws-sdk-go-v2/service/kms v1.49.5/go.mod h1:1SdcmEGUEQE1mrU2sIgeHtcMSxHuybhPvuEPANzIDfI=
 github.com/aws/aws-sdk-go-v2/service/s3 v1.95.1 h1:C2dUPSnEpy4voWFIq3JNd8gN0Y5vYGDo44eUE58a/p8=
 github.com/aws/aws-sdk-go-v2/service/s3 v1.95.1/go.mod h1:5jggDlZ2CLQhwJBiZJb4vfk4f0GxWdEDruWKEJ1xOdo=
 github.com/aws/aws-sdk-go-v2/service/secretsmanager v1.41.1 h1:72DBkm/CCuWx2LMHAXvLDkZfzopT3psfAeyZDIt1/yE=

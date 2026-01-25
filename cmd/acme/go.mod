@@ -3,12 +3,12 @@ module cloudeng.io/webapp/cmd/acme
 go 1.25.5
 
 require (
-	cloudeng.io/aws v0.0.0-20260122210631-cc9df8b8152d
+	cloudeng.io/aws v0.0.0-20260125000322-a246891e8dba
 	cloudeng.io/cmdutil v0.0.0-20260122210631-cc9df8b8152d
 	cloudeng.io/errors v0.0.14-0.20260118175335-f191a42253cc
 	cloudeng.io/file v0.0.0-20260122210631-cc9df8b8152d
-	cloudeng.io/logging v0.0.0-20260122210631-cc9df8b8152d
-	cloudeng.io/net v0.0.0-20260122210631-cc9df8b8152d
+	cloudeng.io/logging v0.0.0-20260125000322-a246891e8dba
+	cloudeng.io/net v0.0.0-20260125000322-a246891e8dba
 	cloudeng.io/webapp v0.0.0-20251211202122-3206a59d8279
 	golang.org/x/crypto v0.47.0
 )

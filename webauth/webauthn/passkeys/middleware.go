@@ -84,9 +84,11 @@ func (m JWTCookieLoginManager) AuthenticateUser(r *http.Request) (UserID, error)
 	if !ok {
 		return nil, errors.New("missing authentication cookie")
 	}
-	token, err := m.signer.ParseAndValidate(r.Context(), []byte(tokenString),
-		jwt.WithIssuer(m.issuer),
-		jwt.WithAudience(m.audience[0]))
+	validationOptions := []jwt.ValidateOption{jwt.WithIssuer(m.issuer)}
+	for _, aud := range m.audience {
+		validationOptions = append(validationOptions, jwt.WithAudience(aud))
+	}
+	token, err := m.signer.ParseAndValidate(r.Context(), []byte(tokenString), validationOptions...)
 	if err != nil {
 		return nil, err
 	}

@@ -25,12 +25,6 @@ type Signer interface {
 	Validator
 }
 
-// ED25519Signer implements the Signer interface using an Ed25519 private key.
-type ED25519Signer struct {
-	priv jwk.Key
-	set  jwk.Set
-}
-
 // NewED25519Signer creates a new ED25519Signer instance with the given private key and key ID.
 func NewED25519Signer(priv ed25519.PrivateKey, id string) (Signer, error) {
 	jwkKey, err := jwk.Import(priv)
@@ -99,7 +93,7 @@ func (s signer) ParseAndValidate(_ context.Context, tokenBytes []byte, validator
 	return token, nil
 }
 
-// Validi
+// Validator is an interface for validating JWTs.
 type Validator interface {
 	ParseAndValidate(ctx context.Context, token []byte, validators ...jwt.ValidateOption) (jwt.Token, error)
 }
