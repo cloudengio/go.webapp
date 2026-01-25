@@ -6,12 +6,14 @@ package passkeys
 
 import (
 	"errors"
+	"fmt"
 	"net/http"
 	"time"
 
+	"cloudeng.io/logging/ctxlog"
 	"cloudeng.io/webapp/cookies"
 	"cloudeng.io/webapp/webauth/jwtutil"
-	"github.com/golang-jwt/jwt/v5"
+	"github.com/lestrrat-go/jwx/v3/jwt"
 )
 
 // LoginManager defines the interface for managing logged in users who
@@ -21,7 +23,7 @@ type LoginManager interface {
 	// It should be used to set a session Cookie, or a JWT token to be validated
 	// on subsequent requests. The expiration parameter indicates how long the
 	// login session should be valid.
-	UserAuthenticated(rw http.ResponseWriter, user UserID) error
+	UserAuthenticated(r *http.Request, rw http.ResponseWriter, user UserID) error
 
 	// AuthenticateUser is called to validate the user based on the request.
 	// It should return the UserID of the authenticated user or an error if authentication fails.
@@ -30,9 +32,9 @@ type LoginManager interface {
 
 // JWTCookieLoginManager implements the LoginManager interface using JWTs stored in cookies.
 type JWTCookieLoginManager struct {
-	signer jwtutil.Signer
-	claims jwt.RegisteredClaims
-	parser *jwt.Parser
+	signer   jwtutil.Signer
+	issuer   string
+	audience []string
 
 	loginCookie cookies.ScopeAndDuration
 	// LoginCookie is set when the user has successfully logged in using
@@ -43,37 +45,37 @@ type JWTCookieLoginManager struct {
 
 // NewJWTCookieLoginManager creates a new JWTCookieLoginManager instance.
 func NewJWTCookieLoginManager(signer jwtutil.Signer, issuer string, cookie cookies.ScopeAndDuration) JWTCookieLoginManager {
-	p := jwt.NewParser(
-		jwt.WithIssuer(issuer),
-		jwt.WithAudience("webauthn"),
-	)
 	m := JWTCookieLoginManager{
 		signer:      signer,
 		loginCookie: cookie.SetDefaults("", "/", 10*time.Minute),
-		claims: jwt.RegisteredClaims{
-			Issuer:   issuer,
-			Audience: jwt.ClaimStrings{"webauthn"},
-		},
-		parser:      p,
+		issuer:      issuer,
+		audience:    []string{"webauthn"},
 		LoginCookie: cookies.Secure("webauthn_login"),
 	}
 	return m
 }
 
-func (m JWTCookieLoginManager) UserAuthenticated(rw http.ResponseWriter, user UserID) error {
+func (m JWTCookieLoginManager) UserAuthenticated(r *http.Request, rw http.ResponseWriter, user UserID) error {
+	ctx := r.Context()
 	now := time.Now()
-
 	// Create the JWT claims.
-	claims := m.claims
-	claims.Subject = user.String()
-	claims.ExpiresAt = jwt.NewNumericDate(now.Add(m.loginCookie.Duration))
-	claims.NotBefore = jwt.NewNumericDate(now)
-
-	tokenString, err := m.signer.Sign(claims)
+	token, err := jwt.NewBuilder().
+		Issuer(m.issuer).
+		Audience(m.audience).
+		Subject(user.String()).
+		Expiration(now.Add(m.loginCookie.Duration)).
+		NotBefore(now).
+		Build()
 	if err != nil {
+		ctxlog.Error(ctx, "failed to create jwt token: %v", err)
+		return fmt.Errorf("failed to create token: %v", err)
+	}
+	tokenString, err := m.signer.Sign(r.Context(), token)
+	if err != nil {
+		ctxlog.Error(ctx, "failed to sign jwt token: %v", err)
 		return err
 	}
-	m.LoginCookie.Set(rw, m.loginCookie.Cookie(tokenString))
+	m.LoginCookie.Set(rw, m.loginCookie.Cookie(string(tokenString)))
 	return nil
 }
 
@@ -82,16 +84,21 @@ func (m JWTCookieLoginManager) AuthenticateUser(r *http.Request) (UserID, error)
 	if !ok {
 		return nil, errors.New("missing authentication cookie")
 	}
-
-	var claims jwt.RegisteredClaims
-	_, err := m.parser.ParseWithClaims(tokenString, &claims, m.signer.KeyFunc)
+	validationOptions := []jwt.ValidateOption{jwt.WithIssuer(m.issuer)}
+	for _, aud := range m.audience {
+		validationOptions = append(validationOptions, jwt.WithAudience(aud))
+	}
+	token, err := m.signer.ParseAndValidate(r.Context(), []byte(tokenString), validationOptions...)
 	if err != nil {
 		return nil, err
 	}
-	uid, err := UserIDFromString(claims.Subject)
+	subject, ok := token.Subject()
+	if !ok {
+		return nil, errors.New("missing subject")
+	}
+	uid, err := UserIDFromString(subject)
 	if err != nil {
 		return nil, err
 	}
-
 	return uid, nil
 }

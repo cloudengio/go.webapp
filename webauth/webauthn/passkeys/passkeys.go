@@ -326,7 +326,7 @@ func (h *Handler) FinishAuthentication(rw http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	if err := h.lm.UserAuthenticated(rw, pu.ID()); err != nil {
+	if err := h.lm.UserAuthenticated(r, rw, pu.ID()); err != nil {
 		logger.Error("failed to set authenticated session", "error", err.Error())
 		jsonapi.WriteErrorMsg(rw, "failed to set authenticated session", http.StatusInternalServerError)
 		return

@@ -85,7 +85,7 @@ type mockLoginManager struct {
 	authenticatedUserID passkeys.UserID
 }
 
-func (m *mockLoginManager) UserAuthenticated(_ http.ResponseWriter, userID passkeys.UserID) error {
+func (m *mockLoginManager) UserAuthenticated(_ *http.Request, _ http.ResponseWriter, userID passkeys.UserID) error {
 	m.authenticatedUserID = userID
 	return nil
 }

@@ -131,7 +131,7 @@ http.Handle("/", http.FileServer(SameFileHTTPFilesystem(assets,
 ### Methods
 
 ```go
-func (sff *SameFileHTTPFilesystem) Open(name string) (http.File, error)
+func (sff *SameFileHTTPFilesystem) Open(string) (http.File, error)
 ```
 Open implements http.FileSystem.
 

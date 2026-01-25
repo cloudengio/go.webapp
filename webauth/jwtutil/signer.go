@@ -3,40 +3,108 @@
 // license that can be found in the LICENSE file.
 
 // Package jwtutil provides support for creating and verifying JSON
-// Web Tokens (JWTs) managed by the github.com/golang-jwt/jwt/v5
+// Web Tokens (JWTs) managed by the github.com/lestrrat-go/jwx/v3/jwk
 // package. This package provides simplified wrappers around the
 // JWT signing and verification process to allow for more convenient
 // usage in web applications.
 package jwtutil
 
 import (
+	"context"
 	"crypto/ed25519"
 
-	"github.com/golang-jwt/jwt/v5"
+	"github.com/lestrrat-go/jwx/v3/jwa"
+	"github.com/lestrrat-go/jwx/v3/jwk"
+	"github.com/lestrrat-go/jwx/v3/jwt"
 )
 
+// Signer is an interface for signing and verifying JWTs.
 type Signer interface {
-	Sign(jwt.Claims) (string, error)
-	PublicKeys
+	Sign(context.Context, jwt.Token) ([]byte, error)
+	PublicKey() (jwk.Key, error)
+	Validator
 }
 
-// ED25519Signer implements the Signer interface using an Ed25519 private key.
-type ED25519Signer struct {
-	ED25519PublicKey
-	priv ed25519.PrivateKey
+// NewED25519Signer creates a new ED25519Signer instance with the given private key and key ID.
+func NewED25519Signer(priv ed25519.PrivateKey, id string) (Signer, error) {
+	jwkKey, err := jwk.Import(priv)
+	if err != nil {
+		return nil, err
+	}
+	return NewSigner(jwkKey, id, jwa.EdDSA())
 }
 
-func NewED25519Signer(pub ed25519.PublicKey, priv ed25519.PrivateKey, id string) ED25519Signer {
-	return ED25519Signer{
-		priv: priv,
-		ED25519PublicKey: ED25519PublicKey{
-			pub: pub,
-			id:  id,
-		},
+type signer struct {
+	opt  jwt.SignOption
+	pk   jwk.Key
+	algo jwa.SignatureAlgorithm
+	validator
+}
+
+// NewSigner creates a new Signer instance with the given private key and key ID.
+func NewSigner(jwkKey jwk.Key, id string, algo jwa.SignatureAlgorithm) (Signer, error) {
+	for _, kv := range []struct {
+		k string
+		v any
+	}{
+		{jwk.AlgorithmKey, algo},
+		{jwk.KeyUsageKey, "sig"},
+		{jwk.KeyIDKey, id},
+	} {
+		if err := jwkKey.Set(kv.k, kv.v); err != nil {
+			return nil, err
+		}
+	}
+	pk, err := jwkKey.PublicKey()
+	if err != nil {
+		return nil, err
+	}
+
+	set := jwk.NewSet()
+	if err := set.AddKey(jwkKey); err != nil {
+		return nil, err
+	}
+	return signer{
+		pk:        pk,
+		opt:       jwt.WithKey(algo, jwkKey),
+		validator: validator{set: set},
+		algo:      algo,
+	}, nil
+
+}
+
+func (s signer) Sign(_ context.Context, token jwt.Token) ([]byte, error) {
+	return jwt.Sign(token, s.opt)
+}
+
+func (s signer) PublicKey() (jwk.Key, error) {
+	return s.pk, nil
+}
+
+// Validator is an interface for validating JWTs.
+type Validator interface {
+	ParseAndValidate(ctx context.Context, token []byte, validators ...jwt.ValidateOption) (jwt.Token, error)
+}
+
+type validator struct {
+	set jwk.Set
+}
+
+// NewValidator creates a new Validator instance with the given key set.
+func NewValidator(set jwk.Set) Validator {
+	return validator{
+		set: set,
 	}
 }
-func (s ED25519Signer) Sign(claims jwt.Claims) (string, error) {
-	token := jwt.NewWithClaims(&jwt.SigningMethodEd25519{}, claims)
-	token.Header["kid"] = s.id // Set the key ID in the header
-	return token.SignedString(s.priv)
+
+// ParseAndValidate parses and validates a JWT using the signer's key set.
+func (v validator) ParseAndValidate(_ context.Context, tokenBytes []byte, validators ...jwt.ValidateOption) (jwt.Token, error) {
+	token, err := jwt.Parse(tokenBytes, jwt.WithKeySet(v.set))
+	if err != nil {
+		return nil, err
+	}
+	if err := jwt.Validate(token, validators...); err != nil {
+		return nil, err
+	}
+	return token, nil
 }
