@@ -210,6 +210,14 @@ func TLSConfigUsingCertFiles(certFile, keyFile string) (*tls.Config, error)
 TLSConfigUsingCertFiles returns a tls.Config configured with the certificate
 read from the supplied files.
 
+### Func TLSConfigUsingCertFilesFS
+```go
+func TLSConfigUsingCertFilesFS(ctx context.Context, store file.ReadFileFS, certFile, keyFile string) (*tls.Config, error)
+```
+TLSConfigUsingCertFilesFS returns a tls.Config configured with the
+certificate read from the supplied files which are accessed via the
+specified file.ReadFileFS.
+
 ### Func TLSConfigUsingCertStore
 ```go
 func TLSConfigUsingCertStore(ctx context.Context, store file.ReadFileFS, cacheOpts ...CertServingCacheOption) (*tls.Config, error)
