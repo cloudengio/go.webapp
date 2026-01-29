@@ -118,7 +118,7 @@ func TLSConfigUsingCertFiles(certFile, keyFile string) (*tls.Config, error) {
 	}
 	cert, err := tls.LoadX509KeyPair(certFile, keyFile)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to load key pair from cert file %q and key file %q: %w", certFile, keyFile, err)
 	}
 	return &tls.Config{
 		Certificates:     []tls.Certificate{cert},
@@ -137,15 +137,15 @@ func TLSConfigUsingCertFilesFS(ctx context.Context, store file.ReadFileFS, certF
 	}
 	certFileData, err := store.ReadFileCtx(ctx, certFile)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to read cert file %q: %w", certFile, err)
 	}
 	keyFileData, err := store.ReadFileCtx(ctx, keyFile)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to read key file %q: %w", keyFile, err)
 	}
 	cert, err := tls.X509KeyPair(certFileData, keyFileData)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to create key pair from cert file %q and key file %q: %w", certFile, keyFile, err)
 	}
 	return &tls.Config{
 		Certificates:     []tls.Certificate{cert},
