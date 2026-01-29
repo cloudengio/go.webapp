@@ -14,7 +14,7 @@ type mockFS struct {
 	root string
 }
 
-func (m *mockFS) ReadFileCtx(ctx context.Context, name string) ([]byte, error) {
+func (m *mockFS) ReadFileCtx(_ context.Context, name string) ([]byte, error) {
 	return os.ReadFile(filepath.Join(m.root, name))
 }
 
