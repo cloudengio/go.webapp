@@ -127,3 +127,30 @@ func TLSConfigUsingCertFiles(certFile, keyFile string) (*tls.Config, error) {
 		CurvePreferences: PreferredCurves,
 	}, nil
 }
+
+// TLSConfigUsingCertFilesFS returns a tls.Config configured with the
+// certificate read from the supplied files which are accessed via the
+// specified file.ReadFileFS.
+func TLSConfigUsingCertFilesFS(ctx context.Context, store file.ReadFileFS, certFile, keyFile string) (*tls.Config, error) {
+	if len(certFile) == 0 || len(keyFile) == 0 {
+		return nil, fmt.Errorf("both the crt and key files must be specified")
+	}
+	certFileData, err := store.ReadFileCtx(ctx, certFile)
+	if err != nil {
+		return nil, err
+	}
+	keyFileData, err := store.ReadFileCtx(ctx, keyFile)
+	if err != nil {
+		return nil, err
+	}
+	cert, err := tls.X509KeyPair(certFileData, keyFileData)
+	if err != nil {
+		return nil, err
+	}
+	return &tls.Config{
+		Certificates:     []tls.Certificate{cert},
+		MinVersion:       PreferredTLSMinVersion,
+		CipherSuites:     PreferredCipherSuites,
+		CurvePreferences: PreferredCurves,
+	}, nil
+}

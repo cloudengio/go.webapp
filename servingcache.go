@@ -146,10 +146,10 @@ func (m *CertServingCache) GetCertificate(hello *tls.ClientHelloInfo) (*tls.Cert
 	// New cert file loaded.
 	privPEM, _, certsPEM := ParsePEM(data)
 	if len(certsPEM) == 0 {
-		return nil, fmt.Errorf("no certificates found for %v", name)
+		return nil, fmt.Errorf("certServingCache: no certificates found for %v", name)
 	}
 	if len(privPEM) == 0 {
-		return nil, fmt.Errorf("no private key found for %v", name)
+		return nil, fmt.Errorf("certServingCache: no private key found for %v", name)
 	}
 
 	// Verify cert chain.
@@ -164,11 +164,11 @@ func (m *CertServingCache) GetCertificate(hello *tls.ClientHelloInfo) (*tls.Cert
 	}
 	_, err = verifyCertChainOpts(certs, opts)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("certServingCache: failed to verify certificate for %v: %w", name, err)
 	}
 
 	if certs[0].IsCA {
-		return nil, fmt.Errorf("leaf certificate is a CA cert for %v", name)
+		return nil, fmt.Errorf("certServingCache: leaf certificate is a CA cert for %v", name)
 	}
 
 	// Prepare tls.Certificate
@@ -177,7 +177,7 @@ func (m *CertServingCache) GetCertificate(hello *tls.ClientHelloInfo) (*tls.Cert
 	// Load tls.Certificate
 	tlscert, err := tls.X509KeyPair(cert, priv)
 	if err != nil {
-		return nil, fmt.Errorf("failed to load x509 key pair for %v: %w", name, err)
+		return nil, fmt.Errorf("certServingCache: failed to load x509 key pair for %v: %w", name, err)
 	}
 
 	m.put(name, &tlscert, m.ttl)
