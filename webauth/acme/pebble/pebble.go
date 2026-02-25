@@ -408,7 +408,7 @@ func (pc Config) GetIssuingCert(ctx context.Context, id int) ([]byte, error) {
 			},
 		},
 	}
-	resp, err := client.Do(req)
+	resp, err := client.Do(req) //nolint:gosec // G704 is too restrictive here
 	if err != nil {
 		return nil, err
 	}

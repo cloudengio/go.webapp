@@ -61,7 +61,7 @@ func (h HealthzTest) run(ctx context.Context, spec HealthzSpec) error {
 			return fmt.Errorf("healthz: creating request: %w", err)
 		}
 
-		resp, err := h.client.Do(req)
+		resp, err := h.client.Do(req) //nolint:gosec // G704 is too restrictive here
 		if err != nil {
 			return fmt.Errorf("healthz: performing request: %w", err)
 		}

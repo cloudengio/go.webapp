@@ -26,6 +26,7 @@ import (
 	"cloudeng.io/webapp/devtest/chromedputil"
 	"cloudeng.io/webapp/webauth/jwtutil"
 	"cloudeng.io/webapp/webauth/webauthn/passkeys"
+	"github.com/chromedp/cdproto/page"
 	browserWebauthn "github.com/chromedp/cdproto/webauthn"
 	"github.com/chromedp/chromedp"
 	"github.com/go-webauthn/webauthn/protocol"
@@ -233,11 +234,28 @@ type registrationResult struct {
 func testPasskeyRegistration(ctx context.Context, t *testing.T) registrationResult {
 	var result registrationResult
 	err := chromedp.Run(ctx,
+		// Bring the page to the front.
+		chromedp.ActionFunc(func(ctx context.Context) error {
+			return page.BringToFront().Do(ctx)
+		}),
+
+		// Force the window to gain focus via JS
+		chromedp.Evaluate(`window.focus();`, nil),
+
 		// Call the registration function from the script.
 		chromedp.Evaluate(`createPasskey('test@example.com', 'Test User').then((result) => { return result; });`, &result, chromedputil.WaitForPromise),
 	)
 	if err != nil {
 		t.Fatalf("Passkey registration test failed: %v", err)
+	}
+	if result.Error != "" {
+		t.Fatalf("Passkey registration failed: %v", result.Error)
+	}
+	if result.UserHandle == "" {
+		t.Fatalf("Passkey registration failed: user handle is empty")
+	}
+	if result.PublicKeyID == "" {
+		t.Fatalf("Passkey registration failed: public key ID is empty")
 	}
 	return result
 }

@@ -94,7 +94,7 @@ func (h handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	w.Write([]byte(h.content)) //nolint:errcheck
+	_, _ = w.Write([]byte(h.content)) //nolint:gosec // G705: XSS via taint analysis
 	if h.counter != nil {
 		h.counter(r.Context())
 	}
