@@ -53,7 +53,7 @@ func (g GoGetTest) verify(ctx context.Context, expected goget.Spec) error {
 }
 
 func verify(req *http.Request, client *http.Client, expected goget.Spec) error {
-	resp, err := client.Do(req)
+	resp, err := client.Do(req) //nolint:gosec // G704 is too restrictive here
 	if err != nil {
 		return fmt.Errorf("error: %v: %w", err, ErrGoGetUnexpectedError)
 	}

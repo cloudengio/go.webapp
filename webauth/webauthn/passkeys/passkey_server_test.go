@@ -141,6 +141,9 @@ func TestPasskeysServer(t *testing.T) {
 
 	// Run tests for registration and login.
 	regResult := testPasskeyRegistration(ctx, t)
+	if len(regResult.UserHandle) == 0 {
+		t.Fatalf("user handle is empty: %v", regResult)
+	}
 
 	uid, err := passkeys.UserIDFromString(regResult.UserHandle)
 	if err != nil {

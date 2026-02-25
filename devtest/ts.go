@@ -7,9 +7,9 @@ package devtest
 import (
 	"context"
 	"fmt"
+	"io/fs"
 	"os"
 	"os/exec"
-	"path/filepath"
 	"time"
 )
 
@@ -42,6 +42,7 @@ func WithTypescriptTarget(target string) TypescriptOption {
 type TypescriptSources struct {
 	options typescriptOptions
 	dir     string
+	fs      fs.StatFS
 	files   []string
 	last    time.Time
 }
@@ -66,21 +67,22 @@ func NewTypescriptSources(opts ...TypescriptOption) *TypescriptSources {
 // as the input files.
 func (ts *TypescriptSources) SetDirAndFiles(dir string, files ...string) {
 	ts.dir = dir
+	ts.fs = os.DirFS(dir).(fs.StatFS)
 	ts.files = append([]string(nil), files...)
 }
 
 // Compile compiles the TypeScript sources that have been modified
 // since it was last run.
 func (ts *TypescriptSources) Compile(ctx context.Context) error {
-	if ts.dir == "" {
-		return fmt.Errorf("no directory set (call SetFiles first)")
+	if ts.fs == nil {
+		return fmt.Errorf("no fs set (call SetDirAndFiles first)")
 	}
 	if len(ts.files) == 0 {
 		return fmt.Errorf("no TypeScript files configured")
 	}
 	modified := []string{}
 	for _, candidate := range ts.files {
-		fi, err := os.Stat(filepath.Join(ts.dir, candidate))
+		fi, err := ts.fs.Stat(candidate)
 		if err != nil {
 			return err
 		}
@@ -98,7 +100,8 @@ func (ts *TypescriptSources) Compile(ctx context.Context) error {
 
 	args := []string{"--target", ts.options.target}
 	args = append(args, modified...)
-	cmd := exec.CommandContext(ctx, compilerPath, args...)
+	// TODO: validate compiler name and arguments to ensure they are valid.
+	cmd := exec.CommandContext(ctx, compilerPath, args...) //nolint:gosec // G702
 	cmd.Dir = ts.dir
 	out, err := cmd.CombinedOutput()
 	if err != nil {

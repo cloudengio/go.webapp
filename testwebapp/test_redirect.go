@@ -60,7 +60,7 @@ func (r RedirectTest) verify(ctx context.Context, spec RedirectSpec) error {
 	if err != nil {
 		return fmt.Errorf("error: %v: %w", err, ErrRedirectUnexpectedError)
 	}
-	resp, err := r.client.Do(req)
+	resp, err := r.client.Do(req) //nolint:gosec // G704 is too restrictive here
 	if err != nil {
 		return fmt.Errorf("error: %v: %w", err, ErrRedirectUnexpectedError)
 	}

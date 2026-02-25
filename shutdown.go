@@ -215,7 +215,7 @@ func pingURL(ctx context.Context, client *http.Client, interval time.Duration, u
 			if err != nil {
 				return fmt.Errorf("failed to create request for %s: %w", url, err)
 			}
-			resp, err := client.Do(req)
+			resp, err := client.Do(req) //nolint:gosec // G704 too restrictive for this use case.
 			if err == nil && resp.StatusCode >= 200 && resp.StatusCode < 400 {
 				return nil
 			}
