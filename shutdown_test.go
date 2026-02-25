@@ -92,13 +92,11 @@ func TestServeWithShutdown(t *testing.T) {
 	}
 
 	var wg sync.WaitGroup
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
+	wg.Go(func() {
 		if err := webapp.ServeWithShutdown(ctx, ln, srv, time.Second); err != nil {
 			t.Errorf("ServeWithShutdown returned an unexpected error: %v", err)
 		}
-	}()
+	})
 
 	client := http.Client{}
 	resp, err := client.Get("http://" + ln.Addr().String())
@@ -139,13 +137,11 @@ func TestServeTLSWithShutdown(t *testing.T) {
 	defer cancel()
 
 	var wg sync.WaitGroup
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
+	wg.Go(func() {
 		if err := webapp.ServeTLSWithShutdown(ctx, ln, srv, time.Second); err != nil {
 			t.Errorf("ServeTLSWithShutdown returned an unexpected error: %v", err)
 		}
-	}()
+	})
 
 	certPool := x509.NewCertPool()
 	certPool.AppendCertsFromPEM(certPEM)
@@ -241,12 +237,10 @@ func TestServeWithShutdown_ShutdownError(t *testing.T) {
 
 	var shutdownErr error
 	var wg sync.WaitGroup
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
+	wg.Go(func() {
 		// Use a very short grace period to ensure Shutdown fails.
 		shutdownErr = webapp.ServeWithShutdown(ctx, ln, srv, 10*time.Millisecond)
-	}()
+	})
 
 	// Make a request to the hanging handler.
 	go func() {

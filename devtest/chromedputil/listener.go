@@ -159,9 +159,7 @@ func RunLoggingListener(ctx context.Context, logger *slog.Logger, opts ...Loggin
 				// Run asynchronously since ConsoleArgsAsJSON will call back into
 				// chromedp which may cause a deadlock depending on the overall
 				// state of chromedp.
-				wg.Add(1)
-				go func() {
-					defer wg.Done()
+				wg.Go(func() {
 					s, err := ConsoleArgsAsJSON(ctx, event)
 					if err != nil {
 						logger.Error("Failed to marshal console args to JSON", "error", err)
@@ -177,7 +175,7 @@ func RunLoggingListener(ctx context.Context, logger *slog.Logger, opts ...Loggin
 						}
 					}
 					logger.LogAttrs(ctx, slog.LevelInfo, "Console API called", attrs...)
-				}()
+				})
 			case event := <-options.exceptionCh:
 				logger.Error("Exception thrown", slog.Any("event", event))
 				logger.Error("Exception details",
