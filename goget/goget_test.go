@@ -190,7 +190,7 @@ func TestGoGetHandlerEdgeCases(t *testing.T) {
 		w := httptest.NewRecorder()
 
 		mux.ServeHTTP(w, req)
-		assert.Equal(t, http.StatusMovedPermanently, w.Code)
+		assert.Equal(t, http.StatusTemporaryRedirect, w.Code)
 		assert.Equal(t, "/?go-get=1", w.Header().Get("Location"))
 	})
 

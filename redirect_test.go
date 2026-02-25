@@ -324,7 +324,7 @@ func TestRedirectHandlerRootPathRedirect(t *testing.T) {
 func TestRedirectHandlerEmptyPathRedirect(t *testing.T) {
 	redirect := webapp.RedirectToHTTPSPort(":443")
 
-	req := httptest.NewRequest("GET", "http://example.com", nil)
+	req := httptest.NewRequest("GET", "http://example.com/", nil)
 	rr := httptest.NewRecorder()
 
 	mux := http.NewServeMux()
