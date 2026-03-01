@@ -5,6 +5,7 @@
 package cssutil_test
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 	"testing/fstest"
@@ -107,6 +108,30 @@ func TestParseHTMLClassesMultiple(t *testing.T) {
 	}
 }
 
+func TestParseHTMLClassesDeeplyNested(t *testing.T) {
+	// Build HTML with 513 nested divs, each with a unique class, to
+	// guard against stack overflows in the iterative traversal.
+	// golang.org/x/net/html caps the open element stack at 512 nodes.
+	const depth = 513
+	var b strings.Builder
+	b.WriteString("<html><body>")
+	for i := range depth {
+		fmt.Fprintf(&b, `<div class="depth-%d">`, i)
+	}
+	for range depth {
+		b.WriteString("</div>")
+	}
+	b.WriteString("</body></html>")
+
+	classes, err := cssutil.ParseHTMLClasses(strings.NewReader(b.String()))
+	if err == nil {
+		t.Fatal("ParseHTMLClasses: expected error, got nil")
+	}
+	if len(classes) != 0 {
+		t.Fatalf("got %d classes, want %d", len(classes), 0)
+	}
+}
+
 func TestParseHTMLClassesEmpty(t *testing.T) {
 	classes, err := cssutil.ParseHTMLClasses(strings.NewReader(`<html><body></body></html>`))
 	if err != nil {
@@ -160,6 +185,22 @@ func TestTailwindSourceInline(t *testing.T) {
 	classes := []string{"bg-blue-500", "font-bold", "text-white"}
 	got := cssutil.TailwindSourceInline(classes)
 	want := `@source inline("bg-blue-500 font-bold text-white");`
+	if got != want {
+		t.Errorf("got %q, want %q", got, want)
+	}
+}
+
+func TestTailwindSourceInlineInjection(t *testing.T) {
+	// Class names containing '"' or ')' must be dropped to prevent injection
+	// out of the @source inline("...") directive.
+	classes := []string{
+		"safe-class",
+		`"); @import "malicious.css"; //`,
+		`hover:focus)`,
+		"another-safe",
+	}
+	got := cssutil.TailwindSourceInline(classes)
+	want := `@source inline("safe-class another-safe");`
 	if got != want {
 		t.Errorf("got %q, want %q", got, want)
 	}
