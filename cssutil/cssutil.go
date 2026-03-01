@@ -82,7 +82,7 @@ func ParseHTMLClassesFS(fsys fs.FS, names ...string) ([]string, error) {
 func TailwindSourceInline(classes []string) string {
 	safe := make([]string, 0, len(classes))
 	for _, cls := range classes {
-		if strings.ContainsAny(cls, `")`) {
+		if strings.ContainsAny(cls, `")\`) {
 			continue
 		}
 		safe = append(safe, cls)
