@@ -15,7 +15,7 @@ require (
 	github.com/chromedp/chromedp v0.14.2
 	github.com/gaissmai/bart v0.26.1
 	github.com/go-json-experiment/json v0.0.0-20260214004413-d219187c3433
-	github.com/go-webauthn/webauthn v0.15.0
+	github.com/go-webauthn/webauthn v0.16.0
 	github.com/lestrrat-go/jwx/v3 v3.0.13
 	github.com/stretchr/testify v1.11.1
 	golang.org/x/crypto v0.48.0
