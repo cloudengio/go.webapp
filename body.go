@@ -12,23 +12,23 @@ import (
 	"net/http"
 )
 
-// ErrBodyTooLarge is returned when the request body exceeds the limit.
-var ErrBodyTooLarge = errors.New("request body exceeds limit")
-
 // ReadBodyLimit reads the request body with a size limit
-// and returns it as a byte slice. If the body exceeds the limit,
-// an error is returned.
+// and returns it as a byte slice. If the body exceeds the limit
+// ReadBodyLimit will return an http.MaxBytesError.
 // If replace is true, the request body is replaced with a new reader
 // that returns the same byte slice.
 func ReadBodyLimit(r *http.Request, replace bool, limit int64) ([]byte, error) {
-	body, err := io.ReadAll(io.LimitReader(r.Body, limit+1))
+	r.Body = http.MaxBytesReader(nil, r.Body, limit)
+	body, err := io.ReadAll(r.Body)
 	if err != nil {
+		var maxBytesErr *http.MaxBytesError
+		if errors.As(err, &maxBytesErr) {
+			return nil, err
+		}
 		return nil, fmt.Errorf("reading request body: %w", err)
 	}
-	if int64(len(body)) > limit {
-		return nil, ErrBodyTooLarge
-	}
 	if replace {
+		r.Body.Close()
 		r.Body = io.NopCloser(bytes.NewReader(body))
 	}
 	return body, nil
