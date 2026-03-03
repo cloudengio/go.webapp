@@ -15,7 +15,7 @@ import (
 type testCase struct {
 	name              string
 	body              string
-	limit             int64
+	limit             uint64
 	replace           bool
 	wantBody          []byte
 	wantMaxBytesError bool
