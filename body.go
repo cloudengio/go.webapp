@@ -17,8 +17,8 @@ import (
 // ReadBodyLimit will return an http.MaxBytesError.
 // If replace is true, the request body is replaced with a new reader
 // that returns the same byte slice.
-func ReadBodyLimit(r *http.Request, replace bool, limit int64) ([]byte, error) {
-	r.Body = http.MaxBytesReader(nil, r.Body, limit)
+func ReadBodyLimit(r *http.Request, replace bool, limit uint64) ([]byte, error) {
+	r.Body = http.MaxBytesReader(nil, r.Body, int64(limit))
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
 		var maxBytesErr *http.MaxBytesError
