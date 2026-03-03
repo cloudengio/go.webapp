@@ -43,6 +43,13 @@ instances created by this package.
 
 
 ## Variables
+### ErrBodyTooLarge
+```go
+ErrBodyTooLarge = errors.New("request body exceeds limit")
+
+```
+ErrBodyTooLarge is returned when the request body exceeds the limit.
+
 ### PreferredCipherSuites
 ```go
 PreferredCipherSuites = []uint16{
@@ -168,6 +175,15 @@ func ReadAndParsePrivateKeyPEM(ctx context.Context, fs file.ReadFileFS, pemFile 
 ```
 ReadAndParsePrivateKeyPEM reads and parses a PEM encoded private key from
 the specified file.
+
+### Func ReadBodyLimit
+```go
+func ReadBodyLimit(r *http.Request, replace bool, limit int64) ([]byte, error)
+```
+ReadBodyLimit reads the request body with a size limit and returns it as a
+byte slice. If the body exceeds the limit, an error is returned. If replace
+is true, the request body is replaced with a new reader that returns the
+same byte slice.
 
 ### Func RedirectPort80
 ```go
