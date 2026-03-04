@@ -38,7 +38,7 @@ func CreateVerificationToken(ctx context.Context, s Signer, subject, claimKey st
 // VerificationURL generates a verification URL by appending the signed
 // verification token as a query parameter ("token") to the provided baseURL.
 // The URL will encode any existing query parameters gracefully.
-func VerificationURL(s Signer, baseURL string, tokenBytes []byte) (string, error) {
+func VerificationURL(baseURL string, tokenBytes []byte) (string, error) {
 	u, err := url.Parse(baseURL)
 	if err != nil {
 		return "", err
