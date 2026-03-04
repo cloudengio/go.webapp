@@ -9,6 +9,33 @@ Package jwtutil provides support for creating and verifying JSON Web Tokens
 package provides simplified wrappers around the JWT signing and verification
 process to allow for more convenient usage in web applications.
 
+## Functions
+### Func CreateVerificationToken
+```go
+func CreateVerificationToken(ctx context.Context, s Signer, claimKey string, claimValue any, expiresIn time.Duration, issuer, audience string) ([]byte, error)
+```
+CreateVerificationToken creates a compacted JWT containing the specified
+claim to be verified along with an expiration time, subject, issuer,
+and audience.
+
+### Func ValidateVerificationToken
+```go
+func ValidateVerificationToken(ctx context.Context, v Validator, tokenString string, expectedIssuer, expectedAudience, claimKey string, claimValue any) error
+```
+ValidateVerificationToken parses the token via the provided Validator,
+performs standard JWT claim checks (Issuer, Audience, Expiration), and
+extracts the specified claim from the validated JWT structure.
+
+### Func VerificationURL
+```go
+func VerificationURL(ctx context.Context, s Signer, baseURL, claimKey string, claimValue any, expiresIn time.Duration, issuer, audience string) (string, error)
+```
+VerificationURL generates a verification URL by appending the signed
+verification token as a query parameter ("token") to the provided baseURL.
+The URL will encode any existing query parameters gracefully.
+
+
+
 ## Types
 ### Type Signer
 ```go
