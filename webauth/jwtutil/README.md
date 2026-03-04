@@ -28,7 +28,7 @@ extracts the specified claim from the validated JWT structure.
 
 ### Func VerificationURL
 ```go
-func VerificationURL(ctx context.Context, s Signer, baseURL string, tokenBytes []byte) (string, error)
+func VerificationURL(s Signer, baseURL string, tokenBytes []byte) (string, error)
 ```
 VerificationURL generates a verification URL by appending the signed
 verification token as a query parameter ("token") to the provided baseURL.
