@@ -84,9 +84,9 @@ func (c Secure) Read(r *http.Request) (string, bool) {
 
 // ScopeAndDuration represents the scope and duration settings for cookies.
 type ScopeAndDuration struct {
-	Domain   string
-	Path     string
-	Duration time.Duration
+	Domain   string        `yaml:"domain" doc:"cookie domain"`
+	Path     string        `yaml:"path" doc:"cookie path"`
+	Duration time.Duration `yaml:"duration" doc:"cookie duration"`
 }
 
 // SetDefaults uses the supplied values as defaults for ScopeAndDuration if the
