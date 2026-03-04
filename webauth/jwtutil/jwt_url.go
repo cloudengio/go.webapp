@@ -11,10 +11,10 @@ import (
 
 // CreateVerificationToken creates a compacted JWT containing the specified
 // claim to be verified along with an expiration time, subject, issuer, and audience.
-func CreateVerificationToken(ctx context.Context, s Signer, claimKey string, claimValue any, expiresIn time.Duration, issuer, audience string) ([]byte, error) {
+func CreateVerificationToken(ctx context.Context, s Signer, subject, claimKey string, claimValue any, expiresIn time.Duration, issuer, audience string) ([]byte, error) {
 	now := time.Now()
 	builder := jwt.NewBuilder().
-		Subject("email-verification").
+		Subject(subject).
 		IssuedAt(now).
 		Expiration(now.Add(expiresIn)).
 		Claim(claimKey, claimValue)
@@ -38,12 +38,7 @@ func CreateVerificationToken(ctx context.Context, s Signer, claimKey string, cla
 // VerificationURL generates a verification URL by appending the signed
 // verification token as a query parameter ("token") to the provided baseURL.
 // The URL will encode any existing query parameters gracefully.
-func VerificationURL(ctx context.Context, s Signer, baseURL, claimKey string, claimValue any, expiresIn time.Duration, issuer, audience string) (string, error) {
-	tokenBytes, err := CreateVerificationToken(ctx, s, claimKey, claimValue, expiresIn, issuer, audience)
-	if err != nil {
-		return "", err
-	}
-
+func VerificationURL(ctx context.Context, s Signer, baseURL string, tokenBytes []byte) (string, error) {
 	u, err := url.Parse(baseURL)
 	if err != nil {
 		return "", err
@@ -59,9 +54,9 @@ func VerificationURL(ctx context.Context, s Signer, baseURL, claimKey string, cl
 // ValidateVerificationToken parses the token via the provided Validator,
 // performs standard JWT claim checks (Issuer, Audience, Expiration), and
 // extracts the specified claim from the validated JWT structure.
-func ValidateVerificationToken(ctx context.Context, v Validator, tokenString string, expectedIssuer, expectedAudience, claimKey string, claimValue any) error {
+func ValidateVerificationToken(ctx context.Context, v Validator, tokenString string, expectedSubject, expectedIssuer, expectedAudience, claimKey string, claimValue any) error {
 	validators := []jwt.ValidateOption{
-		jwt.WithSubject("email-verification"),
+		jwt.WithSubject(expectedSubject),
 	}
 
 	if expectedIssuer != "" {

@@ -49,8 +49,13 @@ func TestEmailVerification(t *testing.T) {
 	audience := "test-audience"
 	expiresIn := 1 * time.Hour
 
+	tokenBytes, err := jwtutil.CreateVerificationToken(ctx, signer, "email-verification", "email", emailAddress, expiresIn, issuer, audience)
+	if err != nil {
+		t.Fatalf("CreateVerificationToken failed: %v", err)
+	}
+
 	// Test 1: Generate URL
-	verifURL, err := jwtutil.VerificationURL(ctx, signer, baseURL, "email", emailAddress, expiresIn, issuer, audience)
+	verifURL, err := jwtutil.VerificationURL(ctx, signer, baseURL, tokenBytes)
 	if err != nil {
 		t.Fatalf("VerificationURL failed: %v", err)
 	}
@@ -73,7 +78,7 @@ func TestEmailVerification(t *testing.T) {
 
 	// Test 2: Validation Success
 	var extractedEmail string
-	err = jwtutil.ValidateVerificationToken(ctx, validator, tokenStr, issuer, audience, "email", &extractedEmail)
+	err = jwtutil.ValidateVerificationToken(ctx, validator, tokenStr, "email-verification", issuer, audience, "email", &extractedEmail)
 	if err != nil {
 		t.Fatalf("ValidateVerificationToken failed: %v", err)
 	}
@@ -84,14 +89,14 @@ func TestEmailVerification(t *testing.T) {
 
 	// Test 3: Validation Failure - Wrong Audience
 	var extractedEmail2 string
-	err = jwtutil.ValidateVerificationToken(ctx, validator, tokenStr, issuer, "wrong-audience", "email", &extractedEmail2)
+	err = jwtutil.ValidateVerificationToken(ctx, validator, tokenStr, "email-verification", issuer, "wrong-audience", "email", &extractedEmail2)
 	if err == nil {
 		t.Fatal("expected validation failure due to wrong audience")
 	}
 
 	// Test 4: Validation Failure - Wrong Issuer
 	var extractedEmail3 string
-	err = jwtutil.ValidateVerificationToken(ctx, validator, tokenStr, "wrong-issuer", audience, "email", &extractedEmail3)
+	err = jwtutil.ValidateVerificationToken(ctx, validator, tokenStr, "email-verification", "wrong-issuer", audience, "email", &extractedEmail3)
 	if err == nil {
 		t.Fatal("expected validation failure due to wrong issuer")
 	}
@@ -106,13 +111,13 @@ func TestEmailVerificationExpiration(t *testing.T) {
 	audience := "test-audience"
 
 	// Create a token that expires instantly
-	tokenBytes, err := jwtutil.CreateVerificationToken(ctx, signer, "email", emailAddress, -1*time.Minute, issuer, audience)
+	tokenBytes, err := jwtutil.CreateVerificationToken(ctx, signer, "email-verification", "email", emailAddress, -1*time.Minute, issuer, audience)
 	if err != nil {
 		t.Fatalf("CreateVerificationToken failed: %v", err)
 	}
 
 	var expectedEmail string
-	err = jwtutil.ValidateVerificationToken(ctx, validator, string(tokenBytes), issuer, audience, "email", &expectedEmail)
+	err = jwtutil.ValidateVerificationToken(ctx, validator, string(tokenBytes), "email-verification", issuer, audience, "email", &expectedEmail)
 	if err == nil {
 		t.Fatal("expected validation failure due to expired token")
 	}
