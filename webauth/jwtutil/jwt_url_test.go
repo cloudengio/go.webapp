@@ -55,7 +55,7 @@ func TestEmailVerification(t *testing.T) {
 	}
 
 	// Test 1: Generate URL
-	verifURL, err := jwtutil.VerificationURL(ctx, signer, baseURL, tokenBytes)
+	verifURL, err := jwtutil.VerificationURL(signer, baseURL, tokenBytes)
 	if err != nil {
 		t.Fatalf("VerificationURL failed: %v", err)
 	}
