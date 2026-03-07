@@ -9,9 +9,9 @@ import cloudeng.io/webapp/cookies
 ### Type ScopeAndDuration
 ```go
 type ScopeAndDuration struct {
-	Domain   string
-	Path     string
-	Duration time.Duration
+	Domain   string        `yaml:"domain" doc:"cookie domain"`
+	Path     string        `yaml:"path" doc:"cookie path"`
+	Duration time.Duration `yaml:"duration" doc:"cookie duration"`
 }
 ```
 ScopeAndDuration represents the scope and duration settings for cookies.

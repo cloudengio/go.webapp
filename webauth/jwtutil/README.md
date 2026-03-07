@@ -28,7 +28,7 @@ extracts the specified claim from the validated JWT structure.
 
 ### Func VerificationURL
 ```go
-func VerificationURL(s Signer, baseURL string, tokenBytes []byte) (string, error)
+func VerificationURL(baseURL string, tokenBytes []byte) (string, error)
 ```
 VerificationURL generates a verification URL by appending the signed
 verification token as a query parameter ("token") to the provided baseURL.
@@ -68,6 +68,8 @@ ID.
 ### Type Validator
 ```go
 type Validator interface {
+	Parse(ctx context.Context, token []byte) (jwt.Token, error)
+	Validate(ctx context.Context, token jwt.Token, validators ...jwt.ValidateOption) error
 	ParseAndValidate(ctx context.Context, token []byte, validators ...jwt.ValidateOption) (jwt.Token, error)
 }
 ```
