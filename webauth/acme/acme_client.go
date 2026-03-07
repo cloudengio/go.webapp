@@ -83,7 +83,7 @@ func NewClient(mgr *autocert.Manager, opts ...ClientOption) *Client {
 // It returns a function that can be called to stop the client.
 func (s *Client) Start(ctx context.Context, hosts ...string) (func() error, error) {
 	hosts = slices.Clone(hosts)
-	refreshCtx, cancel := context.WithCancel(ctx)
+	refreshCtx, cancel := context.WithCancel(ctx) //nolint:gosec // G118: false positive
 	logger := ctxlog.Logger(ctx).With("component", "acme_client")
 	errCh := make(chan error, 1)
 	go s.refresh(refreshCtx, logger, errCh, hosts)

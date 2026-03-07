@@ -83,6 +83,8 @@ func (s signer) PublicKey() (jwk.Key, error) {
 
 // Validator is an interface for validating JWTs.
 type Validator interface {
+	Parse(ctx context.Context, token []byte) (jwt.Token, error)
+	Validate(ctx context.Context, token jwt.Token, validators ...jwt.ValidateOption) error
 	ParseAndValidate(ctx context.Context, token []byte, validators ...jwt.ValidateOption) (jwt.Token, error)
 }
 
@@ -98,13 +100,21 @@ func NewValidator(set jwk.Set) Validator {
 }
 
 // ParseAndValidate parses and validates a JWT using the signer's key set.
-func (v validator) ParseAndValidate(_ context.Context, tokenBytes []byte, validators ...jwt.ValidateOption) (jwt.Token, error) {
-	token, err := jwt.Parse(tokenBytes, jwt.WithKeySet(v.set))
+func (v validator) ParseAndValidate(ctx context.Context, tokenBytes []byte, validators ...jwt.ValidateOption) (jwt.Token, error) {
+	token, err := v.Parse(ctx, tokenBytes)
 	if err != nil {
 		return nil, err
 	}
-	if err := jwt.Validate(token, validators...); err != nil {
+	if err := v.Validate(ctx, token, validators...); err != nil {
 		return nil, err
 	}
 	return token, nil
+}
+
+func (v validator) Parse(_ context.Context, tokenBytes []byte) (jwt.Token, error) {
+	return jwt.Parse(tokenBytes, jwt.WithKeySet(v.set))
+}
+
+func (v validator) Validate(_ context.Context, token jwt.Token, validators ...jwt.ValidateOption) error {
+	return jwt.Validate(token, validators...)
 }

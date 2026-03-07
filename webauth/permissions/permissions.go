@@ -4,46 +4,64 @@
 
 package permissions
 
+import "iter"
+
 // Resource refers to the resource on which the action is performed.
 // For resources, / is used as a separator between components.
 // By convention, resources are URI paths.
-type Resource Spec
+type Resource Pattern
 
 // Action refers to the action to perform on the resource.
 // For actions, colons are used as a separator between components.
-type Action Spec
+type Action Pattern
 
-// Grant represents the ability to perform some action on a resource.
-type Grant struct {
-	Role     string   // The role of the user performing the action
-	Method   string   // Method to perform on the resource
-	Resource Resource // The resource on which the action is performed
-	Action   Action   // The action to perform on the resource
+// Spec represents the ability to perform some action on a resource.
+type Spec struct {
+	Role     string   `json:"role"`     // The role of the user performing the action
+	Method   string   `json:"method"`   // Method to perform on the resource
+	Resource Resource `json:"resource"` // The resource on which the action is performed
+	Action   Action   `json:"action"`   // The action to perform on the resource
 }
 
-// String returns a string representation of the Grant.
-func (g Grant) String() string {
-	return g.Role + "," + g.Method + "," + string(g.Resource) + "," + string(g.Action)
+// String returns a string representation of the Spec.
+func (s Spec) String() string {
+	return s.Role + "," + s.Method + "," + string(s.Resource) + "," + string(s.Action)
 }
 
 // Set represents a set of permissions.
 type Set struct {
-	Permissions []Grant
+	Permissions []Spec
+}
+
+// Valid returns true if the Spec has all required fields.
+func (s Spec) Valid() bool {
+	return s.Role != "" && s.Method != "" && s.Resource != "" && s.Action != ""
 }
 
 // AllowedFor returns true if at least one of the permissions granted is
 // allowed for the requested role, method, action and resource.
-func (p Set) AllowedFor(role, method, resource, action string) bool {
-	if role == "" || method == "" || resource == "" || action == "" {
+func (s Set) AllowedFor(request Spec) bool {
+	if !request.Valid() {
 		return false
 	}
-	for _, permission := range p.Permissions {
-		if permission.Role == role &&
-			permission.Method == method &&
-			Allowed(Spec(permission.Action), Spec(action), ":") &&
-			Allowed(Spec(permission.Resource), Spec(resource), "/") {
+	for _, permission := range s.Permissions {
+		if permission.Role == request.Role &&
+			permission.Method == request.Method &&
+			Allowed(Pattern(permission.Action), Pattern(request.Action), ":") &&
+			Allowed(Pattern(permission.Resource), Pattern(request.Resource), "/") {
 			return true
 		}
 	}
 	return false
+}
+
+// Specs provides an iterator over a permissions set.
+func (s Set) Specs() iter.Seq[Spec] {
+	return func(yield func(Spec) bool) {
+		for _, permission := range s.Permissions {
+			if !yield(permission) {
+				return
+			}
+		}
+	}
 }

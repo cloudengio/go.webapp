@@ -5,6 +5,7 @@
 package permissions_test
 
 import (
+	"slices"
 	"testing"
 
 	"cloudeng.io/webapp/webauth/permissions"
@@ -187,10 +188,62 @@ func TestPermissions_AllowedFor(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := tt.perms.AllowedFor(tt.role, tt.method, tt.resource, tt.action)
+			req := permissions.Spec{
+				Role:     tt.role,
+				Method:   tt.method,
+				Resource: permissions.Resource(tt.resource),
+				Action:   permissions.Action(tt.action),
+			}
+			got := tt.perms.AllowedFor(req)
 			if got, want := got, tt.want; got != want {
-				t.Errorf("%v: %v.AllowedFor(Role: %v, Method: %v, Resource: %v, Action: %v) = %v, want %v", tt.name, tt.perms, tt.role, tt.method, tt.resource, tt.action, got, want)
+				t.Errorf("%v: %v.AllowedFor(%v) = %v, want %v", tt.name, tt.perms, req, got, want)
 			}
 		})
 	}
+}
+
+func TestSet_Specs(t *testing.T) {
+	t.Run("Empty", func(t *testing.T) {
+		var s permissions.Set
+		got := slices.Collect(s.Specs())
+		if len(got) != 0 {
+			t.Errorf("got %v, want empty", got)
+		}
+	})
+
+	t.Run("Single", func(t *testing.T) {
+		s := permissionstestutil.NewMust("user", "GET", "/res", "read")
+		got := slices.Collect(s.Specs())
+		if len(got) != 1 {
+			t.Fatalf("got %d specs, want 1", len(got))
+		}
+		if got[0] != s.Permissions[0] {
+			t.Errorf("got %v, want %v", got[0], s.Permissions[0])
+		}
+	})
+
+	t.Run("Multiple", func(t *testing.T) {
+		s := permissionstestutil.NewMust("user", "GET", "/res", "read", "admin", "POST", "/res", "write")
+		got := slices.Collect(s.Specs())
+		if len(got) != 2 {
+			t.Fatalf("got %d specs, want 2", len(got))
+		}
+		for i, spec := range got {
+			if spec != s.Permissions[i] {
+				t.Errorf("[%d]: got %v, want %v", i, spec, s.Permissions[i])
+			}
+		}
+	})
+
+	t.Run("EarlyStop", func(t *testing.T) {
+		s := permissionstestutil.NewMust("user", "GET", "/res", "read", "admin", "POST", "/res", "write")
+		var count int
+		for range s.Specs() {
+			count++
+			break
+		}
+		if count != 1 {
+			t.Errorf("got %d iterations, want 1", count)
+		}
+	})
 }

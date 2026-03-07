@@ -84,7 +84,7 @@ func copyTestdata(t *testing.T, dstDir string, names ...string) {
 		if err != nil {
 			t.Fatalf("read testdata %s: %v", src, err)
 		}
-		if err := os.WriteFile(filepath.Join(dstDir, n), b, 0600); err != nil {
+		if err := os.WriteFile(filepath.Join(dstDir, n), b, 0600); err != nil { //nolint: gosec // G703 too restrictive for testdata
 			t.Fatalf("write %s: %v", n, err)
 		}
 	}

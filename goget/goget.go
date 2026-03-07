@@ -81,7 +81,7 @@ type handler struct {
 }
 
 func (h handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	if r.FormValue("go-get") != "1" {
+	if r.URL.Query().Get("go-get") != "1" {
 		h.fb.ServeHTTP(w, r) //nolint:errcheck
 		return
 	}

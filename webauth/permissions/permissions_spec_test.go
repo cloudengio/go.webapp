@@ -11,8 +11,8 @@ import (
 
 func TestAllowed(t *testing.T) {
 	tests := []struct {
-		request     Spec
-		requirement Spec
+		request     Pattern
+		requirement Pattern
 		allowed     bool
 	}{
 		// Exact matches

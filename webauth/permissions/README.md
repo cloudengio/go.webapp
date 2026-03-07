@@ -17,7 +17,7 @@ DefaultMaxComponentsAllowed = 10
 ## Functions
 ### Func Allowed
 ```go
-func Allowed(request, requirement Spec, sep string) bool
+func Allowed(request, requirement Pattern, sep string) bool
 ```
 Allowed returns true if the request is allowed by the requirement.
 Both request and requirement must be non-empty, if either has more than
@@ -35,36 +35,27 @@ not be allowed by a:xyx:c.
 ## Types
 ### Type Action
 ```go
-type Action Spec
+type Action Pattern
 ```
 Action refers to the action to perform on the resource. For actions,
 colons are used as a separator between components.
 
 
-### Type Grant
+### Type Pattern
 ```go
-type Grant struct {
-	Role     string   // The role of the user performing the action
-	Method   string   // Method to perform on the resource
-	Resource Resource // The resource on which the action is performed
-	Action   Action   // The action to perform on the resource
-}
+type Pattern string
 ```
-Grant represents the ability to perform some action on a resource.
-
-### Methods
-
-```go
-func (g Grant) String() string
-```
-String returns a string representation of the Grant.
-
-
+Pattern represents a structured pattern for authorization with support
+for wildcards (*). A pattern is a colon separated list of components with
+well defined rules for determining if a request is allowed by a given
+requirement. Wildcards match entire pattern components and cannot be used
+as partial matches. That is, a*b has no effect whereas a:* or a:*:b will,
+see the Allowed function for details.
 
 
 ### Type Resource
 ```go
-type Resource Spec
+type Resource Pattern
 ```
 Resource refers to the resource on which the action is performed.
 For resources, / is used as a separator between components. By convention,
@@ -74,7 +65,7 @@ resources are URI paths.
 ### Type Set
 ```go
 type Set struct {
-	Permissions []Grant
+	Permissions []Spec
 }
 ```
 Set represents a set of permissions.
@@ -82,24 +73,45 @@ Set represents a set of permissions.
 ### Methods
 
 ```go
-func (p Set) AllowedFor(role, method, resource, action string) bool
+func (p Set) AllowedFor(request Spec) bool
 ```
 AllowedFor returns true if at least one of the permissions granted is
 allowed for the requested role, method, action and resource.
+
+
+```go
+func (p Set) Specs() iter.Seq[Spec]
+```
+Specs provides an iterator over a permissions set.
 
 
 
 
 ### Type Spec
 ```go
-type Spec string
+type Spec struct {
+	Role     string   `json:"role"`     // The role of the user performing the action
+	Method   string   `json:"method"`   // Method to perform on the resource
+	Resource Resource `json:"resource"` // The resource on which the action is performed
+	Action   Action   `json:"action"`   // The action to perform on the resource
+}
 ```
-Spec represents a structured specification for authorization with support
-for wildcards (*). A spec is a colon separated list of components with
-well defined rules for determining if a request is allowed by a given
-requirement. Wildcards match entire spec components and cannot be used as
-partial matches. That is, a*b has no effect whereas a:* or a:*:b will,
-see the Allowed function for details.
+Spec represents the ability to perform some action on a resource.
+
+### Methods
+
+```go
+func (g Spec) String() string
+```
+String returns a string representation of the Spec.
+
+
+```go
+func (r Spec) Valid() bool
+```
+Valid returns true if the Request has all required fields.
+
+
 
 
 

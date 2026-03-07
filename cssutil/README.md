@@ -31,7 +31,9 @@ func TailwindSourceInline(classes []string) string
 TailwindSourceInline returns a Tailwind CSS v4 @source inline directive
 containing the provided class names. The directive instructs Tailwind to
 generate CSS for all listed classes regardless of whether they appear in
-scanned source files.
+scanned source files. Class names that contain '"' or ')' are silently
+dropped, as they could break out of the inline("...") directive and allow
+CSS injection.
 
 
 

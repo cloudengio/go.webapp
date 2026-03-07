@@ -18,7 +18,7 @@ func New(roleMethodResourceAction4Tuples ...string) (permissions.Set, error) {
 	}
 	perms := permissions.Set{}
 	for i := 0; i < len(roleMethodResourceAction4Tuples); i += 4 {
-		perms.Permissions = append(perms.Permissions, permissions.Grant{
+		perms.Permissions = append(perms.Permissions, permissions.Spec{
 			Role:     roleMethodResourceAction4Tuples[i],
 			Method:   roleMethodResourceAction4Tuples[i+1],
 			Resource: permissions.Resource(roleMethodResourceAction4Tuples[i+2]),
