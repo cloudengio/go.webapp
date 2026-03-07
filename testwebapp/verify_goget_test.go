@@ -24,7 +24,7 @@ func TestVerifyGoGet(t *testing.T) {
 }
 
 func mod1Handler(w http.ResponseWriter, r *http.Request) {
-	if r.FormValue("go-get") == "1" {
+	if r.URL.Query().Get("go-get") == "1" {
 		w.Write([]byte(`<html><head><meta name="go-import" content="example.com/mod git https://github.com/example/mod"></head></html>`)) //nolint:errcheck
 		return
 	}

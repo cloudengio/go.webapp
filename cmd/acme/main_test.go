@@ -138,7 +138,7 @@ func durationWithin(d1, d2, tolerance time.Duration) bool {
 
 func runCertManager(ctx context.Context, t *testing.T, flags *certManagerFlags, host string) func(t *testing.T) {
 	t.Helper()
-	ctx, cancel := context.WithCancel(ctx)
+	ctx, cancel := context.WithCancel(ctx) //nolint:gosec // G118: false positive
 	errCh := make(chan error, 1)
 	go func() {
 		err := certManagerCmd{}.manageCerts(ctx, flags, []string{host})

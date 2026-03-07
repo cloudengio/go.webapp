@@ -55,8 +55,8 @@ func verifyCert(t *testing.T, certFile, keyFile string, wantDNS []string, wantIP
 		t.Fatalf("got %d IP addresses, want %d", len(cert.IPAddresses), len(wantIPs))
 	}
 	for i, ip := range cert.IPAddresses {
-		if !ip.Equal(wantIPs[i]) {
-			t.Errorf("got IP %v, want %v", ip, wantIPs[i])
+		if !ip.Equal(wantIPs[i]) { //nolint:gosec // G602: false positive
+			t.Errorf("got IP %v, want %v", ip, wantIPs[i]) //nolint:gosec // G602: false positive
 		}
 	}
 }
