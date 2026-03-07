@@ -196,7 +196,7 @@ func TestPermissions_AllowedFor(t *testing.T) {
 			}
 			got := tt.perms.AllowedFor(req)
 			if got, want := got, tt.want; got != want {
-				t.Errorf("%v: %v.AllowedFor(Role: %v, Method: %v, Resource: %v, Action: %v) = %v, want %v", tt.name, tt.perms, tt.role, tt.method, tt.resource, tt.action, got, want)
+				t.Errorf("%v: %v.AllowedFor(%v) = %v, want %v", tt.name, tt.perms, req, got, want)
 			}
 		})
 	}

@@ -111,10 +111,10 @@ func (v validator) ParseAndValidate(ctx context.Context, tokenBytes []byte, vali
 	return token, nil
 }
 
-func (v validator) Parse(ctx context.Context, tokenBytes []byte) (jwt.Token, error) {
+func (v validator) Parse(_ context.Context, tokenBytes []byte) (jwt.Token, error) {
 	return jwt.Parse(tokenBytes, jwt.WithKeySet(v.set))
 }
 
-func (v validator) Validate(ctx context.Context, token jwt.Token, validators ...jwt.ValidateOption) error {
+func (v validator) Validate(_ context.Context, token jwt.Token, validators ...jwt.ValidateOption) error {
 	return jwt.Validate(token, validators...)
 }
