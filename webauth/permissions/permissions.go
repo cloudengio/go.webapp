@@ -28,7 +28,8 @@ func (s Spec) String() string {
 	return s.Role + "," + s.Method + "," + string(s.Resource) + "," + string(s.Action)
 }
 
-// Set represents a set of permissions.
+// Set represents a set of permissions, generally used to represent multiple
+// permissions that have been granted.
 type Set struct {
 	Permissions []Spec
 }
@@ -38,17 +39,17 @@ func (s Spec) Valid() bool {
 	return s.Role != "" && s.Method != "" && s.Resource != "" && s.Action != ""
 }
 
-// AllowedFor returns true if at least one of the permissions granted is
-// allowed for the requested role, method, action and resource.
-func (s Set) AllowedFor(request Spec) bool {
-	if !request.Valid() {
+// Satisfies returns true if at least one of the permissions in the Set is
+// allowed satisfies the required Spec.
+func (s Set) Satisfies(required Spec) bool {
+	if !required.Valid() {
 		return false
 	}
 	for _, permission := range s.Permissions {
-		if permission.Role == request.Role &&
-			permission.Method == request.Method &&
-			Allowed(Pattern(permission.Action), Pattern(request.Action), ":") &&
-			Allowed(Pattern(permission.Resource), Pattern(request.Resource), "/") {
+		if permission.Role == required.Role &&
+			permission.Method == required.Method &&
+			Allowed(Pattern(permission.Action), Pattern(required.Action), ":") &&
+			Allowed(Pattern(permission.Resource), Pattern(required.Resource), "/") {
 			return true
 		}
 	}

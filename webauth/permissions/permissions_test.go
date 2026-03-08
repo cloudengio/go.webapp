@@ -12,7 +12,7 @@ import (
 	"cloudeng.io/webapp/webauth/permissions/permissionstestutil"
 )
 
-func TestPermissions_AllowedFor(t *testing.T) {
+func TestPermissions_Satisfies(t *testing.T) {
 	tests := []struct {
 		name     string
 		perms    permissions.Set
@@ -194,9 +194,9 @@ func TestPermissions_AllowedFor(t *testing.T) {
 				Resource: permissions.Resource(tt.resource),
 				Action:   permissions.Action(tt.action),
 			}
-			got := tt.perms.AllowedFor(req)
+			got := tt.perms.Satisfies(req)
 			if got, want := got, tt.want; got != want {
-				t.Errorf("%v: %v.AllowedFor(%v) = %v, want %v", tt.name, tt.perms, req, got, want)
+				t.Errorf("%v: %v.Satisfies(%v) = %v, want %v", tt.name, tt.perms, req, got, want)
 			}
 		})
 	}
