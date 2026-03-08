@@ -68,19 +68,20 @@ type Set struct {
 	Permissions []Spec
 }
 ```
-Set represents a set of permissions.
+Set represents a set of permissions, generally used to represent multiple
+permissions that have been granted.
 
 ### Methods
 
 ```go
-func (p Set) AllowedFor(request Spec) bool
+func (s Set) Satisfies(required Spec) bool
 ```
-AllowedFor returns true if at least one of the permissions granted is
-allowed for the requested role, method, action and resource.
+Satisfies returns true if at least one of the permissions in the Set
+satisfies the required Spec.
 
 
 ```go
-func (p Set) Specs() iter.Seq[Spec]
+func (s Set) Specs() iter.Seq[Spec]
 ```
 Specs provides an iterator over a permissions set.
 
@@ -101,15 +102,15 @@ Spec represents the ability to perform some action on a resource.
 ### Methods
 
 ```go
-func (g Spec) String() string
+func (s Spec) String() string
 ```
 String returns a string representation of the Spec.
 
 
 ```go
-func (r Spec) Valid() bool
+func (s Spec) Valid() bool
 ```
-Valid returns true if the Request has all required fields.
+Valid returns true if the Spec has all required fields.
 
 
 
