@@ -39,8 +39,8 @@ func (s Spec) Valid() bool {
 	return s.Role != "" && s.Method != "" && s.Resource != "" && s.Action != ""
 }
 
-// Satisfies returns true if at least one of the permissions in the Set is
-// allowed satisfies the required Spec.
+// Satisfies returns true if at least one of the permissions in the Set
+// satisfies the required Spec.
 func (s Set) Satisfies(required Spec) bool {
 	if !required.Valid() {
 		return false

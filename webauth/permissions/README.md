@@ -76,8 +76,8 @@ permissions that have been granted.
 ```go
 func (s Set) Satisfies(required Spec) bool
 ```
-Satisfies returns true if at least one of the permissions in the Set is
-allowed satisfies the required Spec.
+Satisfies returns true if at least one of the permissions in the Set
+satisfies the required Spec.
 
 
 ```go
