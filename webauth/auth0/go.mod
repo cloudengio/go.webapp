@@ -1,6 +1,6 @@
 module cloudeng.io/webapp/webauth/auth0
 
-go 1.25.5
+go 1.26
 
 replace cloudeng.io/webapp => ../..
 
