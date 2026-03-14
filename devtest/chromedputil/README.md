@@ -77,6 +77,22 @@ ConsoleArgsAsJSON converts the console API call arguments to a slice of
 marshalled JSON data, one per each argument to the original console.log
 call.
 
+### Func DebuggingCtxOpts
+```go
+func DebuggingCtxOpts(logf func(string, ...any), debug bool) []chromedp.ContextOption
+```
+DebuggingCtxOpts provides Context options for debugging output. Debugging
+output is preceded by "chrome(output): " to distinguish it from the test
+output.
+
+### Func DebuggingExecOpts
+```go
+func DebuggingExecOpts(level int, debug bool) []chromedp.ExecAllocatorOption
+```
+DebuggingExecOpts provides ExecAllocator options for debugging output.
+Debugging output is preceded by "chrome(output): " to distinguish it from
+the test output.
+
 ### Func GetRemoteObjectRef
 ```go
 func GetRemoteObjectRef(ctx context.Context, name string) (*runtime.RemoteObject, error)
@@ -165,7 +181,7 @@ parameters.
 
 ### Func WithContextForCI
 ```go
-func WithContextForCI(ctx context.Context, extraExecAllocOpts []chromedp.ExecAllocatorOption, opts ...chromedp.ContextOption) (context.Context, func())
+func WithContextForCI(ctx context.Context, userDataDir string, extraExecAllocOpts []chromedp.ExecAllocatorOption, opts ...chromedp.ContextOption) (context.Context, func())
 ```
 WithContextForCI returns a chromedp context that may be different on a
 CI system than when running locally. The CI configuration may disable
@@ -174,7 +190,7 @@ for the various CI environments and extraExecAllocOpts is appended to these.
 
 ### Func WithExecAllocatorForCI
 ```go
-func WithExecAllocatorForCI(ctx context.Context, extraExecAllocOpts ...chromedp.ExecAllocatorOption) (context.Context, func())
+func WithExecAllocatorForCI(ctx context.Context, userDataDir string, extraExecAllocOpts ...chromedp.ExecAllocatorOption) (context.Context, func())
 ```
 WithExecAllocatorForCI returns a chromedp context with an ExecAllocator
 configured appropriately for CI systems as opposed to when running locally.

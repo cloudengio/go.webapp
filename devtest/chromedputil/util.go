@@ -10,6 +10,7 @@ import (
 	"context"
 	_ "embed"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"slices"
@@ -17,7 +18,7 @@ import (
 	"text/template"
 
 	"github.com/chromedp/cdproto/runtime"
-	"github.com/chromedp/chromedp"
+	"github.com/cloudengio/chromedp"
 	"github.com/go-json-experiment/json"
 	"github.com/go-json-experiment/json/jsontext"
 )
@@ -218,7 +219,7 @@ func IsPlatformObject(obj *runtime.RemoteObject) bool {
 // WithExecAllocatorForCI returns a chromedp context with an ExecAllocator
 // configured appropriately for CI systems as opposed to when running locally.
 // The CI configuration may disable sandboxing for example.
-func WithExecAllocatorForCI(ctx context.Context, extraExecAllocOpts ...chromedp.ExecAllocatorOption) (context.Context, func()) {
+func WithExecAllocatorForCI(ctx context.Context, userDataDir string, extraExecAllocOpts ...chromedp.ExecAllocatorOption) (context.Context, func()) {
 	chromeBin := ChromeBinPathOnCI()
 	modifyCmd := func(cmd *exec.Cmd) {
 		fmt.Printf("chrome command line: %v %v\n", cmd.Path, cmd.Args[1:])
@@ -230,7 +231,9 @@ func WithExecAllocatorForCI(ctx context.Context, extraExecAllocOpts ...chromedp.
 		return chromedp.NewExecAllocator(ctx, opts...)
 	}
 	fmt.Printf("Detected CI environment via CHROME_BIN_PATH=%s\n", chromeBin)
-	userDataDir := UserDataDirOnCI()
+	if len(userDataDir) == 0 {
+		userDataDir = UserDataDirOnCI()
+	}
 	fmt.Printf("WARNING: chromedp/chrome: sandboxing disabled\n")
 	allOpts := []chromedp.ExecAllocatorOption{
 		chromedp.ExecPath(chromeBin),
@@ -318,11 +321,54 @@ func AllocatorLoggingWithLevel(level int) []chromedp.ExecAllocatorOption {
 // system than when running locally. The CI configuration may disable
 // sandboxing etc. The ExecAllocator is always created with appropriate options for
 // the various CI environments and extraExecAllocOpts is appended to these.
-func WithContextForCI(ctx context.Context, extraExecAllocOpts []chromedp.ExecAllocatorOption, opts ...chromedp.ContextOption) (context.Context, func()) {
-	ctx, cancelA := WithExecAllocatorForCI(ctx, extraExecAllocOpts...)
+func WithContextForCI(ctx context.Context, userDataDir string, extraExecAllocOpts []chromedp.ExecAllocatorOption, opts ...chromedp.ContextOption) (context.Context, func()) {
+	ctx, cancelA := WithExecAllocatorForCI(ctx, userDataDir, extraExecAllocOpts...)
 	ctx, cancelB := chromedp.NewContext(ctx, opts...)
 	return ctx, func() {
 		cancelB()
 		cancelA()
 	}
+}
+
+type chromeWriter struct{ io.Writer }
+
+func (w chromeWriter) Write(p []byte) (n int, err error) {
+	out := []byte("chrome(output): ")
+	lp := len(out) // subtract length of prefix from the returned value
+	out = append(out, p...)
+	nw, err := w.Writer.Write(out)
+	if nw > lp {
+		n = nw - lp
+	}
+	return n, err
+}
+
+// DebuggingExecOpts provides ExecAllocator options for debugging output.
+// Debugging output is preceded by "chrome(output): " to distinguish it from
+// the test output.
+func DebuggingExecOpts(level int, debug bool) []chromedp.ExecAllocatorOption {
+	var extraExecOpts []chromedp.ExecAllocatorOption
+	if debug {
+		extraExecOpts = append(extraExecOpts, chromedp.CombinedOutput(&chromeWriter{os.Stderr}))
+		extraExecOpts = append(extraExecOpts, AllocatorLoggingWithLevel(level)...)
+	}
+	return extraExecOpts
+}
+
+// DebuggingCtxOpts provides Context options for debugging output.
+// Debugging output is preceded by "chrome(output): " to distinguish it from
+// the test output.
+func DebuggingCtxOpts(logf func(string, ...any), debug bool) []chromedp.ContextOption {
+	var ctxOpts []chromedp.ContextOption
+	if debug {
+		ctxOpts = append(ctxOpts,
+			chromedp.WithBrowserOption(
+				chromedp.WithBrowserDebugf(logf),
+				chromedp.WithBrowserLogf(logf),
+				chromedp.WithBrowserErrorf(logf)),
+			chromedp.WithLogf(logf),
+			chromedp.WithDebugf(logf),
+			chromedp.WithErrorf(logf))
+	}
+	return ctxOpts
 }

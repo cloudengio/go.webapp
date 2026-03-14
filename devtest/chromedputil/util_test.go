@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"reflect"
 	"slices"
 	"strings"
@@ -17,7 +18,7 @@ import (
 
 	"cloudeng.io/webapp/devtest/chromedputil"
 	"github.com/chromedp/cdproto/runtime"
-	"github.com/chromedp/chromedp"
+	"github.com/cloudengio/chromedp"
 )
 
 // setupTestServer creates a simple HTTP server to serve test files.
@@ -45,12 +46,19 @@ func setupTestServer() *httptest.Server {
 
 // setupBrowser creates a new chromedp context and navigates to the test server.
 func setupBrowser(t *testing.T, serverURL string) (context.Context, context.CancelFunc) {
-	extraExecOpts := debuggingExecOpts(false)
-	ctx, cancel := chromedputil.WithContextForCI(context.Background(), extraExecOpts)
+	userdataDir, err := os.MkdirTemp("", "chromdp-test-")
+	if err != nil {
+		t.Fatalf("failed to create user data directory: %v", err)
+	}
+	extraExecOpts := chromedputil.DebuggingExecOpts(2, true)
+	ctx, cancel := chromedputil.WithContextForCI(t.Context(), userdataDir, extraExecOpts)
 	if err := chromedp.Run(ctx, chromedp.Navigate(serverURL)); err != nil {
 		t.Fatalf("failed to navigate to test server: %v", err)
 	}
-	return ctx, cancel
+	return ctx, func() {
+		cancel()
+		os.RemoveAll(userdataDir) //nolint:errcheck
+	}
 }
 
 func TestListGlobalFunctions(t *testing.T) {
