@@ -186,7 +186,9 @@ func TestPasskeysServer(t *testing.T) {
 
 func setupBrowser(t *testing.T) (context.Context, context.CancelFunc, browserWebauthn.AuthenticatorID) {
 	t.Helper()
-	ctx, cancel := chromedputil.WithContextForCI(context.Background(), chromedputil.AllocatorLoggingWithLevel(2), chromedp.WithLogf(t.Logf))
+	ctx, cancel := chromedputil.WithContextForCI(
+		t.Context(),
+		chromedputil.DebuggingExecOpts(2, true))
 
 	authOptions := &browserWebauthn.VirtualAuthenticatorOptions{
 		Protocol:                    browserWebauthn.AuthenticatorProtocolCtap2,
@@ -203,11 +205,13 @@ func setupBrowser(t *testing.T) (context.Context, context.CancelFunc, browserWeb
 		chromedp.ActionFunc(func(ctx context.Context) error {
 			var err error
 			authenticatorID, err = browserWebauthn.AddVirtualAuthenticator(authOptions).Do(ctx)
+			if err != nil {
+				fmt.Printf("Failed to add virtual authenticator: %v\n", err)
+			}
 			return err
 		}),
 	); err != nil {
 		cancel()
-
 		t.Fatalf("Failed to set up virtual authenticator: %v", err)
 	}
 

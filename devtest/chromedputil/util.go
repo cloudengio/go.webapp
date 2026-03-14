@@ -10,6 +10,7 @@ import (
 	"context"
 	_ "embed"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"slices"
@@ -325,4 +326,42 @@ func WithContextForCI(ctx context.Context, extraExecAllocOpts []chromedp.ExecAll
 		cancelB()
 		cancelA()
 	}
+}
+
+type chromeWriter struct{ io.Writer }
+
+func (w chromeWriter) Write(p []byte) (n int, err error) {
+	o := append([]byte("chrome(output): "), p...)
+	_, err = w.Writer.Write(o)
+	return len(p), err
+}
+
+// DebuggingExecOpts provides ExecAllocator options for debugging output.
+// Debugging output is preceded by "chrome(output): " to distinguish it from
+// the test output.
+func DebuggingExecOpts(level int, debug bool) []chromedp.ExecAllocatorOption {
+	var extraExecOpts []chromedp.ExecAllocatorOption
+	if debug {
+		extraExecOpts = append(extraExecOpts, chromedp.CombinedOutput(&chromeWriter{os.Stderr}))
+		extraExecOpts = append(extraExecOpts, AllocatorLoggingWithLevel(level)...)
+	}
+	return extraExecOpts
+}
+
+// DebuggingCtxOpts provides Context options for debugging output.
+// Debugging output is preceded by "chrome(output): " to distinguish it from
+// the test output.
+func DebuggingCtxOpts(logf func(string, ...any), debug bool) []chromedp.ContextOption {
+	var ctxOpts []chromedp.ContextOption
+	if debug {
+		ctxOpts = append(ctxOpts,
+			chromedp.WithBrowserOption(
+				chromedp.WithBrowserDebugf(logf),
+				chromedp.WithBrowserLogf(logf),
+				chromedp.WithBrowserErrorf(logf)),
+			chromedp.WithLogf(logf),
+			chromedp.WithDebugf(logf),
+			chromedp.WithErrorf(logf))
+	}
+	return ctxOpts
 }

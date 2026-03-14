@@ -9,11 +9,9 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
-	"os"
 	"strings"
 	"testing"
 	"time"
@@ -60,46 +58,14 @@ func setupTestEnvironment(t *testing.T) (context.Context, context.CancelFunc, st
 
 	t.Cleanup(func() { server.Close() })
 
-	extraExecOpts := debuggingExecOpts(false)
+	extraExecOpts := chromedputil.DebuggingExecOpts(false)
 
 	ctx, cancel := chromedputil.WithContextForCI(context.Background(),
 		extraExecOpts,
-		debuggingCtxOpts(t, false)...,
+		chromedputil.DebuggingCtxOpts(t.Logf, false)...,
 	)
 
 	return ctx, cancel, server.URL
-}
-
-func debuggingExecOpts(debug bool) []chromedp.ExecAllocatorOption {
-	var extraExecOpts []chromedp.ExecAllocatorOption
-	if debug {
-		extraExecOpts = append(extraExecOpts, chromedp.CombinedOutput(&chromeWriter{os.Stderr}))
-		extraExecOpts = append(extraExecOpts, chromedputil.AllocatorLoggingWithLevel(1)...)
-	}
-	return extraExecOpts
-}
-
-func debuggingCtxOpts(t *testing.T, debug bool) []chromedp.ContextOption {
-	var ctxOpts []chromedp.ContextOption
-	if debug {
-		ctxOpts = append(ctxOpts,
-			chromedp.WithBrowserOption(
-				chromedp.WithBrowserDebugf(t.Logf),
-				chromedp.WithBrowserLogf(t.Logf),
-				chromedp.WithBrowserErrorf(t.Logf)),
-			chromedp.WithLogf(t.Logf),
-			chromedp.WithDebugf(t.Logf),
-			chromedp.WithErrorf(t.Logf))
-	}
-	return ctxOpts
-}
-
-type chromeWriter struct{ io.Writer }
-
-func (w chromeWriter) Write(p []byte) (n int, err error) {
-	o := append([]byte("chrome(output): "), p...)
-	_, err = w.Writer.Write(o)
-	return len(p), err
 }
 
 func TestListen(t *testing.T) {
