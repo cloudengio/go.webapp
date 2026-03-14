@@ -40,7 +40,7 @@ func TestHTTPServerError(t *testing.T) {
 			}
 
 			body := w.Body.String()
-			
+
 			if !strings.HasPrefix(body, tc.text) {
 				t.Errorf("got %v, want prefix %v", body, tc.text)
 			}

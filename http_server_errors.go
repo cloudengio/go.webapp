@@ -21,18 +21,14 @@ import (
 // included in the response body and logs using the key 'error_id'.
 type HTTPServerError string
 
-func formatErrorIDAndCode(eid int64, status int) string {
-	return http.StatusText(status) + fmt.Sprintf(" (%016x)", eid)
-}
-
 // SendAndLog sends the error to the client and logs it using ctxlog.
 func (e HTTPServerError) SendAndLog(w http.ResponseWriter, r *http.Request, status int, m string, args ...any) {
-	var eid int64
+	var eid uint64
 	if err := binary.Read(rand.Reader, binary.BigEndian, &eid); err != nil {
 		// This is highly unlikely, but as a fallback use a nanosecond timestamp.
-		eid = time.Now().UnixNano()
+		eid = uint64(time.Now().UnixNano())
 	}
-	http.Error(w, formatErrorIDAndCode(eid, status), status)
+	http.Error(w, http.StatusText(status)+fmt.Sprintf(" (%016x)", eid), status)
 	logArgs := append([]any{
 		"error_src", string(e),
 		"error_id", eid,
