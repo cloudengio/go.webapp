@@ -15,6 +15,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -207,6 +208,8 @@ func setupBrowser(t *testing.T) (context.Context, context.CancelFunc, browserWeb
 		}),
 	); err != nil {
 		cancel()
+		ps, _ := exec.Command("ps", "-ef").CombinedOutput()
+		t.Logf("ps output: %s", ps)
 		t.Fatalf("Failed to set up virtual authenticator: %v", err)
 	}
 
