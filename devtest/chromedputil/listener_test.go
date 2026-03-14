@@ -22,7 +22,7 @@ import (
 	"github.com/chromedp/cdproto/log"
 	"github.com/chromedp/cdproto/network"
 	"github.com/chromedp/cdproto/runtime"
-	"github.com/chromedp/chromedp"
+	"github.com/cloudengio/chromedp"
 )
 
 func setupTestEnvironment(t *testing.T) (context.Context, context.CancelFunc, string) {

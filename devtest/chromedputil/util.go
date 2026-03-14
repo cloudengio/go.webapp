@@ -18,7 +18,7 @@ import (
 	"text/template"
 
 	"github.com/chromedp/cdproto/runtime"
-	"github.com/chromedp/chromedp"
+	"github.com/cloudengio/chromedp"
 	"github.com/go-json-experiment/json"
 	"github.com/go-json-experiment/json/jsontext"
 )
@@ -333,9 +333,14 @@ func WithContextForCI(ctx context.Context, userDataDir string, extraExecAllocOpt
 type chromeWriter struct{ io.Writer }
 
 func (w chromeWriter) Write(p []byte) (n int, err error) {
-	o := append([]byte("chrome(output): "), p...)
-	_, err = w.Writer.Write(o)
-	return len(p), err
+	out := []byte("chrome(output): ")
+	lp := len(out) // subtract length of prefix from the returned value
+	out = append(out, p...)
+	nw, err := w.Writer.Write(out)
+	if nw > lp {
+		n = nw - lp
+	}
+	return n, err
 }
 
 // DebuggingExecOpts provides ExecAllocator options for debugging output.

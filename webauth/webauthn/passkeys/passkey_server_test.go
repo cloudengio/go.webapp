@@ -28,7 +28,7 @@ import (
 	"cloudeng.io/webapp/webauth/webauthn/passkeys"
 	"github.com/chromedp/cdproto/page"
 	browserWebauthn "github.com/chromedp/cdproto/webauthn"
-	"github.com/chromedp/chromedp"
+	"github.com/cloudengio/chromedp"
 	"github.com/go-webauthn/webauthn/protocol"
 	"github.com/go-webauthn/webauthn/webauthn"
 )
@@ -207,7 +207,7 @@ func setupBrowser(t *testing.T) (context.Context, context.CancelFunc, browserWeb
 			var err error
 			authenticatorID, err = browserWebauthn.AddVirtualAuthenticator(authOptions).Do(ctx)
 			if err != nil {
-				fmt.Printf("Failed to add virtual authenticator: %v\n", err)
+				t.Logf("Failed to add virtual authenticator: %v\n", err)
 			}
 			return err
 		}),
