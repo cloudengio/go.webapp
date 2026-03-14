@@ -15,7 +15,6 @@ import (
 	"net/http"
 	"net/url"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -188,9 +187,6 @@ func TestPasskeysServer(t *testing.T) {
 func setupBrowser(t *testing.T) (context.Context, context.CancelFunc, browserWebauthn.AuthenticatorID) {
 	t.Helper()
 	ctx, cancel := chromedputil.WithContextForCI(context.Background(), chromedputil.AllocatorLoggingWithLevel(2), chromedp.WithLogf(t.Logf))
-
-	ps, _ := exec.Command("ps", "-ef").CombinedOutput()
-	fmt.Printf("ps output: %s", ps)
 
 	authOptions := &browserWebauthn.VirtualAuthenticatorOptions{
 		Protocol:                    browserWebauthn.AuthenticatorProtocolCtap2,
