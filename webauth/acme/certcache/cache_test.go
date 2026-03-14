@@ -279,7 +279,7 @@ func TestCacheLocking(t *testing.T) {
 		}
 		done := <-timeCh
 		if done.Before(start) || done.After(stopped) {
-			t.Errorf("operation did not wait for lock release")
+			t.Errorf("operation did not wait for lock release (start .. done .. stopped) %v .. %v .. %v", start, done, stopped)
 		}
 	}
 
