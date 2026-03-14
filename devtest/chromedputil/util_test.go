@@ -50,7 +50,7 @@ func setupBrowser(t *testing.T, serverURL string) (context.Context, context.Canc
 	if err != nil {
 		t.Fatalf("failed to create user data directory: %v", err)
 	}
-	extraExecOpts := chromedputil.DebuggingExecOpts(1, true)
+	extraExecOpts := chromedputil.DebuggingExecOpts(2, true)
 	ctx, cancel := chromedputil.WithContextForCI(t.Context(), userdataDir, extraExecOpts)
 	if err := chromedp.Run(ctx, chromedp.Navigate(serverURL)); err != nil {
 		t.Fatalf("failed to navigate to test server: %v", err)
