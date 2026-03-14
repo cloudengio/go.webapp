@@ -333,11 +333,12 @@ func WithContextForCI(ctx context.Context, userDataDir string, extraExecAllocOpt
 type chromeWriter struct{ io.Writer }
 
 func (w chromeWriter) Write(p []byte) (n int, err error) {
-	prefix := []byte("chrome(output): ")
-	o := append(prefix, p...)
-	nw, err := w.Writer.Write(o)
-	if nw > len(prefix) {
-		n = nw - len(prefix)
+	out := []byte("chrome(output): ")
+	lp := len(out) // subtract length of prefix from the returned value
+	out = append(out, p...)
+	nw, err := w.Writer.Write(out)
+	if nw > lp {
+		n = nw - lp
 	}
 	return n, err
 }
