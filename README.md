@@ -413,6 +413,51 @@ func (hc HTTPServerConfig) TLSConfig() (*tls.Config, error)
 
 
 
+### Type HTTPServerError
+```go
+type HTTPServerError string
+```
+HTTPServerError is an error that is returned by the HTTP server to the
+client and logged using ctxlog. The value of the error is used to identify
+the error in logs using the key 'error_src'. In addition, a random 64-bit
+integer is generated for each error and included in the response body and
+logs using the key 'error_id'.
+
+### Methods
+
+```go
+func (e HTTPServerError) BadRequest(w http.ResponseWriter, r *http.Request, m string, args ...any)
+```
+
+
+```go
+func (e HTTPServerError) Forbidden(w http.ResponseWriter, r *http.Request, m string, args ...any)
+```
+
+
+```go
+func (e HTTPServerError) Internal(w http.ResponseWriter, r *http.Request, m string, args ...any)
+```
+
+
+```go
+func (e HTTPServerError) NotFound(w http.ResponseWriter, r *http.Request, m string, args ...any)
+```
+
+
+```go
+func (e HTTPServerError) SendAndLog(w http.ResponseWriter, r *http.Request, status int, m string, args ...any)
+```
+SendAndLog sends the error to the client and logs it using ctxlog.
+
+
+```go
+func (e HTTPServerError) Unauthorized(w http.ResponseWriter, r *http.Request, m string, args ...any)
+```
+
+
+
+
 ### Type HTTPServerFlags
 ```go
 type HTTPServerFlags struct {
@@ -564,6 +609,8 @@ Config returns a TLSCertConfig based on the supplied flags.
 
 ## Examples
 ### [ExampleServeWithShutdown](https://pkg.go.dev/cloudeng.io/webapp?tab=doc#example-ServeWithShutdown)
+
+### [ExampleHTTPServerError](https://pkg.go.dev/cloudeng.io/webapp?tab=doc#example-HTTPServerError)
 
 
 
