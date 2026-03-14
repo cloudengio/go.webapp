@@ -333,9 +333,13 @@ func WithContextForCI(ctx context.Context, userDataDir string, extraExecAllocOpt
 type chromeWriter struct{ io.Writer }
 
 func (w chromeWriter) Write(p []byte) (n int, err error) {
-	o := append([]byte("chrome(output): "), p...)
-	_, err = w.Writer.Write(o)
-	return len(p), err
+	prefix := []byte("chrome(output): ")
+	o := append(prefix, p...)
+	nw, err := w.Writer.Write(o)
+	if nw > len(prefix) {
+		n = nw - len(prefix)
+	}
+	return n, err
 }
 
 // DebuggingExecOpts provides ExecAllocator options for debugging output.
