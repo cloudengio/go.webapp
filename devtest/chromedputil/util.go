@@ -219,7 +219,7 @@ func IsPlatformObject(obj *runtime.RemoteObject) bool {
 // WithExecAllocatorForCI returns a chromedp context with an ExecAllocator
 // configured appropriately for CI systems as opposed to when running locally.
 // The CI configuration may disable sandboxing for example.
-func WithExecAllocatorForCI(ctx context.Context, extraExecAllocOpts ...chromedp.ExecAllocatorOption) (context.Context, func()) {
+func WithExecAllocatorForCI(ctx context.Context, userDataDir string, extraExecAllocOpts ...chromedp.ExecAllocatorOption) (context.Context, func()) {
 	chromeBin := ChromeBinPathOnCI()
 	modifyCmd := func(cmd *exec.Cmd) {
 		fmt.Printf("chrome command line: %v %v\n", cmd.Path, cmd.Args[1:])
@@ -231,7 +231,9 @@ func WithExecAllocatorForCI(ctx context.Context, extraExecAllocOpts ...chromedp.
 		return chromedp.NewExecAllocator(ctx, opts...)
 	}
 	fmt.Printf("Detected CI environment via CHROME_BIN_PATH=%s\n", chromeBin)
-	userDataDir := UserDataDirOnCI()
+	if len(userDataDir) == 0 {
+		userDataDir = UserDataDirOnCI()
+	}
 	fmt.Printf("WARNING: chromedp/chrome: sandboxing disabled\n")
 	allOpts := []chromedp.ExecAllocatorOption{
 		chromedp.ExecPath(chromeBin),
@@ -319,8 +321,8 @@ func AllocatorLoggingWithLevel(level int) []chromedp.ExecAllocatorOption {
 // system than when running locally. The CI configuration may disable
 // sandboxing etc. The ExecAllocator is always created with appropriate options for
 // the various CI environments and extraExecAllocOpts is appended to these.
-func WithContextForCI(ctx context.Context, extraExecAllocOpts []chromedp.ExecAllocatorOption, opts ...chromedp.ContextOption) (context.Context, func()) {
-	ctx, cancelA := WithExecAllocatorForCI(ctx, extraExecAllocOpts...)
+func WithContextForCI(ctx context.Context, userDataDir string, extraExecAllocOpts []chromedp.ExecAllocatorOption, opts ...chromedp.ContextOption) (context.Context, func()) {
+	ctx, cancelA := WithExecAllocatorForCI(ctx, userDataDir, extraExecAllocOpts...)
 	ctx, cancelB := chromedp.NewContext(ctx, opts...)
 	return ctx, func() {
 		cancelB()

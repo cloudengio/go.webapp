@@ -188,6 +188,7 @@ func setupBrowser(t *testing.T) (context.Context, context.CancelFunc, browserWeb
 	t.Helper()
 	ctx, cancel := chromedputil.WithContextForCI(
 		t.Context(),
+		t.TempDir(),
 		chromedputil.DebuggingExecOpts(2, true))
 
 	authOptions := &browserWebauthn.VirtualAuthenticatorOptions{

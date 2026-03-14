@@ -61,6 +61,7 @@ func setupTestEnvironment(t *testing.T) (context.Context, context.CancelFunc, st
 	extraExecOpts := chromedputil.DebuggingExecOpts(1, false)
 
 	ctx, cancel := chromedputil.WithContextForCI(context.Background(),
+		t.TempDir(),
 		extraExecOpts,
 		chromedputil.DebuggingCtxOpts(t.Logf, false)...,
 	)
