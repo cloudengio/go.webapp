@@ -18,7 +18,7 @@ import (
 	"text/template"
 
 	"github.com/chromedp/cdproto/runtime"
-	"github.com/chromedp/chromedp"
+	"github.com/cloudengio/chromedp"
 	"github.com/go-json-experiment/json"
 	"github.com/go-json-experiment/json/jsontext"
 )

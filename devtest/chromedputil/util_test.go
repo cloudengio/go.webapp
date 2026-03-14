@@ -18,7 +18,7 @@ import (
 
 	"cloudeng.io/webapp/devtest/chromedputil"
 	"github.com/chromedp/cdproto/runtime"
-	"github.com/chromedp/chromedp"
+	"github.com/cloudengio/chromedp"
 )
 
 // setupTestServer creates a simple HTTP server to serve test files.

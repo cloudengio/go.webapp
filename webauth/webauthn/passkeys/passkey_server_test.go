@@ -28,7 +28,7 @@ import (
 	"cloudeng.io/webapp/webauth/webauthn/passkeys"
 	"github.com/chromedp/cdproto/page"
 	browserWebauthn "github.com/chromedp/cdproto/webauthn"
-	"github.com/chromedp/chromedp"
+	"github.com/cloudengio/chromedp"
 	"github.com/go-webauthn/webauthn/protocol"
 	"github.com/go-webauthn/webauthn/webauthn"
 )

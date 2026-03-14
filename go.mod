@@ -12,7 +12,7 @@ require (
 	cloudeng.io/os v0.0.0-20260312171538-61fcde6ce278
 	cloudeng.io/sync v0.0.9-0.20260312171538-61fcde6ce278
 	github.com/chromedp/cdproto v0.0.0-20250803210736-d308e07a266d
-	github.com/chromedp/chromedp v0.14.2
+	github.com/cloudengio/chromedp v0.0.0-20260314215339-4088ba0b32f1
 	github.com/gaissmai/bart v0.26.1
 	github.com/go-json-experiment/json v0.0.0-20260214004413-d219187c3433
 	github.com/go-webauthn/webauthn v0.16.1
@@ -63,3 +63,5 @@ require (
 	golang.org/x/text v0.35.0 // indirect
 	gopkg.in/check.v1 v1.0.0-20201130134442-10cb98267c6c // indirect
 )
+
+replace github.com/cloudengio/chromedp => ../chromedp
