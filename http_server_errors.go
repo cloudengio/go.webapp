@@ -5,8 +5,9 @@
 package webapp
 
 import (
+	"crypto/rand"
+	"encoding/binary"
 	"fmt"
-	"math/rand"
 	"net/http"
 	"time"
 
@@ -20,25 +21,31 @@ import (
 // included in the response body and logs using the key 'error_id'.
 type HTTPServerError string
 
-var serverErrorSeed = time.Now().UnixNano()
-
-var generator = rand.New(rand.NewSource(serverErrorSeed))
-
 func formatErrorIDAndCode(eid int64, status int) string {
-	return http.StatusText(status) + fmt.Sprintf(" (%02x)", eid)
+	return http.StatusText(status) + fmt.Sprintf(" (%016x)", eid)
 }
 
 // SendAndLog sends the error to the client and logs it using ctxlog.
 func (e HTTPServerError) SendAndLog(w http.ResponseWriter, r *http.Request, status int, m string, args ...any) {
-	eid := generator.Int63()
+	var eid int64
+	if err := binary.Read(rand.Reader, binary.BigEndian, &eid); err != nil {
+		// This is highly unlikely, but as a fallback use a nanosecond timestamp.
+		eid = time.Now().UnixNano()
+	}
 	http.Error(w, formatErrorIDAndCode(eid, status), status)
-	ctxlog.Info(r.Context(), m, append([]any{
+	logArgs := append([]any{
 		"error_src", string(e),
 		"error_id", eid,
-		"path", r.URL.Path,
-		"method", r.Method,
+		"status", status,
 		"src", r.RemoteAddr,
-	}, args...)...)
+		"method", r.Method,
+		"path", r.URL.Path,
+	}, args...)
+	if status >= http.StatusInternalServerError {
+		ctxlog.Error(r.Context(), m, logArgs...)
+	} else {
+		ctxlog.Info(r.Context(), m, logArgs...)
+	}
 }
 
 func (e HTTPServerError) Unauthorized(w http.ResponseWriter, r *http.Request, m string, args ...any) {
