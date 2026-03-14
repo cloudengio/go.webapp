@@ -189,6 +189,9 @@ func setupBrowser(t *testing.T) (context.Context, context.CancelFunc, browserWeb
 	t.Helper()
 	ctx, cancel := chromedputil.WithContextForCI(context.Background(), chromedputil.AllocatorLoggingWithLevel(2), chromedp.WithLogf(t.Logf))
 
+	ps, _ := exec.Command("ps", "-ef").CombinedOutput()
+	fmt.Printf("ps output: %s", ps)
+
 	authOptions := &browserWebauthn.VirtualAuthenticatorOptions{
 		Protocol:                    browserWebauthn.AuthenticatorProtocolCtap2,
 		Transport:                   browserWebauthn.AuthenticatorTransportInternal,
@@ -208,8 +211,7 @@ func setupBrowser(t *testing.T) (context.Context, context.CancelFunc, browserWeb
 		}),
 	); err != nil {
 		cancel()
-		ps, _ := exec.Command("ps", "-ef").CombinedOutput()
-		t.Logf("ps output: %s", ps)
+
 		t.Fatalf("Failed to set up virtual authenticator: %v", err)
 	}
 
