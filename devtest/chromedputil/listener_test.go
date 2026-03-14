@@ -12,6 +12,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -60,13 +61,21 @@ func setupTestEnvironment(t *testing.T) (context.Context, context.CancelFunc, st
 
 	extraExecOpts := chromedputil.DebuggingExecOpts(2, true)
 
+	userdataDir, err := os.MkdirTemp("", "chromdp-test-")
+	if err != nil {
+		t.Fatalf("failed to create user data directory: %v", err)
+	}
+
 	ctx, cancel := chromedputil.WithContextForCI(context.Background(),
-		t.TempDir(),
+		userdataDir,
 		extraExecOpts,
 		chromedputil.DebuggingCtxOpts(t.Logf, true)...,
 	)
 
-	return ctx, cancel, server.URL
+	return ctx, func() {
+		cancel()
+		os.RemoveAll(userdataDir) //nolint:errcheck
+	}, server.URL
 }
 
 func TestListen(t *testing.T) {
