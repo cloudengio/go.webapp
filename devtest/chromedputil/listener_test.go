@@ -58,12 +58,12 @@ func setupTestEnvironment(t *testing.T) (context.Context, context.CancelFunc, st
 
 	t.Cleanup(func() { server.Close() })
 
-	extraExecOpts := chromedputil.DebuggingExecOpts(1, false)
+	extraExecOpts := chromedputil.DebuggingExecOpts(2, true)
 
 	ctx, cancel := chromedputil.WithContextForCI(context.Background(),
 		t.TempDir(),
 		extraExecOpts,
-		chromedputil.DebuggingCtxOpts(t.Logf, false)...,
+		chromedputil.DebuggingCtxOpts(t.Logf, true)...,
 	)
 
 	return ctx, cancel, server.URL
