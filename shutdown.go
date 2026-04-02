@@ -163,21 +163,28 @@ func WaitForServers(ctx context.Context, interval time.Duration, addrs ...string
 }
 
 func ping(ctx context.Context, interval time.Duration, addr string) error {
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+	logger := ctxlog.Logger(ctx).With("component", "waitForServers")
 	for {
-		ctxlog.Logger(ctx).Info("waitForServers: server", "addr", addr)
-		_, err := net.DialTimeout("tcp", addr, time.Second)
+		logger.Info("waitForServers: dialing", "addr", addr)
+		conn, err := net.DialTimeout("tcp", addr, time.Second)
+		if conn != nil {
+			_ = conn.Close()
+		}
 		if err == nil {
+			logger.Info("waitForServers: server is available", "addr", addr)
 			return nil
 		}
-		ctxlog.Logger(ctx).Debug("waitForServers: server not available yet", "addr", addr, "error", err.Error())
+		logger.Debug("waitForServers: server not available yet", "addr", addr, "error", err.Error())
 		if errors.Is(err, context.Canceled) {
 			return err
 		}
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
-		case <-time.After(interval):
-			ctxlog.Info(ctx, "waitForServers: server timeout", "addr", addr, "duration", interval.String())
+		case <-ticker.C:
+			logger.Info("waitForServers: intermediate server timeout", "addr", addr, "duration", interval.String())
 
 		}
 	}
@@ -208,27 +215,33 @@ func WaitForURLs(ctx context.Context, client *http.Client, interval time.Duratio
 }
 
 func pingURL(ctx context.Context, client *http.Client, interval time.Duration, url string) error {
-	{
-		for {
-			ctxlog.Logger(ctx).Info("ping: url", "url", url)
-			req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
-			if err != nil {
-				return fmt.Errorf("failed to create request for %s: %w", url, err)
-			}
-			resp, err := client.Do(req) //nolint:gosec // G704 too restrictive for this use case.
-			if err == nil && resp.StatusCode >= 200 && resp.StatusCode < 400 {
-				return nil
-			}
-			if errors.Is(err, context.Canceled) {
-				return err
-			}
-			select {
-			case <-ctx.Done():
-				return ctx.Err()
-			case <-time.After(interval):
-				ctxlog.Info(ctx, "ping: url timeout", "url", url, "duration", interval.String())
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+	logger := ctxlog.Logger(ctx).With("component", "waitForURLs")
+	for {
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+		if err != nil {
+			return fmt.Errorf("failed to create request for %s: %w", url, err)
+		}
+		req.Close = true
+		logger.Info("waitForURL: getting URL", "url", url)
+		resp, err := client.Do(req) //nolint:gosec // G704 too restrictive for this use case.
+		if resp != nil {
+			_ = resp.Body.Close()
+		}
+		if err == nil && resp.StatusCode >= 200 && resp.StatusCode < 400 {
+			logger.Info("waitForURL: url is available", "url", url)
+			return nil
+		}
 
-			}
+		if errors.Is(err, context.Canceled) {
+			return err
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-ticker.C:
+			logger.Info("waitForURL: intermediate url timeout", "url", url, "duration", interval.String())
 		}
 	}
 }

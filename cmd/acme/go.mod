@@ -14,17 +14,10 @@ require (
 )
 
 require (
-	cloudeng.io/algo v0.0.0-20260312171538-61fcde6ce278 // indirect
-	cloudeng.io/datetime v0.0.0-20260312171538-61fcde6ce278 // indirect
-	cloudeng.io/debug v0.0.0-20260312171538-61fcde6ce278 // indirect
-	cloudeng.io/geospatial v0.0.0-20260312171538-61fcde6ce278 // indirect
-	cloudeng.io/google v0.0.0-20260312171538-61fcde6ce278 // indirect
-	cloudeng.io/io v0.0.0-20260312171538-61fcde6ce278 // indirect
-	cloudeng.io/os v0.0.0-20260312171538-61fcde6ce278 // indirect
-	cloudeng.io/path v0.0.10-0.20260312171538-61fcde6ce278 // indirect
-	cloudeng.io/security v0.0.0-20260312171538-61fcde6ce278 // indirect
+	cloudeng.io/algo v0.0.0-20260331200221-4812cd2111b8 // indirect
+	cloudeng.io/os v0.0.0-20260331200221-4812cd2111b8 // indirect
 	cloudeng.io/sync v0.0.9-0.20260312171538-61fcde6ce278 // indirect
-	cloudeng.io/sys v0.0.0-20260312171538-61fcde6ce278 // indirect
+	cloudeng.io/sys v0.0.0-20260331200221-4812cd2111b8 // indirect
 	cloudeng.io/text v0.0.16-0.20260312171538-61fcde6ce278 // indirect
 	github.com/aws/aws-sdk-go-v2 v1.41.3 // indirect
 	github.com/aws/aws-sdk-go-v2/config v1.32.11 // indirect
