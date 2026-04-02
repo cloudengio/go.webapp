@@ -169,8 +169,10 @@ func ping(ctx context.Context, interval time.Duration, addr string) error {
 	for {
 		logger.Info("waitForServers: dialing", "addr", addr)
 		conn, err := net.DialTimeout("tcp", addr, time.Second)
-		if err == nil {
+		if conn != nil {
 			_ = conn.Close()
+		}
+		if err == nil {
 			logger.Info("waitForServers: server is available", "addr", addr)
 			return nil
 		}
@@ -224,11 +226,14 @@ func pingURL(ctx context.Context, client *http.Client, interval time.Duration, u
 		req.Close = true
 		logger.Info("waitForURL: getting URL", "url", url)
 		resp, err := client.Do(req) //nolint:gosec // G704 too restrictive for this use case.
-		if err == nil && resp.StatusCode >= 200 && resp.StatusCode < 400 {
+		if resp != nil {
 			_ = resp.Body.Close()
+		}
+		if err == nil && resp.StatusCode >= 200 && resp.StatusCode < 400 {
 			logger.Info("waitForURL: url is available", "url", url)
 			return nil
 		}
+
 		if errors.Is(err, context.Canceled) {
 			return err
 		}
