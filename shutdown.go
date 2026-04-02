@@ -168,8 +168,9 @@ func ping(ctx context.Context, interval time.Duration, addr string) error {
 	logger := ctxlog.Logger(ctx).With("component", "waitForServers")
 	for {
 		logger.Info("waitForServers: dialing", "addr", addr)
-		_, err := net.DialTimeout("tcp", addr, time.Second)
+		conn, err := net.DialTimeout("tcp", addr, time.Second)
 		if err == nil {
+			_ = conn.Close()
 			logger.Info("waitForServers: server is available", "addr", addr)
 			return nil
 		}
@@ -220,9 +221,11 @@ func pingURL(ctx context.Context, client *http.Client, interval time.Duration, u
 		if err != nil {
 			return fmt.Errorf("failed to create request for %s: %w", url, err)
 		}
+		req.Close = true
 		logger.Info("waitForURL: getting URL", "url", url)
 		resp, err := client.Do(req) //nolint:gosec // G704 too restrictive for this use case.
 		if err == nil && resp.StatusCode >= 200 && resp.StatusCode < 400 {
+			_ = resp.Body.Close()
 			logger.Info("waitForURL: url is available", "url", url)
 			return nil
 		}
@@ -234,7 +237,6 @@ func pingURL(ctx context.Context, client *http.Client, interval time.Duration, u
 			return ctx.Err()
 		case <-ticker.C:
 			logger.Info("waitForURL: intermediate url timeout", "url", url, "duration", interval.String())
-
 		}
 	}
 }

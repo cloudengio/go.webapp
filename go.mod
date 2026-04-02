@@ -9,7 +9,7 @@ require (
 	cloudeng.io/io v0.0.0-20260312171538-61fcde6ce278
 	cloudeng.io/logging v0.0.0-20260312171538-61fcde6ce278
 	cloudeng.io/net v0.0.0-20260312171538-61fcde6ce278
-	cloudeng.io/os v0.0.0-20260312171538-61fcde6ce278
+	cloudeng.io/os v0.0.0-20260331200221-4812cd2111b8
 	cloudeng.io/sync v0.0.9-0.20260312171538-61fcde6ce278
 	github.com/chromedp/cdproto v0.0.0-20250803210736-d308e07a266d
 	github.com/cloudengio/chromedp v0.0.0-20260314215339-4088ba0b32f1
@@ -24,13 +24,13 @@ require (
 )
 
 require (
-	cloudeng.io/algo v0.0.0-20260312171538-61fcde6ce278 // indirect
+	cloudeng.io/algo v0.0.0-20260331200221-4812cd2111b8 // indirect
 	cloudeng.io/debug v0.0.0-20260312171538-61fcde6ce278 // indirect
-	cloudeng.io/sys v0.0.0-20260312171538-61fcde6ce278 // indirect
+	cloudeng.io/sys v0.0.0-20260331200221-4812cd2111b8 // indirect
 	github.com/chromedp/sysutil v1.1.0 // indirect
 	github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc // indirect
 	github.com/decred/dcrd/dcrec/secp256k1/v4 v4.4.1 // indirect
-	github.com/fxamacker/cbor/v2 v2.9.0 // indirect
+	github.com/fxamacker/cbor/v2 v2.9.1 // indirect
 	github.com/go-viper/mapstructure/v2 v2.5.0 // indirect
 	github.com/go-webauthn/x v0.2.2 // indirect
 	github.com/gobwas/httphead v0.1.0 // indirect
@@ -45,7 +45,7 @@ require (
 	github.com/lestrrat-go/dsig v1.0.0 // indirect
 	github.com/lestrrat-go/dsig-secp256k1 v1.0.0 // indirect
 	github.com/lestrrat-go/httpcc v1.0.1 // indirect
-	github.com/lestrrat-go/httprc/v3 v3.0.4 // indirect
+	github.com/lestrrat-go/httprc/v3 v3.0.5 // indirect
 	github.com/lestrrat-go/option/v2 v2.0.0 // indirect
 	github.com/pmezard/go-difflib v1.0.1-0.20181226105442-5d4384ee4fb2 // indirect
 	github.com/segmentio/asm v1.2.1 // indirect
