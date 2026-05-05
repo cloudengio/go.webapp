@@ -5,14 +5,14 @@ go 1.26
 require (
 	cloudeng.io/cmdutil v0.0.0-20260505160049-8a9216e3aa5c
 	cloudeng.io/errors v0.0.14-0.20260312171538-61fcde6ce278
-	cloudeng.io/file v0.0.0-20260504210102-26960e803ff1
+	cloudeng.io/file v0.0.0-20260505160049-8a9216e3aa5c
 	cloudeng.io/io v0.0.0-20260505160049-8a9216e3aa5c
-	cloudeng.io/logging v0.0.0-20260504210102-26960e803ff1
+	cloudeng.io/logging v0.0.0-20260505160049-8a9216e3aa5c
 	cloudeng.io/net v0.0.0-20260505160049-8a9216e3aa5c
-	cloudeng.io/os v0.0.0-20260504210102-26960e803ff1
+	cloudeng.io/os v0.0.0-20260505160049-8a9216e3aa5c
 	cloudeng.io/sync v0.0.10
 	github.com/chromedp/cdproto v0.0.0-20260427013145-5737772c319b
-	github.com/cloudengio/chromedp v0.0.0-20260314215339-4088ba0b32f1
+	github.com/cloudengio/chromedp v0.0.0-20260505165647-6dc9039fb140
 	github.com/gaissmai/bart v0.26.1
 	github.com/go-json-experiment/json v0.0.0-20260504200034-64a0a05799db
 	github.com/go-webauthn/webauthn v0.17.2
