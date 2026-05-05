@@ -161,7 +161,7 @@ func TestRelay(t *testing.T) {
 	})
 
 	t.Run("ValidatorError", func(t *testing.T) {
-		relay := webhooks.NewRelay(func(req *http.Request) ([]byte, int) {
+		relay := webhooks.NewRelay(func(*http.Request) ([]byte, int) {
 			return nil, http.StatusUnauthorized
 		})
 		handler := relay.Handler("/api")
