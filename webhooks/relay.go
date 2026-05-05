@@ -5,7 +5,7 @@
 package webhooks
 
 import (
-	"encoding/json"
+	"io"
 	"log/slog"
 	"net/http"
 	"path"
@@ -21,7 +21,7 @@ import (
 type Relay struct {
 	jobsCh    chan []byte
 	validator Validator
-	logger    *slog.Logger
+	opts      options
 }
 
 type options struct {
@@ -66,13 +66,11 @@ func WithLogger(logger *slog.Logger) Option {
 type Validator func(r *http.Request) ([]byte, int)
 
 func NoopValidator(req *http.Request) ([]byte, int) {
-	payload := make([]byte, req.ContentLength)
 	defer req.Body.Close()
-	n, err := req.Body.Read(payload)
+	payload, err := io.ReadAll(req.Body)
 	if err != nil {
 		return nil, http.StatusBadRequest
 	}
-	payload = payload[:n]
 	return payload, http.StatusOK
 }
 
@@ -80,6 +78,7 @@ func NoopValidator(req *http.Request) ([]byte, int) {
 func NewRelay(validator Validator, opts ...Option) *Relay {
 	var options options
 	options.size = DefaultQueueSize
+	options.payloadLimit = DefaultPayloadLimit
 	for _, opt := range opts {
 		opt(&options)
 	}
@@ -90,7 +89,7 @@ func NewRelay(validator Validator, opts ...Option) *Relay {
 	return &Relay{
 		jobsCh:    make(chan []byte, options.size),
 		validator: validator,
-		logger:    options.logger,
+		opts:      options,
 	}
 }
 
@@ -99,7 +98,7 @@ func NewRelay(validator Validator, opts ...Option) *Relay {
 // It responds with appropriate HTTP status codes based on the validation and
 // processing outcome.
 func (r *Relay) ServeWebhook(w http.ResponseWriter, req *http.Request) {
-	if req.ContentLength > int64(DefaultPayloadLimit) {
+	if req.ContentLength > int64(r.opts.payloadLimit) {
 		http.Error(w, "Payload too large", http.StatusRequestEntityTooLarge)
 		return
 	}
@@ -112,9 +111,11 @@ func (r *Relay) ServeWebhook(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 	if req.Body == nil {
-		http.Error(w, "No payload provided", http.StatusBadRequest)
+		// Paranonoial check since http.Request should always have a non-nil Body, but we check it just in case.
+		http.Error(w, "Request body is required", http.StatusBadRequest)
 		return
 	}
+	req.Body = http.MaxBytesReader(w, req.Body, int64(r.opts.payloadLimit))
 	payload, status := r.validator(req)
 	if status != http.StatusOK {
 		http.Error(w, "Invalid payload", status)
@@ -122,11 +123,14 @@ func (r *Relay) ServeWebhook(w http.ResponseWriter, req *http.Request) {
 	}
 	select {
 	case r.jobsCh <- payload:
-		r.logger.Info("ServeWebhook: received payload and sent to channel", "size", len(payload))
+		r.opts.logger.Info("ServeWebhook: received payload and sent to channel", "size", len(payload))
 	case <-req.Context().Done():
 		err := req.Context().Err()
-		r.logger.Info("ServeWebhook: context cancelled while trying to send payload to channel", "err", err)
+		r.opts.logger.Info("ServeWebhook: context cancelled while trying to send payload to channel", "err", err)
 	default:
+		w.WriteHeader(http.StatusInternalServerError)
+		r.opts.logger.Error("ServeWebhook: channel is full, unable to process payload", "size", len(payload))
+		return
 	}
 	w.WriteHeader(http.StatusAccepted)
 }
@@ -140,11 +144,11 @@ func (r *Relay) WaitForWebhook(w http.ResponseWriter, req *http.Request) {
 	select {
 	case job := <-r.jobsCh:
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(job)
-		r.logger.Info("WaitForWebhook: sent payload to client", "size", len(job))
+		_, _ = w.Write(job)
+		r.opts.logger.Info("WaitForWebhook: sent payload to client", "size", len(job))
 	case <-req.Context().Done():
 		err := req.Context().Err()
-		r.logger.Info("WaitForWebhook: request context cancelled while waiting for payload from channel", "err", err)
+		r.opts.logger.Info("WaitForWebhook: request context cancelled while waiting for payload from channel", "err", err)
 	}
 }
 

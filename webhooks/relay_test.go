@@ -7,7 +7,6 @@ package webhooks_test
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"errors"
 	"log/slog"
 	"net/http"
@@ -61,10 +60,7 @@ func TestRelay(t *testing.T) {
 			t.Errorf("got content type %v, want %v", got, want)
 		}
 
-		var received []byte
-		if err := json.Unmarshal(wWait.Body.Bytes(), &received); err != nil {
-			t.Fatalf("failed to decode response: %v", err)
-		}
+		received := wWait.Body.Bytes()
 		if !bytes.Equal(received, payload) {
 			t.Errorf("got %s, want %s", received, payload)
 		}
@@ -142,7 +138,7 @@ func TestRelay(t *testing.T) {
 		w2 := httptest.NewRecorder()
 		handler(w2, req2)
 
-		if got, want := w2.Code, http.StatusAccepted; got != want {
+		if got, want := w2.Code, http.StatusInternalServerError; got != want {
 			t.Errorf("got status %v, want %v", got, want)
 		}
 	})
