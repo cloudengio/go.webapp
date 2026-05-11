@@ -64,7 +64,7 @@ type GitHubSecrets struct {
 }
 ```
 GitHubSecrets represents the structure of the YAML file that contains the
-GitHub webhook secrets. `It supports multiple secrets to allow for rotation.
+GitHub webhook secrets. It supports multiple secrets to allow for rotation.
 
 ### Methods
 
@@ -72,7 +72,7 @@ GitHub webhook secrets. `It supports multiple secrets to allow for rotation.
 func (s *GitHubSecrets) UnmarshalYAML(value *yaml.Node) error
 ```
 UnmarshalYAML unmarshals the YAML data into the GitHubSecrets struct by
-appendend the secrets to the Secrets slice. This allows for multiple
+appending the secrets to the Secrets slice. This allows for multiple
 secrets to be specified in a single yaml.Node and across multiple yaml.Node
 instances (e.g. from multiple files).
 
@@ -188,7 +188,7 @@ if validation fails.
 ### Functions
 
 ```go
-func GitHubValidator(fs file.ReadFileFS, secretPaths ...string) Validator
+func GitHubValidator(ctx context.Context, fs file.ReadFileFS, secretPaths ...string) (Validator, error)
 ```
 GitHubValidator returns a Validator that verifies GitHub webhook
 payloads using one of possibly multiple secrets stored in the provided
@@ -197,10 +197,14 @@ and multiple secrets per file allow for rotation. GitHub does not currently
 directly support rotation, hence the only way to change the secret used by
 GitHub is to create a new one, wait for it be picked up by the validator
 then change the secret used by GitHub to the new one and remove the old
-secret from the file.ReadFileFS. Ideally, the file.ReadFileFS instannce
+secret from the file.ReadFileFS. Ideally, the file.ReadFileFS instance
 should be an in-memory or caching implementation to avoid the overhead of
-reading the secret from disk on every request but that also allows for the
-secret to be refreshed.
+reading the secret from disk on every request but that also allows for
+the secret to be refreshed. GitHubValidator returns an error if no secret
+paths are provided, if any of the provided paths are empty or can't be
+successfully read and parsed. Note that this initial validation uses the
+context passed to GitHubValidator, whereas the returned Validator uses the
+context from the incoming request to read the secrets on each request.
 
 
 

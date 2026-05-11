@@ -39,19 +39,22 @@ func sign(secret, payload []byte) string {
 }
 
 func TestGitHubValidator(t *testing.T) {
+	ctx := t.Context()
 	payload := []byte(`{"action": "push"}`)
 	secret := "super-secret"
 
 	fs := mapFS{
 		"github.secret": []byte("secrets:\n  - " + secret + "\n"),
 	}
-	validator := webhooks.GitHubValidator(fs, "github.secret")
+	validator, err := webhooks.GitHubValidator(ctx, fs, "github.secret")
+	if err != nil {
+		t.Fatalf("GitHubValidator: %v", err)
+	}
 	signature := sign([]byte(secret), payload)
 
 	t.Run("ValidSignature", func(t *testing.T) {
 		req := httptest.NewRequest(http.MethodPost, "/", bytes.NewReader(payload))
 		req.Header.Set("X-Hub-Signature-256", signature)
-
 		got, status := validator(req)
 		if status != http.StatusOK {
 			t.Errorf("got status %d, want %d", status, http.StatusOK)
@@ -63,7 +66,6 @@ func TestGitHubValidator(t *testing.T) {
 
 	t.Run("MissingSignature", func(t *testing.T) {
 		req := httptest.NewRequest(http.MethodPost, "/", bytes.NewReader(payload))
-
 		_, status := validator(req)
 		if status != http.StatusUnauthorized {
 			t.Errorf("got status %d, want %d", status, http.StatusUnauthorized)
@@ -73,7 +75,6 @@ func TestGitHubValidator(t *testing.T) {
 	t.Run("InvalidSignatureFormat", func(t *testing.T) {
 		req := httptest.NewRequest(http.MethodPost, "/", bytes.NewReader(payload))
 		req.Header.Set("X-Hub-Signature-256", "sha1=foo")
-
 		_, status := validator(req)
 		if status != http.StatusUnauthorized {
 			t.Errorf("got status %d, want %d", status, http.StatusUnauthorized)
@@ -83,7 +84,6 @@ func TestGitHubValidator(t *testing.T) {
 	t.Run("InvalidSignatureValue", func(t *testing.T) {
 		req := httptest.NewRequest(http.MethodPost, "/", bytes.NewReader(payload))
 		req.Header.Set("X-Hub-Signature-256", "sha256=abcdef123456")
-
 		_, status := validator(req)
 		if status != http.StatusUnauthorized {
 			t.Errorf("got status %d, want %d", status, http.StatusUnauthorized)
@@ -91,18 +91,70 @@ func TestGitHubValidator(t *testing.T) {
 	})
 }
 
-func TestGitHubValidatorMultipleSecrets(t *testing.T) {
-	payload := []byte(`{"action": "push"}`)
-
+func TestGitHubValidatorCreation(t *testing.T) {
+	ctx := t.Context()
 	fs := mapFS{
-		"multi":   []byte("secrets:\n  - secret-a\n  - secret-b\n"),
-		"file-a":  []byte("secrets:\n  - secret-from-a\n"),
-		"file-b":  []byte("secrets:\n  - secret-from-b\n"),
+		"valid":   []byte("secrets:\n  - secret-a\n"),
 		"invalid": []byte("this: {bad: yaml"),
 	}
 
+	t.Run("NoSecretPaths", func(t *testing.T) {
+		_, err := webhooks.GitHubValidator(ctx, fs)
+		if err == nil {
+			t.Fatal("expected error for no secret paths, got nil")
+		}
+	})
+
+	t.Run("EmptySecretPath", func(t *testing.T) {
+		_, err := webhooks.GitHubValidator(ctx, fs, "")
+		if err == nil {
+			t.Fatal("expected error for empty secret path, got nil")
+		}
+	})
+
+	t.Run("UnreadablePath", func(t *testing.T) {
+		_, err := webhooks.GitHubValidator(ctx, fs, "nonexistent")
+		if err == nil {
+			t.Fatal("expected error for unreadable path, got nil")
+		}
+	})
+
+	t.Run("InvalidYAML", func(t *testing.T) {
+		_, err := webhooks.GitHubValidator(ctx, fs, "invalid")
+		if err == nil {
+			t.Fatal("expected error for invalid YAML, got nil")
+		}
+	})
+
+	t.Run("ValidPath", func(t *testing.T) {
+		_, err := webhooks.GitHubValidator(ctx, fs, "valid")
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+	})
+}
+
+func TestGitHubValidatorMultipleSecrets(t *testing.T) {
+	ctx := t.Context()
+	payload := []byte(`{"action": "push"}`)
+
+	fs := mapFS{
+		"multi":  []byte("secrets:\n  - secret-a\n  - secret-b\n"),
+		"file-a": []byte("secrets:\n  - secret-from-a\n"),
+		"file-b": []byte("secrets:\n  - secret-from-b\n"),
+	}
+
+	mustValidator := func(t *testing.T, paths ...string) webhooks.Validator {
+		t.Helper()
+		v, err := webhooks.GitHubValidator(ctx, fs, paths...)
+		if err != nil {
+			t.Fatalf("GitHubValidator: %v", err)
+		}
+		return v
+	}
+
 	t.Run("MultipleSecretsInFile_FirstMatches", func(t *testing.T) {
-		v := webhooks.GitHubValidator(fs, "multi")
+		v := mustValidator(t, "multi")
 		req := httptest.NewRequest(http.MethodPost, "/", bytes.NewReader(payload))
 		req.Header.Set("X-Hub-Signature-256", sign([]byte("secret-a"), payload))
 		got, status := v(req)
@@ -115,7 +167,7 @@ func TestGitHubValidatorMultipleSecrets(t *testing.T) {
 	})
 
 	t.Run("MultipleSecretsInFile_SecondMatches", func(t *testing.T) {
-		v := webhooks.GitHubValidator(fs, "multi")
+		v := mustValidator(t, "multi")
 		req := httptest.NewRequest(http.MethodPost, "/", bytes.NewReader(payload))
 		req.Header.Set("X-Hub-Signature-256", sign([]byte("secret-b"), payload))
 		got, status := v(req)
@@ -128,7 +180,7 @@ func TestGitHubValidatorMultipleSecrets(t *testing.T) {
 	})
 
 	t.Run("MultipleFiles_SecondFileMatches", func(t *testing.T) {
-		v := webhooks.GitHubValidator(fs, "file-a", "file-b")
+		v := mustValidator(t, "file-a", "file-b")
 		req := httptest.NewRequest(http.MethodPost, "/", bytes.NewReader(payload))
 		req.Header.Set("X-Hub-Signature-256", sign([]byte("secret-from-b"), payload))
 		got, status := v(req)
@@ -141,32 +193,12 @@ func TestGitHubValidatorMultipleSecrets(t *testing.T) {
 	})
 
 	t.Run("NoMatch", func(t *testing.T) {
-		v := webhooks.GitHubValidator(fs, "multi")
+		v := mustValidator(t, "multi")
 		req := httptest.NewRequest(http.MethodPost, "/", bytes.NewReader(payload))
 		req.Header.Set("X-Hub-Signature-256", sign([]byte("wrong"), payload))
 		_, status := v(req)
 		if status != http.StatusUnauthorized {
 			t.Errorf("got status %d, want %d", status, http.StatusUnauthorized)
-		}
-	})
-
-	t.Run("UnreadablePath", func(t *testing.T) {
-		v := webhooks.GitHubValidator(fs, "nonexistent")
-		req := httptest.NewRequest(http.MethodPost, "/", bytes.NewReader(payload))
-		req.Header.Set("X-Hub-Signature-256", sign([]byte("secret-a"), payload))
-		_, status := v(req)
-		if status != http.StatusInternalServerError {
-			t.Errorf("got status %d, want %d", status, http.StatusInternalServerError)
-		}
-	})
-
-	t.Run("InvalidYAML", func(t *testing.T) {
-		v := webhooks.GitHubValidator(fs, "invalid")
-		req := httptest.NewRequest(http.MethodPost, "/", bytes.NewReader(payload))
-		req.Header.Set("X-Hub-Signature-256", sign([]byte("secret-a"), payload))
-		_, status := v(req)
-		if status != http.StatusInternalServerError {
-			t.Errorf("got status %d, want %d", status, http.StatusInternalServerError)
 		}
 	})
 }
