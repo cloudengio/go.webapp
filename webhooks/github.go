@@ -23,15 +23,16 @@ type GitHubSecrets struct {
 }
 
 // UnmarshalYAML unmarshals the YAML data into the GitHubSecrets struct
-// by appendend the secrets to the Secrets slice. This allows for multiple secrets
+// by appending the secrets to the Secrets slice. This allows for multiple secrets
 // to be specified in a single yaml.Node and across multiple yaml.Node instances
 // (e.g. from multiple files).
 func (s *GitHubSecrets) UnmarshalYAML(value *yaml.Node) error {
-	var secrets []string
+	type tmp GitHubSecrets
+	var secrets tmp
 	if err := value.Decode(&secrets); err != nil {
 		return err
 	}
-	s.Secrets = append(s.Secrets, secrets...)
+	s.Secrets = append(s.Secrets, secrets.Secrets...)
 	return nil
 }
 
@@ -42,7 +43,7 @@ func (s *GitHubSecrets) UnmarshalYAML(value *yaml.Node) error {
 // hence the only way to change the secret used by GitHub is to create a new one,
 // wait for it be picked up by the validator then change the secret used by
 // GitHub to the new one and remove the old secret from the file.ReadFileFS.
-// Ideally, the file.ReadFileFS instannce should be an in-memory or
+// Ideally, the file.ReadFileFS instance should be an in-memory or
 // caching implementation to avoid the overhead of reading the secret from disk on
 // every request but that also allows for the secret to be refreshed.
 func GitHubValidator(fs file.ReadFileFS, secretPaths ...string) Validator {

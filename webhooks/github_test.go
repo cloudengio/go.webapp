@@ -42,9 +42,8 @@ func TestGitHubValidator(t *testing.T) {
 	payload := []byte(`{"action": "push"}`)
 	secret := "super-secret"
 
-	// Secret files are YAML sequences of strings.
 	fs := mapFS{
-		"github.secret": []byte("- " + secret + "\n"),
+		"github.secret": []byte("secrets:\n  - " + secret + "\n"),
 	}
 	validator := webhooks.GitHubValidator(fs, "github.secret")
 	signature := sign([]byte(secret), payload)
@@ -96,9 +95,9 @@ func TestGitHubValidatorMultipleSecrets(t *testing.T) {
 	payload := []byte(`{"action": "push"}`)
 
 	fs := mapFS{
-		"multi":   []byte("- secret-a\n- secret-b\n"),
-		"file-a":  []byte("- secret-from-a\n"),
-		"file-b":  []byte("- secret-from-b\n"),
+		"multi":   []byte("secrets:\n  - secret-a\n  - secret-b\n"),
+		"file-a":  []byte("secrets:\n  - secret-from-a\n"),
+		"file-b":  []byte("secrets:\n  - secret-from-b\n"),
 		"invalid": []byte("this: {bad: yaml"),
 	}
 
