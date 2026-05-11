@@ -16,11 +16,17 @@ import (
 )
 
 // GitHubValidator returns a Validator that verifies GitHub webhook payloads
-// using the secret stored at the provided path and the X-Hub-Signature-256 header.
+// using one of possibly multiple secrets stored in the provided file.ReadFileFS
+// instance at the provided path(s). Multiple secrets allow for rotation since
+// GitHub does not currently directly support rotation the only way to change
+// the secret used by GitHub is to create a new one, wait for it be picked up
+// by the validator (allowing for any caching in the file.ReadFileFS
+// implementation to expire), then change the secret used by GitHub to the new
+// one and remove the old secret from the file.ReadFileFS.
 // Ideally, the file.ReadFileFS instannce should be an in-memory or
 // caching implementation to avoid the overhead of reading the secret from disk on
 // every request but that also allows for the secret to be refreshed.
-func GitHubValidator(fs file.ReadFileFS, secretPath string) Validator {
+func GitHubValidator(fs file.ReadFileFS, secretPaths ...string) Validator {
 	return func(req *http.Request) ([]byte, int) {
 		payload, err := io.ReadAll(req.Body)
 		if err != nil {
@@ -43,16 +49,17 @@ func GitHubValidator(fs file.ReadFileFS, secretPath string) Validator {
 			return nil, http.StatusUnauthorized
 		}
 
-		secret, err := fs.ReadFileCtx(req.Context(), secretPath)
-		if err != nil {
-			return nil, http.StatusInternalServerError
+		for _, secretPath := range secretPaths {
+			secret, err := fs.ReadFileCtx(req.Context(), secretPath)
+			if err != nil {
+				return nil, http.StatusInternalServerError
+			}
+			mac := hmac.New(sha256.New, secret)
+			_, _ = mac.Write(payload)
+			if hmac.Equal(sig, mac.Sum(nil)) {
+				return payload, http.StatusOK
+			}
 		}
-		mac := hmac.New(sha256.New, secret)
-		_, _ = mac.Write(payload)
-		if !hmac.Equal(sig, mac.Sum(nil)) {
-			return nil, http.StatusUnauthorized
-		}
-
-		return payload, http.StatusOK
+		return nil, http.StatusUnauthorized
 	}
 }

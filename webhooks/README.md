@@ -166,13 +166,19 @@ if validation fails.
 ### Functions
 
 ```go
-func GitHubValidator(fs file.ReadFileFS, secretPath string) Validator
+func GitHubValidator(fs file.ReadFileFS, secretPaths ...string) Validator
 ```
-GitHubValidator returns a Validator that verifies GitHub webhook payloads
-using the secret stored at the provided path and the X-Hub-Signature-256
-header. Ideally, the file.ReadFileFS instannce should be an in-memory or
-caching implementation to avoid the overhead of reading the secret from disk
-on every request but that also allows for the secret to be refreshed.
+GitHubValidator returns a Validator that verifies GitHub webhook
+payloads using one of possibly multiple secrets stored in the provided
+file.ReadFileFS instance at the provided path(s). Multiple secrets allow
+for rotation since GitHub does not currently directly support rotation
+the only way to change the secret used by GitHub is to create a new one,
+wait for it be picked up by the validator (allowing for any caching in the
+file.ReadFileFS implementation to expire), then change the secret used by
+GitHub to the new one and remove the old secret from the file.ReadFileFS.
+Ideally, the file.ReadFileFS instannce should be an in-memory or caching
+implementation to avoid the overhead of reading the secret from disk on
+every request but that also allows for the secret to be refreshed.
 
 
 
