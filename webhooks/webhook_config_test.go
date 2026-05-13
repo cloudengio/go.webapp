@@ -5,7 +5,6 @@
 package webhooks_test
 
 import (
-	"errors"
 	"testing"
 
 	"cloudeng.io/webapp/webhooks"
@@ -13,53 +12,56 @@ import (
 )
 
 const githubConfigYAML = `
-public_addr: "0.0.0.0:8080"
-private_addr: "127.0.0.1:9090"
 path: "/webhook"
 service: "github"
-secret_user: "myuser"
-secret_id: "mytoken"
+user: "myuser"
+secrets:
+  - "mytoken"
+  - "othertoken[otheruser]"
 `
 
-func TestConfigGithub(t *testing.T) {
+func TestConfigSecretsConfig(t *testing.T) {
 	var cfg webhooks.Config
 	if err := yaml.Unmarshal([]byte(githubConfigYAML), &cfg); err != nil {
 		t.Fatalf("unmarshal: %v", err)
 	}
-	if cfg.PublicAddr != "0.0.0.0:8080" {
-		t.Errorf("PublicAddr: got %q, want %q", cfg.PublicAddr, "0.0.0.0:8080")
-	}
 	if cfg.Service != "github" {
 		t.Errorf("Service: got %q, want %q", cfg.Service, "github")
 	}
+	if cfg.Path != "/webhook" {
+		t.Errorf("Path: got %q, want %q", cfg.Path, "/webhook")
+	}
 
-	ghc, err := cfg.Github()
+	sc, err := webhooks.ParseSpecific[webhooks.SecretsConfig](cfg)
 	if err != nil {
-		t.Fatalf("Github(): %v", err)
+		t.Fatalf("ParseSpecific: %v", err)
 	}
-	if ghc.KeychainItemUser != "myuser" {
-		t.Errorf("KeychainItemUser: got %q, want %q", ghc.KeychainItemUser, "myuser")
+	if sc.User != "myuser" {
+		t.Errorf("User: got %q, want %q", sc.User, "myuser")
 	}
-	if ghc.KeychainItemTokenID != "mytoken" {
-		t.Errorf("KeychainItemTokenID: got %q, want %q", ghc.KeychainItemTokenID, "mytoken")
+	if got, want := len(sc.SecretSpecs), 2; got != want {
+		t.Fatalf("SecretSpecs: got %d, want %d", got, want)
+	}
+	// "mytoken" has no user in the spec, so the top-level User is applied.
+	if sc.SecretSpecs[0].ID != "mytoken" {
+		t.Errorf("SecretSpecs[0].ID: got %q, want %q", sc.SecretSpecs[0].ID, "mytoken")
+	}
+	if sc.SecretSpecs[0].User != "myuser" {
+		t.Errorf("SecretSpecs[0].User: got %q, want %q", sc.SecretSpecs[0].User, "myuser")
+	}
+	// "othertoken[otheruser]" has an explicit user.
+	if sc.SecretSpecs[1].ID != "othertoken" {
+		t.Errorf("SecretSpecs[1].ID: got %q, want %q", sc.SecretSpecs[1].ID, "othertoken")
+	}
+	if sc.SecretSpecs[1].User != "otheruser" {
+		t.Errorf("SecretSpecs[1].User: got %q, want %q", sc.SecretSpecs[1].User, "otheruser")
 	}
 }
 
-func TestConfigGithubWrongService(t *testing.T) {
-	cfg := webhooks.Config{Service: "gitlab"}
-	_, err := cfg.Github()
-	if err == nil {
-		t.Fatal("expected error for wrong service")
-	}
-	if !errors.Is(err, webhooks.ErrWrongServiceSpecificConfig) {
-		t.Errorf("error %v does not wrap ErrWrongServiceSpecificConfig", err)
-	}
-}
-
-func TestConfigGithubNilSpecific(t *testing.T) {
+func TestConfigNilSpecific(t *testing.T) {
 	cfg := webhooks.Config{Service: "github", Specific: nil}
-	_, err := cfg.Github()
+	_, err := webhooks.ParseSpecific[webhooks.SecretsConfig](cfg)
 	if err == nil {
-		t.Fatal("expected error for nil Specific")
+		t.Fatalf("expected error for nil Specific")
 	}
 }

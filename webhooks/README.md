@@ -31,66 +31,23 @@ ErrWrongServiceSpecificConfig = fmt.Errorf("missing service specific config")
 func NoopValidator(req *http.Request) ([]byte, int)
 ```
 
+### Func ParseSpecific
+```go
+func ParseSpecific[T any](c Config) (T, error)
+```
+
 
 
 ## Types
 ### Type Config
 ```go
 type Config struct {
-	PublicAddr   string            `yaml:"public_addr" doc:"public address to serve webhooks on"`
-	PublicIPACL  ipacl.Config      `yaml:"public_ip_acl" doc:"ACL of IPs allowed to access the webhook, if not specified all IPs are allowed"`
-	PrivateAddr  string            `yaml:"private_addr" doc:"private address to listen on for webhook requests"`
-	PrivateIPACL ipacl.Config      `yaml:"private_ip_acl" doc:"ACL of IPs allowed to access the webhook on the private address, if not specified all IPs are allowed"`
-	Path         string            `yaml:"path" doc:"path to serve webhooks on"`
-	Service      string            `yaml:"service" doc:"type of webhook to serve, e.g. github, etc."`
-	Specific     *cmdyaml.Deferred `yaml:",inline" doc:"additional details about the webhook specific to the type of webhook being served"`
+	Path     string            `yaml:"path" doc:"path to serve webhooks on"`
+	Service  string            `yaml:"service" doc:"type of webhook to serve, e.g. github, etc."`
+	Specific *cmdyaml.Deferred `yaml:",inline" doc:"additional details about the webhook specific to the type of webhook being served"`
 }
 ```
 Config represents the configuration for a webhook server.
-
-### Methods
-
-```go
-func (c Config) Github() (*GithubWebhookConfig, error)
-```
-
-
-
-
-### Type GitHubSecrets
-```go
-type GitHubSecrets struct {
-	Secrets []string `yaml:"secrets"`
-}
-```
-GitHubSecrets represents the structure of the YAML file that contains the
-GitHub webhook secrets. It supports multiple secrets to allow for rotation.
-
-### Methods
-
-```go
-func (s *GitHubSecrets) UnmarshalYAML(value *yaml.Node) error
-```
-UnmarshalYAML unmarshals the YAML data into the GitHubSecrets struct by
-appending the secrets to the Secrets slice. This allows for multiple
-secrets to be specified in a single yaml.Node and across multiple yaml.Node
-instances (e.g. from multiple files).
-
-
-
-
-### Type GithubWebhookConfig
-```go
-type GithubWebhookConfig struct {
-	KeychainItemUser    string `yaml:"secret_user" doc:"user name of the key containing the GitHub webhook secret"`
-	KeychainItemTokenID string `yaml:"secret_id" doc:"ID of the key containing the GitHub webhook secret as a token"`
-}
-```
-GithubWebhookConfig represents the configuration specific to a GitHub
-webhook. In particular the secrete used to validate the webhook requests
-is accessed via a cloudeng.io/cmdutil/keys.InMemoryKeyStore item specified
-by the KeychainItemUser and KeychainItemTokenID fields. The keystore itself
-will be populated by the server hosting the webhook.
 
 
 ### Type Option
@@ -177,6 +134,34 @@ responding.
 
 
 
+### Type SecretsConfig
+```go
+type SecretsConfig struct {
+	User        string         `yaml:"user" doc:"user to associate with a key id if the KeySpec does not specify a user"`
+	Secrets     []string       `yaml:"secrets" doc:"list of KeySpecs specifying the secrets to use for validating webhooks in cloudeng.io.cmdutil/keys.KeySpec format, i.e. id[user] or id. If not user is specified in the KeySpec, the user field will be used."`
+	SecretSpecs []keys.KeySpec `yaml:"-" doc:"parsed KeySpecs from the Secrets field"`
+}
+```
+SecretsConfig represents a common configuration that uses
+cloudeng.io/cmdutil/keys.KeySpec to specify the secrets to be used for
+validating webhooks. User and Secrets fields can be unmarshaled from YAML,
+but the SecretSpecs field is populated based on those fields by the
+UnmarshalYAML.
+
+### Methods
+
+```go
+func (sc SecretsConfig) TokensFromContext(ctx context.Context) ([]keys.Token, error)
+```
+
+
+```go
+func (sc *SecretsConfig) UnmarshalYAML(node *yaml.Node) error
+```
+
+
+
+
 ### Type Validator
 ```go
 type Validator func(r *http.Request) ([]byte, int)
@@ -188,23 +173,19 @@ if validation fails.
 ### Functions
 
 ```go
-func GitHubValidator(ctx context.Context, fs file.ReadFileFS, secretPaths ...string) (Validator, error)
+func GitHubValidator(ctx context.Context, getTokens func(ctx context.Context) ([]keys.Token, error)) (Validator, error)
 ```
-GitHubValidator returns a Validator that verifies GitHub webhook
-payloads using one of possibly multiple secrets stored in the provided
-file.ReadFileFS instance at the provided path(s). Multiple secrets files
-and multiple secrets per file allow for rotation. GitHub does not currently
-directly support rotation, hence the only way to change the secret used by
-GitHub is to create a new one, wait for it be picked up by the validator
-then change the secret used by GitHub to the new one and remove the old
-secret from the file.ReadFileFS. Ideally, the file.ReadFileFS instance
-should be an in-memory or caching implementation to avoid the overhead of
-reading the secret from disk on every request but that also allows for
-the secret to be refreshed. GitHubValidator returns an error if no secret
-paths are provided, if any of the provided paths are empty or can't be
-successfully read and parsed. Note that this initial validation uses the
-context passed to GitHubValidator, whereas the returned Validator uses the
-context from the incoming request to read the secrets on each request.
+GitHubValidator returns a Validator that verifies GitHub webhook payloads
+using one of possibly multiple Tokens returned by the getTokens function.
+The tokens are expected to be provided as byte slices, and the validator
+will compute the HMAC SHA256 signature of the payload using each token and
+compare it to the signature provided in the "X-Hub-Signature-256" header
+of the request. If a match is found, the payload is considered valid and
+returned; otherwise, an appropriate HTTP status code is returned to indicate
+the error. It is the responsibility of the getTokens function to retrieve
+the tokens from the appropriate source, such as a file or a key store, and
+to handle any necessary parsing or error handling related to that retrieval.
+Similarly getTokens is responsible for handling key rotation or replacement.
 
 
 
