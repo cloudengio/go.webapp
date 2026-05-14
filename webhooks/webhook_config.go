@@ -5,45 +5,104 @@
 package webhooks
 
 import (
+	"context"
 	"fmt"
 
 	"cloudeng.io/cmdutil/cmdyaml"
-	"cloudeng.io/webapp/ipacl"
+	"cloudeng.io/cmdutil/keys"
+	"gopkg.in/yaml.v3"
 )
 
 // Config represents the configuration for a webhook server.
 type Config struct {
-	PublicAddr   string            `yaml:"public_addr" doc:"public address to serve webhooks on"`
-	PublicIPACL  ipacl.Config      `yaml:"public_ip_acl" doc:"ACL of IPs allowed to access the webhook, if not specified all IPs are allowed"`
-	PrivateAddr  string            `yaml:"private_addr" doc:"private address to listen on for webhook requests"`
-	PrivateIPACL ipacl.Config      `yaml:"private_ip_acl" doc:"ACL of IPs allowed to access the webhook on the private address, if not specified all IPs are allowed"`
-	Path         string            `yaml:"path" doc:"path to serve webhooks on"`
-	Service      string            `yaml:"service" doc:"type of webhook to serve, e.g. github, etc."`
-	Specific     *cmdyaml.Deferred `yaml:",inline" doc:"additional details about the webhook specific to the type of webhook being served"`
+	DeliveryPath   string            `yaml:"delivery_path" doc:"path to receive webhooks on"`
+	RelayPath      string            `yaml:"relay_path" doc:"path to read relay payloads from"`
+	Service        string            `yaml:"service" doc:"type of webhook to serve, e.g. github, etc."`
+	MaxPayloadSize cmdyaml.ByteSize  `yaml:"max_payload_size" doc:"maximum allowed payload size for incoming webhook requests in bytes, e.g. 1048576 for 1MB"`
+	MaxQueueSize   int               `yaml:"max_queue_size" doc:"maximum number of payloads to hold in the queue for processing, leave empty for default"`
+	Specific       *cmdyaml.Deferred `yaml:",inline" doc:"additional details about the webhook specific to the type of webhook being served, leave empty for default"`
 }
 
-// GithubWebhookConfig represents the configuration specific to
-// a GitHub webhook. In particular the secrete used to validate the
-// webhook requests is accessed via a
-// cloudeng.io/cmdutil/keys.InMemoryKeyStore item specified by the KeychainItemUser and KeychainItemTokenID fields.
-// The keystore itself will be populated by the server hosting the
-// webhook.
-type GithubWebhookConfig struct {
-	KeychainItemUser    string `yaml:"secret_user" doc:"user name of the key containing the GitHub webhook secret"`
-	KeychainItemTokenID string `yaml:"secret_id" doc:"ID of the key containing the GitHub webhook secret as a token"`
+func (c Config) Options() []Option {
+	opts := []Option{
+		WithQueueSize(int64(c.MaxQueueSize)),
+		WithMaxPayloadSize(int64(c.MaxPayloadSize)),
+	}
+	return opts
+}
+
+func (c Config) MarshalYAML() (interface{}, error) {
+	type config Config
+	cc := config(c)
+	if cc.MaxQueueSize == 0 {
+		cc.MaxQueueSize = DefaultQueueSize
+	}
+	if cc.MaxPayloadSize == 0 {
+		cc.MaxPayloadSize = DefaultPayloadLimit
+	}
+	return cc, nil
+}
+
+// SecretsConfig represents a common configuration that uses
+// cloudeng.io/cmdutil/keys.KeySpec to specify the secrets to be used for
+// validating webhooks. User and Secrets fields can be unmarshaled from YAML,
+// but the SecretSpecs field is populated based on those fields by the
+// UnmarshalYAML.
+type SecretsConfig struct {
+	User        string         `yaml:"user" doc:"user to associate with a key id if the KeySpec does not specify a user"`
+	Secrets     []string       `yaml:"secrets" doc:"list of KeySpecs specifying the secrets to use for validating webhooks in cloudeng.io.cmdutil/keys.KeySpec format, i.e. id[user] or id. If not user is specified in the KeySpec, the user field will be used."`
+	SecretSpecs []keys.KeySpec `yaml:"-" doc:"parsed KeySpecs from the Secrets field"`
+}
+
+func (sc *SecretsConfig) UnmarshalYAML(node *yaml.Node) error {
+	r := struct {
+		User        string   `yaml:"user"`
+		SecretSpecs []string `yaml:"secrets"`
+	}{}
+	if err := node.Decode(&r); err != nil {
+		return fmt.Errorf("unmarshal: %v", err)
+	}
+	sc.User = r.User
+	sc.SecretSpecs = make([]keys.KeySpec, len(r.SecretSpecs))
+	for i, spec := range r.SecretSpecs {
+		ks := keys.ParseKeySpecValue(spec)
+		if ks.User == "" {
+			ks.User = sc.User
+		}
+		sc.SecretSpecs[i] = ks
+	}
+	return nil
+}
+
+func (sc SecretsConfig) TokensFromContext(ctx context.Context) ([]keys.Token, error) {
+	toks := make([]keys.Token, len(sc.SecretSpecs))
+	for i, spec := range sc.SecretSpecs {
+		tok, ok := keys.TokenFromContext(ctx, spec.User, spec.ID)
+		if !ok {
+			for j := range i {
+				tok := toks[j]
+				tok.Clear()
+				toks[j] = keys.Token{}
+			}
+			return nil, fmt.Errorf("error retrieving key for spec %q", spec)
+		}
+		toks[i] = tok
+	}
+	return toks, nil
 }
 
 var (
 	ErrWrongServiceSpecificConfig = fmt.Errorf("missing service specific config")
 )
 
-func (c Config) Github() (*GithubWebhookConfig, error) {
-	if c.Service != "github" {
-		return nil, fmt.Errorf("service %q is not github: %w", c.Service, ErrWrongServiceSpecificConfig)
+func ParseSpecific[T any](c Config) (T, error) {
+	var cfg T
+	if c.Specific == nil {
+		return cfg, ErrWrongServiceSpecificConfig
 	}
-	ghc, err := cmdyaml.ParseDeferred[GithubWebhookConfig](c.Specific)
+	cfg, err := cmdyaml.ParseDeferred[T](c.Specific)
 	if err != nil {
-		return nil, fmt.Errorf("failed to parse github webhook config: %w", err)
+		return cfg, fmt.Errorf("failed to parse github webhook config: %w", err)
 	}
-	return &ghc, nil
+	return cfg, nil
 }

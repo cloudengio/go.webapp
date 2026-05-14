@@ -5,10 +5,12 @@
 package webhooks
 
 import (
+	"context"
 	"io"
 	"log/slog"
 	"net/http"
-	"path"
+
+	"cloudeng.io/sync/patterns"
 )
 
 // Relay is an HTTP handler that receives JSON payloads and relays them
@@ -17,16 +19,18 @@ import (
 // that is used as a long polling endpoint for a client to receive
 // the payloads. The Webhook endpoint will accept POST requests with JSON
 // payloads and the Wait endpoint will accept GET requests and will block
-// until a payload is received/
+// until a payload is received.
+// When the internal buffer is full the oldest webhook is dropped to make
+// room for the new one.
 type Relay struct {
-	jobsCh    chan []byte
+	fifo      *patterns.FIFO[[]byte]
 	validator Validator
 	opts      options
 }
 
 type options struct {
-	size         int
-	payloadLimit int
+	size         int64
+	payloadLimit int64
 	logger       *slog.Logger
 }
 
@@ -38,8 +42,9 @@ const (
 // Option is a function that configures the Relay.
 type Option func(*options)
 
-// WithQueueSize sets the size of the channel buffer for relaying payloads.
-func WithQueueSize(size int) Option {
+// WithQueueSize sets the size of the internal buffer for relaying payloads.
+// When the buffer is full the oldest payload is dropped.
+func WithQueueSize(size int64) Option {
 	return func(opts *options) {
 		opts.size = size
 	}
@@ -47,7 +52,7 @@ func WithQueueSize(size int) Option {
 
 // WithMaxPayloadSize sets the maximum allowed payload size for incoming webhook
 // requests.
-func WithMaxPayloadSize(size int) Option {
+func WithMaxPayloadSize(size int64) Option {
 	return func(opts *options) {
 		opts.payloadLimit = size
 	}
@@ -74,31 +79,43 @@ func NoopValidator(req *http.Request) ([]byte, int) {
 	return payload, http.StatusOK
 }
 
-// NewRelay creates a new Relay with the provided Validator and options. The
-func NewRelay(validator Validator, opts ...Option) *Relay {
+// NewRelay creates a new Relay with the provided Validator and options.
+// ctx governs the lifetime of the internal FIFO goroutine; cancel it or
+// call Stop to shut down cleanly.
+func NewRelay(ctx context.Context, validator Validator, opts ...Option) *Relay {
 	var options options
-	options.size = DefaultQueueSize
-	options.payloadLimit = DefaultPayloadLimit
 	for _, opt := range opts {
 		opt(&options)
 	}
 	if options.logger == nil {
 		options.logger = slog.New(slog.DiscardHandler)
 	}
+	if options.size == 0 {
+		options.size = DefaultQueueSize
+	}
+	if options.payloadLimit == 0 {
+		options.payloadLimit = DefaultPayloadLimit
+	}
 	options.logger = options.logger.With("component", "webhooks.Relay")
 	return &Relay{
-		jobsCh:    make(chan []byte, options.size),
+		fifo:      patterns.NewFIFO[[]byte](ctx, int(options.size)),
 		validator: validator,
 		opts:      options,
 	}
 }
 
+// Stop shuts down the internal FIFO goroutine. It blocks until the goroutine
+// exits or ctx is cancelled.
+func (r *Relay) Stop(ctx context.Context) {
+	r.fifo.Stop(ctx)
+}
+
 // ServeWebhook handles incoming webhook requests, validates them using the
-// provided Validator, and relays the payload to the channel for processing.
-// It responds with appropriate HTTP status codes based on the validation and
-// processing outcome.
+// provided Validator, and relays the payload to the FIFO for processing.
+// If the internal buffer is full the oldest payload is dropped to make room.
+// It responds with appropriate HTTP status codes based on the validation outcome.
 func (r *Relay) ServeWebhook(w http.ResponseWriter, req *http.Request) {
-	if req.ContentLength > int64(r.opts.payloadLimit) {
+	if req.ContentLength > r.opts.payloadLimit {
 		http.Error(w, "Payload too large", http.StatusRequestEntityTooLarge)
 		return
 	}
@@ -115,55 +132,69 @@ func (r *Relay) ServeWebhook(w http.ResponseWriter, req *http.Request) {
 		http.Error(w, "Request body is required", http.StatusBadRequest)
 		return
 	}
-	req.Body = http.MaxBytesReader(w, req.Body, int64(r.opts.payloadLimit))
+	req.Body = http.MaxBytesReader(w, req.Body, r.opts.payloadLimit)
 	payload, status := r.validator(req)
 	if status != http.StatusOK {
 		http.Error(w, "Invalid payload", status)
 		return
 	}
 	select {
-	case r.jobsCh <- payload:
-		r.opts.logger.Info("ServeWebhook: received payload and sent to channel", "size", len(payload))
+	case r.fifo.In() <- payload:
+		r.opts.logger.Info("ServeWebhook: received payload and sent to FIFO", "size", len(payload))
 	case <-req.Context().Done():
 		err := req.Context().Err()
-		r.opts.logger.Info("ServeWebhook: context cancelled while trying to send payload to channel", "err", err)
-	default:
-		w.WriteHeader(http.StatusInternalServerError)
-		r.opts.logger.Error("ServeWebhook: channel is full, unable to process payload", "size", len(payload))
+		r.opts.logger.Info("ServeWebhook: context cancelled while trying to send payload to FIFO", "err", err)
 		return
 	}
 	w.WriteHeader(http.StatusAccepted)
 }
 
-// WaitForWebhook waits for a payload to be received on the channel and responds
+// WaitForWebhook waits for a payload to be received on the FIFO and responds
 // with the payload as JSON. It is intended to support long polling by
 // blocking until a webhook payload is available.
 // If the request context is cancelled while waiting, it logs the cancellation
 // and returns without responding.
 func (r *Relay) WaitForWebhook(w http.ResponseWriter, req *http.Request) {
 	select {
-	case job := <-r.jobsCh:
+	case job, ok := <-r.fifo.Out():
+		if !ok {
+			return
+		}
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write(job)
 		r.opts.logger.Info("WaitForWebhook: sent payload to client", "size", len(job))
 	case <-req.Context().Done():
 		err := req.Context().Err()
-		r.opts.logger.Info("WaitForWebhook: request context cancelled while waiting for payload from channel", "err", err)
+		r.opts.logger.Info("WaitForWebhook: request context cancelled while waiting for payload from FIFO", "err", err)
 	}
+}
+
+// DeliveryHandler returns an http.Handler that serves the webhook endpoint
+// for receiving payloads.
+func (r *Relay) DeliveryHandler() http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		r.ServeWebhook(w, req)
+	})
+}
+
+// PollingHandler returns an http.Handler that serves the wait endpoint for
+// long polling clients to receive payloads.
+func (r *Relay) PollingHandler() http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		r.WaitForWebhook(w, req)
+	})
 }
 
 // Handler returns an http.HandlerFunc that routes requests to the appropriate
 // handler based on the URL path. It expects the webhook endpoint to be at
-// {prefix}/webhook and the wait endpoint to be at {prefix}/wait. Requests to
+// deliveryPath and the wait endpoint to be at relayPath. Requests to
 // other paths will receive a 404 Not Found response.
-func (r *Relay) Handler(prefix string) func(w http.ResponseWriter, req *http.Request) {
-	hookPath := path.Join(prefix, "webhook")
-	waitPath := path.Join(prefix, "wait")
+func (r *Relay) Handler(deliveryPath, relayPath string) func(w http.ResponseWriter, req *http.Request) {
 	return func(w http.ResponseWriter, req *http.Request) {
 		switch req.URL.Path {
-		case hookPath:
+		case deliveryPath:
 			r.ServeWebhook(w, req)
-		case waitPath:
+		case relayPath:
 			r.WaitForWebhook(w, req)
 		default:
 			http.NotFound(w, req)

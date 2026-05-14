@@ -23,3 +23,11 @@ go.work.sum
 
 # env file
 .env
+
+node_modules
+webapp-sample-vite
+cmd/acme/acme
+cmd/webapp/webapp
+webauth/webauthn/get-ssl-certs
+webauth/webauthn/passkeys/*.pem
+webauth/webauthn/passkeys/mkcert-ca
