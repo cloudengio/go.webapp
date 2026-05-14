@@ -24,7 +24,7 @@ require (
 )
 
 require (
-	cloudeng.io/algo v0.0.0-20260513030906-195852faa5d0 // indirect
+	cloudeng.io/algo v0.0.0-20260513235126-b955eaa2c893 // indirect
 	cloudeng.io/sys v0.0.0-20260513030906-195852faa5d0 // indirect
 	cloudeng.io/text v0.0.16-0.20260312171538-61fcde6ce278 // indirect
 	github.com/chromedp/sysutil v1.1.0 // indirect

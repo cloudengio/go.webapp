@@ -4,19 +4,19 @@ go 1.26.2
 
 require (
 	cloudeng.io/aws v0.0.0-20260509153218-f5051f2d778f
-	cloudeng.io/cmdutil v0.0.0-20260509153218-f5051f2d778f
+	cloudeng.io/cmdutil v0.0.0-20260513232808-b1871776baa5
 	cloudeng.io/errors v0.0.14-0.20260312171538-61fcde6ce278
-	cloudeng.io/file v0.0.0-20260509153218-f5051f2d778f
-	cloudeng.io/logging v0.0.0-20260513030906-195852faa5d0
+	cloudeng.io/file v0.0.0-20260513232808-b1871776baa5
+	cloudeng.io/logging v0.0.0-20260513232808-b1871776baa5
 	cloudeng.io/net v0.0.0-20260509153218-f5051f2d778f
 	cloudeng.io/webapp v0.0.0-20251211202122-3206a59d8279
 	golang.org/x/crypto v0.51.0
 )
 
 require (
-	cloudeng.io/algo v0.0.0-20260513030906-195852faa5d0 // indirect
+	cloudeng.io/algo v0.0.0-20260513235126-b955eaa2c893 // indirect
 	cloudeng.io/os v0.0.0-20260513030906-195852faa5d0 // indirect
-	cloudeng.io/sync v0.0.10 // indirect
+	cloudeng.io/sync v0.0.11 // indirect
 	cloudeng.io/sys v0.0.0-20260513030906-195852faa5d0 // indirect
 	cloudeng.io/text v0.0.16-0.20260312171538-61fcde6ce278 // indirect
 	github.com/aws/aws-sdk-go-v2 v1.41.7 // indirect
@@ -35,6 +35,7 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/sts v1.42.1 // indirect
 	github.com/aws/smithy-go v1.25.1 // indirect
 	golang.org/x/net v0.54.0 // indirect
+	golang.org/x/sync v0.20.0 // indirect
 	golang.org/x/sys v0.44.0 // indirect
 	golang.org/x/text v0.37.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
