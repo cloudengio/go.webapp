@@ -3,17 +3,17 @@ module cloudeng.io/webapp
 go 1.26
 
 require (
-	cloudeng.io/cmdutil v0.0.0-20260513232808-b1871776baa5
+	cloudeng.io/cmdutil v0.0.0-20260513235126-b955eaa2c893
 	cloudeng.io/errors v0.0.14-0.20260312171538-61fcde6ce278
-	cloudeng.io/file v0.0.0-20260513232808-b1871776baa5
-	cloudeng.io/io v0.0.0-20260509153218-f5051f2d778f
-	cloudeng.io/logging v0.0.0-20260513232808-b1871776baa5
-	cloudeng.io/net v0.0.0-20260509153218-f5051f2d778f
-	cloudeng.io/os v0.0.0-20260513030906-195852faa5d0
+	cloudeng.io/file v0.0.0-20260513235126-b955eaa2c893
+	cloudeng.io/io v0.0.0-20260513235126-b955eaa2c893
+	cloudeng.io/logging v0.0.0-20260513235126-b955eaa2c893
+	cloudeng.io/net v0.0.0-20260513235126-b955eaa2c893
+	cloudeng.io/os v0.0.0-20260513235126-b955eaa2c893
 	cloudeng.io/sync v0.0.11
 	github.com/chromedp/cdproto v0.0.0-20260427013145-5737772c319b
 	github.com/cloudengio/chromedp v0.0.0-20260505165647-6dc9039fb140
-	github.com/gaissmai/bart v0.26.1
+	github.com/gaissmai/bart v0.27.0
 	github.com/go-json-experiment/json v0.0.0-20260505212615-e40f80bf6836
 	github.com/go-webauthn/webauthn v0.17.3
 	github.com/lestrrat-go/jwx/v3 v3.1.1
@@ -25,7 +25,7 @@ require (
 
 require (
 	cloudeng.io/algo v0.0.0-20260513235126-b955eaa2c893 // indirect
-	cloudeng.io/sys v0.0.0-20260513030906-195852faa5d0 // indirect
+	cloudeng.io/sys v0.0.0-20260513235126-b955eaa2c893 // indirect
 	cloudeng.io/text v0.0.16-0.20260312171538-61fcde6ce278 // indirect
 	github.com/chromedp/sysutil v1.1.0 // indirect
 	github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc // indirect
