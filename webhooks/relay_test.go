@@ -29,13 +29,16 @@ func (errReader) Close() error {
 
 func TestRelay(t *testing.T) {
 	t.Run("HappyPath", func(t *testing.T) {
-		relay := webhooks.NewRelay(
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+		relay := webhooks.NewRelay(ctx,
 			webhooks.NoopValidator,
 			webhooks.WithQueueSize(1),
 			webhooks.WithMaxPayloadSize(1024),
 			webhooks.WithLogger(slog.Default()),
 		)
-		handler := relay.Handler("/api")
+		defer relay.Stop(context.Background())
+		handler := relay.Handler("/api/webhook", "/api/wait")
 
 		payload := []byte(`{"event":"test"}`)
 		req := httptest.NewRequest(http.MethodPost, "/api/webhook", bytes.NewReader(payload))
@@ -67,8 +70,11 @@ func TestRelay(t *testing.T) {
 	})
 
 	t.Run("PayloadTooLarge", func(t *testing.T) {
-		relay := webhooks.NewRelay(webhooks.NoopValidator)
-		handler := relay.Handler("/api")
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+		relay := webhooks.NewRelay(ctx, webhooks.NoopValidator)
+		defer relay.Stop(context.Background())
+		handler := relay.Handler("/api/webhook", "/api/wait")
 
 		req := httptest.NewRequest(http.MethodPost, "/api/webhook", strings.NewReader("big payload"))
 		req.ContentLength = int64(webhooks.DefaultPayloadLimit + 1)
@@ -82,8 +88,11 @@ func TestRelay(t *testing.T) {
 	})
 
 	t.Run("InvalidContentType", func(t *testing.T) {
-		relay := webhooks.NewRelay(webhooks.NoopValidator)
-		handler := relay.Handler("/api")
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+		relay := webhooks.NewRelay(ctx, webhooks.NoopValidator)
+		defer relay.Stop(context.Background())
+		handler := relay.Handler("/api/webhook", "/api/wait")
 
 		req := httptest.NewRequest(http.MethodPost, "/api/webhook", strings.NewReader("payload"))
 		req.Header.Set("Content-Type", "text/plain")
@@ -97,8 +106,11 @@ func TestRelay(t *testing.T) {
 	})
 
 	t.Run("NilBodyAndReadErrors", func(t *testing.T) {
-		relay := webhooks.NewRelay(webhooks.NoopValidator)
-		handler := relay.Handler("/api")
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+		relay := webhooks.NewRelay(ctx, webhooks.NoopValidator)
+		defer relay.Stop(context.Background())
+		handler := relay.Handler("/api/webhook", "/api/wait")
 
 		// Test forced nil body
 		reqNil := httptest.NewRequest(http.MethodPost, "/api/webhook", nil)
@@ -121,38 +133,79 @@ func TestRelay(t *testing.T) {
 		}
 	})
 
-	t.Run("QueueFull", func(t *testing.T) {
-		relay := webhooks.NewRelay(webhooks.NoopValidator, webhooks.WithQueueSize(1))
-		handler := relay.Handler("/api")
+	// QueueDropsOldest verifies that when the internal buffer is full the
+	// oldest payload is silently dropped and the new one is accepted (202).
+	// It uses capacity=2 and sends 3 payloads so that "first" is dropped.
+	// After draining the two surviving payloads a final read with a cancelled
+	// context confirms the queue is empty — proving "first" was removed.
+	t.Run("QueueDropsOldest", func(t *testing.T) {
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+		relay := webhooks.NewRelay(ctx, webhooks.NoopValidator, webhooks.WithQueueSize(2))
+		defer relay.Stop(context.Background())
+		handler := relay.Handler("/api/webhook", "/api/wait")
 
-		req1 := httptest.NewRequest(http.MethodPost, "/api/webhook", bytes.NewReader([]byte("first")))
-		req1.ContentLength = 5
-		req1.Header.Set("Content-Type", "application/json")
-		w1 := httptest.NewRecorder()
-		handler(w1, req1)
+		send := func(body []byte) int {
+			req := httptest.NewRequest(http.MethodPost, "/api/webhook", bytes.NewReader(body))
+			req.ContentLength = int64(len(body))
+			req.Header.Set("Content-Type", "application/json")
+			w := httptest.NewRecorder()
+			handler(w, req)
+			return w.Code
+		}
+		recv := func() []byte {
+			req := httptest.NewRequest(http.MethodGet, "/api/wait", nil)
+			w := httptest.NewRecorder()
+			handler(w, req)
+			return w.Body.Bytes()
+		}
 
-		// Queue is now full, this second payload should be discarded due to the default select case
-		req2 := httptest.NewRequest(http.MethodPost, "/api/webhook", bytes.NewReader([]byte("second")))
-		req2.ContentLength = 6
-		req2.Header.Set("Content-Type", "application/json")
-		w2 := httptest.NewRecorder()
-		handler(w2, req2)
+		first, second, third := []byte(`"first"`), []byte(`"second"`), []byte(`"third"`)
 
-		if got, want := w2.Code, http.StatusInternalServerError; got != want {
-			t.Errorf("got status %v, want %v", got, want)
+		// Fill the capacity-2 buffer.
+		if got := send(first); got != http.StatusAccepted {
+			t.Fatalf("first: got status %d, want %d", got, http.StatusAccepted)
+		}
+		if got := send(second); got != http.StatusAccepted {
+			t.Fatalf("second: got status %d, want %d", got, http.StatusAccepted)
+		}
+		// Overflow: "first" (oldest) is dropped; "third" is accepted.
+		if got := send(third); got != http.StatusAccepted {
+			t.Fatalf("third: got status %d, want %d", got, http.StatusAccepted)
+		}
+
+		// "second" and "third" survive in FIFO order.
+		if got := recv(); !bytes.Equal(got, second) {
+			t.Errorf("first read: got %s, want %s", got, second)
+		}
+		if got := recv(); !bytes.Equal(got, third) {
+			t.Errorf("second read: got %s, want %s", got, third)
+		}
+
+		// Queue must now be empty — "first" was dropped, not merely deferred.
+		cancelledCtx, cancelReq := context.WithCancel(context.Background())
+		cancelReq()
+		emptyReq := httptest.NewRequest(http.MethodGet, "/api/wait", nil).WithContext(cancelledCtx)
+		wEmpty := httptest.NewRecorder()
+		handler(wEmpty, emptyReq)
+		if wEmpty.Body.Len() > 0 {
+			t.Errorf("queue not empty after draining: got %s", wEmpty.Body.String())
 		}
 	})
 
 	t.Run("WaitContextCancelled", func(t *testing.T) {
-		relay := webhooks.NewRelay(webhooks.NoopValidator)
-		handler := relay.Handler("/api")
-
 		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+		relay := webhooks.NewRelay(ctx, webhooks.NoopValidator)
+		defer relay.Stop(context.Background())
+		handler := relay.Handler("/api/webhook", "/api/wait")
+
+		reqCtx, reqCancel := context.WithCancel(context.Background())
 		req := httptest.NewRequest(http.MethodGet, "/api/wait", nil)
-		req = req.WithContext(ctx)
+		req = req.WithContext(reqCtx)
 		w := httptest.NewRecorder()
 
-		cancel()
+		reqCancel()
 		handler(w, req)
 
 		if w.Body.Len() > 0 {
@@ -161,10 +214,13 @@ func TestRelay(t *testing.T) {
 	})
 
 	t.Run("ValidatorError", func(t *testing.T) {
-		relay := webhooks.NewRelay(func(*http.Request) ([]byte, int) {
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+		relay := webhooks.NewRelay(ctx, func(*http.Request) ([]byte, int) {
 			return nil, http.StatusUnauthorized
 		})
-		handler := relay.Handler("/api")
+		defer relay.Stop(context.Background())
+		handler := relay.Handler("/api/webhook", "/api/wait")
 
 		req := httptest.NewRequest(http.MethodPost, "/api/webhook", strings.NewReader("payload"))
 		req.Header.Set("Content-Type", "application/json")

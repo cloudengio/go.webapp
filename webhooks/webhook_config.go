@@ -15,9 +15,32 @@ import (
 
 // Config represents the configuration for a webhook server.
 type Config struct {
-	Path     string            `yaml:"path" doc:"path to serve webhooks on"`
-	Service  string            `yaml:"service" doc:"type of webhook to serve, e.g. github, etc."`
-	Specific *cmdyaml.Deferred `yaml:",inline" doc:"additional details about the webhook specific to the type of webhook being served"`
+	DeliveryPath   string            `yaml:"delivery_path" doc:"path to receive webhooks on"`
+	RelayPath      string            `yaml:"relay_path" doc:"path to read relay payloads from"`
+	Service        string            `yaml:"service" doc:"type of webhook to serve, e.g. github, etc."`
+	MaxPayloadSize cmdyaml.ByteSize  `yaml:"max_payload_size" doc:"maximum allowed payload size for incoming webhook requests in bytes, e.g. 1048576 for 1MB"`
+	MaxQueueSize   int               `yaml:"max_queue_size" doc:"maximum number of payloads to hold in the queue for processing, leave empty for default"`
+	Specific       *cmdyaml.Deferred `yaml:",inline" doc:"additional details about the webhook specific to the type of webhook being served, leave empty for default"`
+}
+
+func (c Config) Options() []Option {
+	opts := []Option{
+		WithQueueSize(int64(c.MaxQueueSize)),
+		WithMaxPayloadSize(int64(c.MaxPayloadSize)),
+	}
+	return opts
+}
+
+func (c Config) MarshalYAML() (interface{}, error) {
+	type config Config
+	cc := config(c)
+	if cc.MaxQueueSize == 0 {
+		cc.MaxQueueSize = DefaultQueueSize
+	}
+	if cc.MaxPayloadSize == 0 {
+		cc.MaxPayloadSize = DefaultPayloadLimit
+	}
+	return cc, nil
 }
 
 // SecretsConfig represents a common configuration that uses
@@ -56,6 +79,11 @@ func (sc SecretsConfig) TokensFromContext(ctx context.Context) ([]keys.Token, er
 	for i, spec := range sc.SecretSpecs {
 		tok, ok := keys.TokenFromContext(ctx, spec.User, spec.ID)
 		if !ok {
+			for j := range i {
+				tok := toks[j]
+				tok.Clear()
+				toks[j] = keys.Token{}
+			}
 			return nil, fmt.Errorf("error retrieving key for spec %q", spec)
 		}
 		toks[i] = tok

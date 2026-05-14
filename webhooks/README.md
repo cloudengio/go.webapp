@@ -42,12 +42,28 @@ func ParseSpecific[T any](c Config) (T, error)
 ### Type Config
 ```go
 type Config struct {
-	Path     string            `yaml:"path" doc:"path to serve webhooks on"`
-	Service  string            `yaml:"service" doc:"type of webhook to serve, e.g. github, etc."`
-	Specific *cmdyaml.Deferred `yaml:",inline" doc:"additional details about the webhook specific to the type of webhook being served"`
+	DeliveryPath   string            `yaml:"delivery_path" doc:"path to receive webhooks on"`
+	RelayPath      string            `yaml:"relay_path" doc:"path to read relay payloads from"`
+	Service        string            `yaml:"service" doc:"type of webhook to serve, e.g. github, etc."`
+	MaxPayloadSize cmdyaml.ByteSize  `yaml:"max_payload_size" doc:"maximum allowed payload size for incoming webhook requests in bytes, e.g. 1048576 for 1MB"`
+	MaxQueueSize   int               `yaml:"max_queue_size" doc:"maximum number of payloads to hold in the queue for processing, leave empty for default"`
+	Specific       *cmdyaml.Deferred `yaml:",inline" doc:"additional details about the webhook specific to the type of webhook being served, leave empty for default"`
 }
 ```
 Config represents the configuration for a webhook server.
+
+### Methods
+
+```go
+func (c Config) MarshalYAML() (interface{}, error)
+```
+
+
+```go
+func (c Config) Options() []Option
+```
+
+
 
 
 ### Type Option
@@ -65,16 +81,17 @@ WithLogger sets the logger for the Relay.
 
 
 ```go
-func WithMaxPayloadSize(size int) Option
+func WithMaxPayloadSize(size int64) Option
 ```
 WithMaxPayloadSize sets the maximum allowed payload size for incoming
 webhook requests.
 
 
 ```go
-func WithQueueSize(size int) Option
+func WithQueueSize(size int64) Option
 ```
-WithQueueSize sets the size of the channel buffer for relaying payloads.
+WithQueueSize sets the size of the internal buffer for relaying payloads.
+When the buffer is full the oldest payload is dropped.
 
 
 
@@ -91,45 +108,69 @@ webhook server to receive webhook payloads and relay them to another http
 handler that is used as a long polling endpoint for a client to receive the
 payloads. The Webhook endpoint will accept POST requests with JSON payloads
 and the Wait endpoint will accept GET requests and will block until a
-payload is received/
+payload is received. When the internal buffer is full the oldest webhook is
+dropped to make room for the new one.
 
 ### Functions
 
 ```go
-func NewRelay(validator Validator, opts ...Option) *Relay
+func NewRelay(ctx context.Context, validator Validator, opts ...Option) *Relay
 ```
-NewRelay creates a new Relay with the provided Validator and options. The
+NewRelay creates a new Relay with the provided Validator and options.
+ctx governs the lifetime of the internal FIFO goroutine; cancel it or call
+Stop to shut down cleanly.
 
 
 
 ### Methods
 
 ```go
-func (r *Relay) Handler(prefix string) func(w http.ResponseWriter, req *http.Request)
+func (r *Relay) DeliveryHandler() http.Handler
+```
+DeliveryHandler returns an http.Handler that serves the webhook endpoint for
+receiving payloads.
+
+
+```go
+func (r *Relay) Handler(deliveryPath, relayPath string) func(w http.ResponseWriter, req *http.Request)
 ```
 Handler returns an http.HandlerFunc that routes requests to the appropriate
 handler based on the URL path. It expects the webhook endpoint to be at
-{prefix}/webhook and the wait endpoint to be at {prefix}/wait. Requests to
-other paths will receive a 404 Not Found response.
+deliveryPath and the wait endpoint to be at relayPath. Requests to other
+paths will receive a 404 Not Found response.
+
+
+```go
+func (r *Relay) PollingHandler() http.Handler
+```
+PollingHandler returns an http.Handler that serves the wait endpoint for
+long polling clients to receive payloads.
 
 
 ```go
 func (r *Relay) ServeWebhook(w http.ResponseWriter, req *http.Request)
 ```
 ServeWebhook handles incoming webhook requests, validates them using the
-provided Validator, and relays the payload to the channel for processing.
-It responds with appropriate HTTP status codes based on the validation and
-processing outcome.
+provided Validator, and relays the payload to the FIFO for processing.
+If the internal buffer is full the oldest payload is dropped to make room.
+It responds with appropriate HTTP status codes based on the validation
+outcome.
+
+
+```go
+func (r *Relay) Stop(ctx context.Context)
+```
+Stop shuts down the internal FIFO goroutine. It blocks until the goroutine
+exits or ctx is cancelled.
 
 
 ```go
 func (r *Relay) WaitForWebhook(w http.ResponseWriter, req *http.Request)
 ```
-WaitForWebhook waits for a payload to be received on the channel and
-responds with the payload as JSON. It is intended to support long polling
-by blocking until a webhook payload is available. If the request context
-is cancelled while waiting, it logs the cancellation and returns without
-responding.
+WaitForWebhook waits for a payload to be received on the FIFO and responds
+with the payload as JSON. It is intended to support long polling by blocking
+until a webhook payload is available. If the request context is cancelled
+while waiting, it logs the cancellation and returns without responding.
 
 
 
