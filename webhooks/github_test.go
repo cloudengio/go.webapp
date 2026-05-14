@@ -40,11 +40,10 @@ func staticSecrets(secrets ...[]byte) func(context.Context) ([]keys.Token, error
 }
 
 func TestGitHubValidator(t *testing.T) {
-	ctx := t.Context()
 	payload := []byte(`{"action": "push"}`)
 	secret := []byte("super-secret")
 
-	validator, err := webhooks.GitHubValidator(ctx, staticSecrets(secret))
+	validator, err := webhooks.GitHubValidator(staticSecrets(secret))
 	if err != nil {
 		t.Fatalf("GitHubValidator: %v", err)
 	}
@@ -90,12 +89,11 @@ func TestGitHubValidator(t *testing.T) {
 }
 
 func TestGitHubValidatorMultipleSecrets(t *testing.T) {
-	ctx := t.Context()
 	payload := []byte(`{"action": "push"}`)
 	secretA := []byte("secret-a")
 	secretB := []byte("secret-b")
 
-	v, err := webhooks.GitHubValidator(ctx, staticSecrets(secretA, secretB))
+	v, err := webhooks.GitHubValidator(staticSecrets(secretA, secretB))
 	if err != nil {
 		t.Fatalf("GitHubValidator: %v", err)
 	}
@@ -137,7 +135,7 @@ func TestGitHubValidatorMultipleSecrets(t *testing.T) {
 		errSecrets := func(_ context.Context) ([]keys.Token, error) {
 			return nil, fmt.Errorf("secrets unavailable")
 		}
-		ve, err := webhooks.GitHubValidator(ctx, errSecrets)
+		ve, err := webhooks.GitHubValidator(errSecrets)
 		if err != nil {
 			t.Fatalf("GitHubValidator: %v", err)
 		}

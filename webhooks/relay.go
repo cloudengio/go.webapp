@@ -115,7 +115,7 @@ func (r *Relay) Stop(ctx context.Context) {
 // If the internal buffer is full the oldest payload is dropped to make room.
 // It responds with appropriate HTTP status codes based on the validation outcome.
 func (r *Relay) ServeWebhook(w http.ResponseWriter, req *http.Request) {
-	if req.ContentLength > int64(r.opts.payloadLimit) {
+	if req.ContentLength > r.opts.payloadLimit {
 		http.Error(w, "Payload too large", http.StatusRequestEntityTooLarge)
 		return
 	}
@@ -132,7 +132,7 @@ func (r *Relay) ServeWebhook(w http.ResponseWriter, req *http.Request) {
 		http.Error(w, "Request body is required", http.StatusBadRequest)
 		return
 	}
-	req.Body = http.MaxBytesReader(w, req.Body, int64(r.opts.payloadLimit))
+	req.Body = http.MaxBytesReader(w, req.Body, r.opts.payloadLimit)
 	payload, status := r.validator(req)
 	if status != http.StatusOK {
 		http.Error(w, "Invalid payload", status)

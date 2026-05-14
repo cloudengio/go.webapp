@@ -65,7 +65,7 @@ func (sc *SecretsConfig) UnmarshalYAML(node *yaml.Node) error {
 	sc.User = r.User
 	sc.SecretSpecs = make([]keys.KeySpec, len(r.SecretSpecs))
 	for i, spec := range r.SecretSpecs {
-		ks := keys.ParseKeySpecValue(string(spec))
+		ks := keys.ParseKeySpecValue(spec)
 		if ks.User == "" {
 			ks.User = sc.User
 		}

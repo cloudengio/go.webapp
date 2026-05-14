@@ -28,7 +28,7 @@ import (
 // from the appropriate source, such as a file or a key store, and to handle
 // any necessary parsing or error handling related to that retrieval.
 // Similarly getTokens is responsible for handling key rotation or replacement.
-func GitHubValidator(ctx context.Context, getTokens func(ctx context.Context) ([]keys.Token, error)) (Validator, error) {
+func GitHubValidator(getTokens func(ctx context.Context) ([]keys.Token, error)) (Validator, error) {
 	return func(req *http.Request) ([]byte, int) {
 		payload, err := io.ReadAll(req.Body)
 		if err != nil {

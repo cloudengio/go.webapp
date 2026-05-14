@@ -214,7 +214,7 @@ if validation fails.
 ### Functions
 
 ```go
-func GitHubValidator(ctx context.Context, getTokens func(ctx context.Context) ([]keys.Token, error)) (Validator, error)
+func GitHubValidator(getTokens func(ctx context.Context) ([]keys.Token, error)) (Validator, error)
 ```
 GitHubValidator returns a Validator that verifies GitHub webhook payloads
 using one of possibly multiple Tokens returned by the getTokens function.
