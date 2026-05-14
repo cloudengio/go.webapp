@@ -218,7 +218,7 @@ func GitHubValidator(getTokens func(ctx context.Context) ([]keys.Token, error)) 
 ```
 GitHubValidator returns a Validator that verifies GitHub webhook payloads
 using one of possibly multiple Tokens returned by the getTokens function.
-The token value is a byte slice that the validator use to compute the HMAC
+The token value is a byte slice that the validator uses to compute the HMAC
 SHA256 signature of the payload and compare it to the signature provided in
 the "X-Hub-Signature-256" header of the request. If a match is found, the
 payload is considered valid and returned; if none of the returned tokens'
