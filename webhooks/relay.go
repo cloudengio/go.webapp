@@ -11,6 +11,7 @@ import (
 	"net/http"
 
 	"cloudeng.io/sync/patterns"
+	"cloudeng.io/webapp"
 )
 
 // Relay is an HTTP handler that receives JSON payloads and relays them
@@ -29,9 +30,12 @@ type Relay struct {
 }
 
 type options struct {
-	size         int64
-	payloadLimit int64
-	logger       *slog.Logger
+	size           int64
+	payloadLimit   int64
+	logger         *slog.Logger
+	deniedCounter  webapp.CounterInc // validation failed, e.g. due to invalid signature
+	relayedCounter webapp.CounterInc // successfully relayed to FIFO
+	readCounter    webapp.CounterInc // successfully read from FIFO and sent to client
 }
 
 const (
@@ -65,6 +69,23 @@ func WithLogger(logger *slog.Logger) Option {
 	}
 }
 
+// WithCounters sets the counters for the Relay. If any of the counters are nil,
+// they will be set to a no-op counter that does nothing when called.
+// deniedCounter is incremented when a request is denied because the payload fails
+// validation, e.g. due to an invalid signature.
+// relayedCounter is incremented when a payload is successfully relayed to the FIFO.
+// readCounter is incremented when a payload is successfully read from the FIFO and
+// sent to a client.
+func WithCounters(deniedCounter, relayedCounter, readCounter webapp.CounterInc) Option {
+	return func(opts *options) {
+		opts.deniedCounter = deniedCounter
+		opts.relayedCounter = relayedCounter
+		opts.readCounter = readCounter
+	}
+}
+
+func noopCounter(context.Context) {}
+
 // Validator is called to validate and extract the webhook payload
 // from an incoming request. It should return the payload as a byte slice
 // and an error if validation fails.
@@ -95,6 +116,15 @@ func NewRelay(ctx context.Context, validator Validator, opts ...Option) *Relay {
 	}
 	if options.payloadLimit == 0 {
 		options.payloadLimit = DefaultPayloadLimit
+	}
+	if options.deniedCounter == nil {
+		options.deniedCounter = noopCounter
+	}
+	if options.relayedCounter == nil {
+		options.relayedCounter = noopCounter
+	}
+	if options.readCounter == nil {
+		options.readCounter = noopCounter
 	}
 	options.logger = options.logger.With("component", "webhooks.Relay")
 	return &Relay{
@@ -136,11 +166,13 @@ func (r *Relay) ServeWebhook(w http.ResponseWriter, req *http.Request) {
 	payload, status := r.validator(req)
 	if status != http.StatusOK {
 		http.Error(w, "Invalid payload", status)
+		r.opts.deniedCounter(req.Context())
 		return
 	}
 	select {
 	case r.fifo.In() <- payload:
 		r.opts.logger.Info("ServeWebhook: received payload and sent to FIFO", "size", len(payload))
+		r.opts.relayedCounter(req.Context())
 	case <-req.Context().Done():
 		err := req.Context().Err()
 		r.opts.logger.Info("ServeWebhook: context cancelled while trying to send payload to FIFO", "err", err)
@@ -163,6 +195,7 @@ func (r *Relay) WaitForWebhook(w http.ResponseWriter, req *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write(job)
 		r.opts.logger.Info("WaitForWebhook: sent payload to client", "size", len(job))
+		r.opts.readCounter(req.Context())
 	case <-req.Context().Done():
 		err := req.Context().Err()
 		r.opts.logger.Info("WaitForWebhook: request context cancelled while waiting for payload from FIFO", "err", err)
