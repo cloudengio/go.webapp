@@ -12,8 +12,10 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
 
+	"cloudeng.io/webapp"
 	"cloudeng.io/webapp/webhooks"
 )
 
@@ -206,5 +208,142 @@ func TestRelayValidatorError(t *testing.T) {
 
 	if got := w.Code; got != http.StatusUnauthorized {
 		t.Errorf("got status %d, want %d", got, http.StatusUnauthorized)
+	}
+}
+
+// makeCounter returns a CounterInc that atomically increments an int64 and a
+// function to read the current value.
+func makeCounter() (webapp.CounterInc, func() int64) {
+	var n atomic.Int64
+	return func(context.Context) { n.Add(1) }, n.Load
+}
+
+func TestRelayCounterRelayed(t *testing.T) {
+	denied, deniedN := makeCounter()
+	relayed, relayedN := makeCounter()
+	read, readN := makeCounter()
+	handler, _ := newTestRelay(t, webhooks.WithCounters(denied, relayed, read))
+
+	postWebhook(t, handler, []byte(`"hello"`))
+
+	if got := relayedN(); got != 1 {
+		t.Errorf("relayed: got %d, want 1", got)
+	}
+	if got := deniedN(); got != 0 {
+		t.Errorf("denied: got %d, want 0", got)
+	}
+	if got := readN(); got != 0 {
+		t.Errorf("read: got %d, want 0", got)
+	}
+}
+
+func TestRelayCounterDenied(t *testing.T) {
+	denied, deniedN := makeCounter()
+	relayed, relayedN := makeCounter()
+	read, readN := makeCounter()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+	relay := webhooks.NewRelay(ctx,
+		func(*http.Request) ([]byte, int) { return nil, http.StatusUnauthorized },
+		webhooks.WithCounters(denied, relayed, read),
+	)
+	t.Cleanup(func() { relay.Stop(context.Background()) })
+	handler := relay.Handler("/api/webhook", "/api/wait")
+
+	req := httptest.NewRequest(http.MethodPost, "/api/webhook", strings.NewReader(`"hello"`))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	handler(w, req)
+
+	if got := deniedN(); got != 1 {
+		t.Errorf("denied: got %d, want 1", got)
+	}
+	if got := relayedN(); got != 0 {
+		t.Errorf("relayed: got %d, want 0", got)
+	}
+	if got := readN(); got != 0 {
+		t.Errorf("read: got %d, want 0", got)
+	}
+}
+
+func TestRelayCounterRead(t *testing.T) {
+	denied, deniedN := makeCounter()
+	relayed, relayedN := makeCounter()
+	read, readN := makeCounter()
+	handler, _ := newTestRelay(t, webhooks.WithCounters(denied, relayed, read))
+
+	postWebhook(t, handler, []byte(`"hello"`))
+	pollWebhook(t, handler)
+
+	if got := readN(); got != 1 {
+		t.Errorf("read: got %d, want 1", got)
+	}
+	if got := relayedN(); got != 1 {
+		t.Errorf("relayed: got %d, want 1", got)
+	}
+	if got := deniedN(); got != 0 {
+		t.Errorf("denied: got %d, want 0", got)
+	}
+}
+
+// TestRelayCounterNoIncrementOnNonValidatorErrors verifies that infra-level
+// rejections (wrong content-type, payload too large, etc.) do not touch any
+// counter — only validator-returned 4xx codes increment denied.
+func TestRelayCounterNoIncrementOnNonValidatorErrors(t *testing.T) {
+	denied, deniedN := makeCounter()
+	relayed, relayedN := makeCounter()
+	read, readN := makeCounter()
+	handler, _ := newTestRelay(t, webhooks.WithCounters(denied, relayed, read))
+
+	// Wrong content-type.
+	req := httptest.NewRequest(http.MethodPost, "/api/webhook", strings.NewReader(`"x"`))
+	req.Header.Set("Content-Type", "text/plain")
+	handler(httptest.NewRecorder(), req)
+
+	// Payload too large.
+	req2 := httptest.NewRequest(http.MethodPost, "/api/webhook", strings.NewReader("big"))
+	req2.ContentLength = int64(webhooks.DefaultPayloadLimit + 1)
+	handler(httptest.NewRecorder(), req2)
+
+	if got := deniedN(); got != 0 {
+		t.Errorf("denied: got %d, want 0", got)
+	}
+	if got := relayedN(); got != 0 {
+		t.Errorf("relayed: got %d, want 0", got)
+	}
+	if got := readN(); got != 0 {
+		t.Errorf("read: got %d, want 0", got)
+	}
+}
+
+// TestRelayCounterNoIncrementOnContextCancel verifies that a cancelled request
+// context during send does not increment the relayed counter.
+func TestRelayCounterNoIncrementOnContextCancel(t *testing.T) {
+	denied, deniedN := makeCounter()
+	relayed, relayedN := makeCounter()
+	read, readN := makeCounter()
+
+	// Use capacity 0 (defaults to DefaultQueueSize) but fill it first so the
+	// FIFO's run goroutine is busy; then cancel the request context before it
+	// can send — the simplest approach is just to pre-cancel the context.
+	handler, _ := newTestRelay(t, webhooks.WithCounters(denied, relayed, read))
+
+	cancelledCtx, cancelReq := context.WithCancel(context.Background())
+	cancelReq()
+	req := httptest.NewRequest(http.MethodPost, "/api/webhook", strings.NewReader(`"x"`))
+	req = req.WithContext(cancelledCtx)
+	req.ContentLength = int64(len(`"x"`))
+	req.Header.Set("Content-Type", "application/json")
+	handler(httptest.NewRecorder(), req)
+
+	if got := relayedN(); got != 0 {
+		t.Errorf("relayed: got %d, want 0", got)
+	}
+	if got := deniedN(); got != 0 {
+		t.Errorf("denied: got %d, want 0", got)
+	}
+	if got := readN(); got != 0 {
+		t.Errorf("read: got %d, want 0", got)
 	}
 }

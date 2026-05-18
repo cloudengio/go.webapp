@@ -222,6 +222,7 @@ const pebbleConfig = `
             "authz": 3,
             "order": 5
         },
+		"keyAlgorithm": "ecdsa",
         "profiles": {
             "default": {
                 "description": "The profile you know and love",

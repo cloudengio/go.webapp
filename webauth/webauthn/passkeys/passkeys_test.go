@@ -209,7 +209,13 @@ func TestHandler_FinishRegistration(t *testing.T) {
 	tmpKey, _, _ := db.Registering(user, sessionData)
 
 	req := httptest.NewRequest("POST", "/register/finish", nil)
-	req.AddCookie(&http.Cookie{Name: string(passkeys.RegistrationCookie), Value: tmpKey})
+	req.AddCookie(&http.Cookie{
+		Name:     string(passkeys.RegistrationCookie),
+		Value:    tmpKey,
+		Secure:   true,
+		HttpOnly: true,
+		SameSite: http.SameSiteStrictMode,
+	})
 
 	rec := httptest.NewRecorder()
 	handler.FinishRegistration(rec, req)

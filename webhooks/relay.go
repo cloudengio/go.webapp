@@ -166,7 +166,9 @@ func (r *Relay) ServeWebhook(w http.ResponseWriter, req *http.Request) {
 	payload, status := r.validator(req)
 	if status != http.StatusOK {
 		http.Error(w, "Invalid payload", status)
-		r.opts.deniedCounter(req.Context())
+		if status >= http.StatusBadRequest && status < http.StatusInternalServerError {
+			r.opts.deniedCounter(req.Context())
+		}
 		return
 	}
 	select {

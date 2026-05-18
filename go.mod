@@ -3,12 +3,12 @@ module cloudeng.io/webapp
 go 1.26
 
 require (
-	cloudeng.io/cmdutil v0.0.0-20260513235126-b955eaa2c893
+	cloudeng.io/cmdutil v0.0.0-20260514201128-26a831c78d62
 	cloudeng.io/errors v0.0.14-0.20260312171538-61fcde6ce278
-	cloudeng.io/file v0.0.0-20260513235126-b955eaa2c893
+	cloudeng.io/file v0.0.0-20260518190654-a057386f3a79
 	cloudeng.io/io v0.0.0-20260513235126-b955eaa2c893
-	cloudeng.io/logging v0.0.0-20260513235126-b955eaa2c893
-	cloudeng.io/net v0.0.0-20260513235126-b955eaa2c893
+	cloudeng.io/logging v0.0.0-20260518190654-a057386f3a79
+	cloudeng.io/net v0.0.0-20260518190654-a057386f3a79
 	cloudeng.io/os v0.0.0-20260518190654-a057386f3a79
 	cloudeng.io/sync v0.0.11
 	github.com/chromedp/cdproto v0.0.0-20260427013145-5737772c319b
@@ -40,7 +40,6 @@ require (
 	github.com/golang-jwt/jwt/v5 v5.3.1 // indirect
 	github.com/google/go-tpm v0.9.8 // indirect
 	github.com/google/uuid v1.6.0 // indirect
-	github.com/kr/text v0.2.0 // indirect
 	github.com/lestrrat-go/blackmagic v1.0.4 // indirect
 	github.com/lestrrat-go/dsig v1.3.0 // indirect
 	github.com/lestrrat-go/dsig-secp256k1 v1.0.0 // indirect
