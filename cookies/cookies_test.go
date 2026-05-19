@@ -26,6 +26,8 @@ func TestSet(t *testing.T) {
 		Value:    "custom-value",
 		Path:     "/custom",
 		SameSite: http.SameSiteLaxMode,
+		Secure:   true,
+		HttpOnly: true,
 	}
 
 	testCookieName.Set(rec, customCookie)
@@ -56,7 +58,13 @@ func TestSet(t *testing.T) {
 func TestRead(t *testing.T) {
 	// Case 1: Cookie exists.
 	req := httptest.NewRequest("GET", "/", nil)
-	req.AddCookie(&http.Cookie{Name: string(testCookieName), Value: testValue})
+	req.AddCookie(&http.Cookie{
+		Name:     string(testCookieName),
+		Value:    testValue,
+		Secure:   true,
+		HttpOnly: true,
+		SameSite: http.SameSiteStrictMode,
+	})
 
 	val, ok := testCookieName.Read(req)
 	if !ok {
@@ -81,7 +89,13 @@ func TestReadAndClear(t *testing.T) {
 	// Case 1: Cookie exists.
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest("GET", "/", nil)
-	req.AddCookie(&http.Cookie{Name: string(testCookieName), Value: testValue})
+	req.AddCookie(&http.Cookie{
+		Name:     string(testCookieName),
+		Value:    testValue,
+		Secure:   true,
+		HttpOnly: true,
+		SameSite: http.SameSiteStrictMode,
+	})
 
 	val, ok := testCookieName.ReadAndClear(rec, req)
 	if !ok {
@@ -125,9 +139,12 @@ func TestReadAndClear(t *testing.T) {
 func TestSecure_Set(t *testing.T) {
 	rec := httptest.NewRecorder()
 	ck := &http.Cookie{
-		Value:  testValue,
-		Domain: "example.com",
-		Path:   "/",
+		Value:    testValue,
+		Domain:   "example.com",
+		Path:     "/",
+		Secure:   true,
+		HttpOnly: true,
+		SameSite: http.SameSiteStrictMode,
 	}
 
 	secureCookieName.Set(rec, ck)
@@ -164,7 +181,13 @@ func TestSecure_Set(t *testing.T) {
 func TestSecure_Read(t *testing.T) {
 	// Case 1: Cookie exists.
 	req := httptest.NewRequest("GET", "/", nil)
-	req.AddCookie(&http.Cookie{Name: string(secureCookieName), Value: testValue})
+	req.AddCookie(&http.Cookie{
+		Name:     string(secureCookieName),
+		Value:    testValue,
+		Secure:   true,
+		HttpOnly: true,
+		SameSite: http.SameSiteStrictMode,
+	})
 
 	val, ok := secureCookieName.Read(req)
 	if !ok {
@@ -189,7 +212,13 @@ func TestSecure_ReadAndClear(t *testing.T) {
 	// Case 1: Cookie exists.
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest("GET", "/", nil)
-	req.AddCookie(&http.Cookie{Name: string(secureCookieName), Value: testValue})
+	req.AddCookie(&http.Cookie{
+		Name:     string(secureCookieName),
+		Value:    testValue,
+		Secure:   true,
+		HttpOnly: true,
+		SameSite: http.SameSiteStrictMode,
+	})
 
 	val, ok := secureCookieName.ReadAndClear(rec, req)
 	if !ok {

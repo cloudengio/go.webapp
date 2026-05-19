@@ -75,6 +75,18 @@ Option is a function that configures the Relay.
 ### Functions
 
 ```go
+func WithCounters(deniedCounter, relayedCounter, readCounter webapp.CounterInc) Option
+```
+WithCounters sets the counters for the Relay. If any of the counters are
+nil, they will be set to a no-op counter that does nothing when called.
+deniedCounter is incremented when a request is denied because the payload
+fails validation, e.g. due to an invalid signature. relayedCounter is
+incremented when a payload is successfully relayed to the FIFO. readCounter
+is incremented when a payload is successfully read from the FIFO and sent to
+a client.
+
+
+```go
 func WithLogger(logger *slog.Logger) Option
 ```
 WithLogger sets the logger for the Relay.

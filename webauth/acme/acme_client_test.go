@@ -58,7 +58,7 @@ func TestACMEClient_FullFlow(t *testing.T) {
 	stripPort := certcache.WrapHostPolicyNoPort(mgr.HostPolicy)
 	mgr.HostPolicy = stripPort
 
-	tl := slog.New(slog.NewJSONHandler(logging.NewJSONFormatter(os.Stderr, "", "  "), &slog.HandlerOptions{AddSource: true}))
+	tl := slog.New(slog.NewJSONHandler(logging.NewJSONFormatter(os.Stderr, "", "  "), &slog.HandlerOptions{AddSource: false}))
 	mgr.Client.HTTPClient, err = webapp.NewHTTPClient(ctx,
 		webapp.WithCustomCAPEMFile(filepath.Join(pebbleTestDir, pebbleCfg.CAFile)),
 		webapp.WithTracingTransport(

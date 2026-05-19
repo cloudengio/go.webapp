@@ -33,7 +33,7 @@ func readAndClearCookie(rw http.ResponseWriter, r *http.Request, name string) (s
 // Set sets the supplied cookie with the name of the cookie specified
 // in the receiver. It overwrites the Name in ck.
 // All other fields in ck are used as specified.
-func (c T) Set(rw http.ResponseWriter, ck *http.Cookie) {
+func (c T) Set(rw http.ResponseWriter, ck *http.Cookie) { //nolint:gosec // G124: false positive
 	ck.Name = string(c)
 	http.SetCookie(rw, ck)
 }
@@ -108,9 +108,12 @@ func (d ScopeAndDuration) SetDefaults(domain, path string, duration time.Duratio
 // scope and duration settings from the ScopeAndDuration receiver.
 func (d ScopeAndDuration) Cookie(value string) *http.Cookie {
 	return &http.Cookie{
-		Domain:  d.Domain,
-		Path:    d.Path,
-		Expires: time.Now().Add(d.Duration),
-		Value:   value,
+		Domain:   d.Domain,
+		Path:     d.Path,
+		Expires:  time.Now().Add(d.Duration),
+		Value:    value,
+		Secure:   true,
+		HttpOnly: true,
+		SameSite: http.SameSiteStrictMode,
 	}
 }
