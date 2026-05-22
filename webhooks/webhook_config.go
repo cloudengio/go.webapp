@@ -10,12 +10,7 @@ import (
 
 	"cloudeng.io/cmdutil/cmdyaml"
 	"cloudeng.io/cmdutil/keys"
-	"cloudeng.io/cmdutil/registry"
 	"gopkg.in/yaml.v3"
-)
-
-var (
-	ServiceSpecificParserRegistry = registry.T[func(c Config) (any, error)]{}
 )
 
 // Config represents the configuration for a webhook server.
@@ -71,7 +66,7 @@ func (c Config) Options() []Option {
 // UnmarshalYAML.
 type SecretsConfig struct {
 	User        string         `yaml:"user" doc:"user to associate with a key id if the KeySpec does not specify a user"`
-	Secrets     []string       `yaml:"secrets" doc:"list of KeySpecs specifying the secrets to use for validating webhooks in cloudeng.io.cmdutil/keys.KeySpec format, i.e. id[user] or id. If no user is specified in the KeySpec the value is treated as an id."`
+	Secrets     []string       `yaml:"secrets" doc:"list of KeySpecs specifying the secrets to use for validating webhooks in cloudeng.io.cmdutil/keys.KeySpec format, i.e. id[user] or id. If no user is specified, the to-level User field is used. If the User field is not set then the value is used as the id with no user value."`
 	SecretSpecs []keys.KeySpec `yaml:"-" doc:"parsed KeySpecs from the Secrets field"`
 }
 
