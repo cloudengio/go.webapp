@@ -171,6 +171,103 @@ func TestTokensFromContext(t *testing.T) {
 	})
 }
 
+// TestConfigUnmarshalDefaults verifies that UnmarshalYAML fills in defaults
+// when max_queue_size and max_payload_size are absent from the YAML source —
+// i.e. without requiring a prior MarshalYAML roundtrip.
+func TestConfigUnmarshalDefaults(t *testing.T) {
+	const input = `
+delivery_path: "/hook"
+service: "github"
+`
+	var cfg webhooks.Config
+	if err := yaml.Unmarshal([]byte(input), &cfg); err != nil {
+		t.Fatalf("Unmarshal: %v", err)
+	}
+	if cfg.MaxQueueSize != webhooks.DefaultQueueSize {
+		t.Errorf("MaxQueueSize: got %d, want %d", cfg.MaxQueueSize, webhooks.DefaultQueueSize)
+	}
+	if cfg.MaxPayloadSize != webhooks.DefaultPayloadLimit {
+		t.Errorf("MaxPayloadSize: got %d, want %d", cfg.MaxPayloadSize, webhooks.DefaultPayloadLimit)
+	}
+}
+
+// TestConfigUnmarshalNamedFields verifies that UnmarshalYAML correctly assigns
+// all decoded values back to the receiver. A missing *c = Config(cc) assignment
+// would leave every field at its zero value while returning nil.
+func TestConfigUnmarshalNamedFields(t *testing.T) {
+	const input = `
+delivery_path: "/hook"
+relay_path: "/relay"
+service: "github"
+max_queue_size: 5
+max_payload_size: 512
+`
+	var cfg webhooks.Config
+	if err := yaml.Unmarshal([]byte(input), &cfg); err != nil {
+		t.Fatalf("Unmarshal: %v", err)
+	}
+	if cfg.DeliveryPath != "/hook" {
+		t.Errorf("DeliveryPath: got %q, want %q", cfg.DeliveryPath, "/hook")
+	}
+	if cfg.RelayPath != "/relay" {
+		t.Errorf("RelayPath: got %q, want %q", cfg.RelayPath, "/relay")
+	}
+	if cfg.Service != "github" {
+		t.Errorf("Service: got %q, want %q", cfg.Service, "github")
+	}
+	if cfg.MaxQueueSize != 5 {
+		t.Errorf("MaxQueueSize: got %d, want 5", cfg.MaxQueueSize)
+	}
+	if cfg.MaxPayloadSize != 512 {
+		t.Errorf("MaxPayloadSize: got %d, want 512", cfg.MaxPayloadSize)
+	}
+}
+
+// TestConfigInOuterStruct verifies that Config's UnmarshalYAML works correctly
+// when Config is used as a named field inside an outer struct that also has its
+// own fields. This catches the case where yaml.v3's double-inline (an inline
+// struct that itself contains an inline custom-unmarshaler) breaks silently.
+func TestConfigInOuterStruct(t *testing.T) {
+	type relayEntry struct {
+		Config    webhooks.Config `yaml:"config"`
+		ExtraFlag bool            `yaml:"extra_flag"`
+	}
+
+	const input = `
+config:
+  delivery_path: "/hook"
+  relay_path: "/relay"
+  service: "github"
+  user: "alice"
+  secrets:
+    - my-secret
+extra_flag: true
+`
+	var entry relayEntry
+	if err := yaml.Unmarshal([]byte(input), &entry); err != nil {
+		t.Fatalf("Unmarshal: %v", err)
+	}
+	if entry.Config.Service != "github" {
+		t.Errorf("Config.Service: got %q, want %q", entry.Config.Service, "github")
+	}
+	if entry.Config.DeliveryPath != "/hook" {
+		t.Errorf("Config.DeliveryPath: got %q, want %q", entry.Config.DeliveryPath, "/hook")
+	}
+	if !entry.ExtraFlag {
+		t.Errorf("ExtraFlag: got false, want true")
+	}
+	sc, err := webhooks.ParseSpecific[webhooks.SecretsConfig](entry.Config)
+	if err != nil {
+		t.Fatalf("ParseSpecific: %v", err)
+	}
+	if sc.User != "alice" {
+		t.Errorf("User: got %q, want %q", sc.User, "alice")
+	}
+	if len(sc.SecretSpecs) != 1 || sc.SecretSpecs[0].ID != "my-secret" {
+		t.Errorf("SecretSpecs: got %v, want [{ID:my-secret}]", sc.SecretSpecs)
+	}
+}
+
 func TestConfigMarshalYAML_ExplicitValues(t *testing.T) {
 	cfg := webhooks.Config{
 		DeliveryPath:   "/hook",

@@ -17,10 +17,38 @@ import (
 type Config struct {
 	DeliveryPath   string            `yaml:"delivery_path" doc:"path to receive webhooks on"`
 	RelayPath      string            `yaml:"relay_path" doc:"path to read relay payloads from"`
-	Service        string            `yaml:"service" doc:"type of webhook to serve, e.g. github, etc."`
 	MaxPayloadSize cmdyaml.ByteSize  `yaml:"max_payload_size" doc:"maximum allowed payload size for incoming webhook requests in bytes, e.g. 1048576 for 1MB"`
 	MaxQueueSize   int               `yaml:"max_queue_size" doc:"maximum number of payloads to hold in the queue for processing, leave empty for default"`
+	Service        string            `yaml:"service" doc:"type of webhook to serve, e.g. github, etc."`
 	Specific       *cmdyaml.Deferred `yaml:",inline" doc:"additional details about the webhook specific to the type of webhook being served, leave empty for default"`
+}
+
+func (c *Config) UnmarshalYAML(node *yaml.Node) error {
+	type config Config
+	var cc config
+	if err := node.Decode(&cc); err != nil {
+		return err
+	}
+	if cc.MaxQueueSize == 0 {
+		cc.MaxQueueSize = DefaultQueueSize
+	}
+	if cc.MaxPayloadSize == 0 {
+		cc.MaxPayloadSize = cmdyaml.ByteSize(DefaultPayloadLimit)
+	}
+	*c = Config(cc)
+	return nil
+}
+
+func (c Config) MarshalYAML() (any, error) {
+	type config Config
+	cc := config(c)
+	if cc.MaxQueueSize == 0 {
+		cc.MaxQueueSize = DefaultQueueSize
+	}
+	if cc.MaxPayloadSize == 0 {
+		cc.MaxPayloadSize = cmdyaml.ByteSize(DefaultPayloadLimit)
+	}
+	return cc, nil
 }
 
 func (c Config) Options() []Option {
@@ -31,18 +59,6 @@ func (c Config) Options() []Option {
 	return opts
 }
 
-func (c Config) MarshalYAML() (interface{}, error) {
-	type config Config
-	cc := config(c)
-	if cc.MaxQueueSize == 0 {
-		cc.MaxQueueSize = DefaultQueueSize
-	}
-	if cc.MaxPayloadSize == 0 {
-		cc.MaxPayloadSize = DefaultPayloadLimit
-	}
-	return cc, nil
-}
-
 // SecretsConfig represents a common configuration that uses
 // cloudeng.io/cmdutil/keys.KeySpec to specify the secrets to be used for
 // validating webhooks. User and Secrets fields can be unmarshaled from YAML,
@@ -50,7 +66,7 @@ func (c Config) MarshalYAML() (interface{}, error) {
 // UnmarshalYAML.
 type SecretsConfig struct {
 	User        string         `yaml:"user" doc:"user to associate with a key id if the KeySpec does not specify a user"`
-	Secrets     []string       `yaml:"secrets" doc:"list of KeySpecs specifying the secrets to use for validating webhooks in cloudeng.io.cmdutil/keys.KeySpec format, i.e. id[user] or id. If not user is specified in the KeySpec, the user field will be used."`
+	Secrets     []string       `yaml:"secrets" doc:"list of KeySpecs specifying the secrets to use for validating webhooks in cloudeng.io.cmdutil/keys.KeySpec format, i.e. id[user] or id. If no user is specified, the to-level User field is used. If the User field is not set then the value is used as the id with no user value."`
 	SecretSpecs []keys.KeySpec `yaml:"-" doc:"parsed KeySpecs from the Secrets field"`
 }
 
