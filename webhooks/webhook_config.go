@@ -127,7 +127,7 @@ func ParseSpecific[T any](c Config) (T, error) {
 	}
 	cfg, err := cmdyaml.ParseDeferred[T](c.ServiceSpecific)
 	if err != nil {
-		return cfg, fmt.Errorf("failed to parse github webhook config: %w", err)
+		return cfg, fmt.Errorf("failed to parse %v webhook config: %w", c.Service, err)
 	}
 	return cfg, nil
 }
