@@ -171,6 +171,10 @@ func (r *Relay) ServeWebhook(w http.ResponseWriter, req *http.Request) {
 		}
 		return
 	}
+	if err := req.Context().Err(); err != nil {
+		r.opts.logger.Info("ServeWebhook: context already cancelled before send", "err", err)
+		return
+	}
 	select {
 	case r.fifo.In() <- payload:
 		r.opts.logger.Info("ServeWebhook: received payload and sent to FIFO", "size", len(payload))

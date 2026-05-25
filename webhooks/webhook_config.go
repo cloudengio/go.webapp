@@ -5,6 +5,7 @@
 package webhooks
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 
@@ -15,18 +16,26 @@ import (
 
 // Config represents the configuration for a webhook server.
 type Config struct {
-	DeliveryPath   string            `yaml:"delivery_path" doc:"path to receive webhooks on"`
-	RelayPath      string            `yaml:"relay_path" doc:"path to read relay payloads from"`
-	MaxPayloadSize cmdyaml.ByteSize  `yaml:"max_payload_size" doc:"maximum allowed payload size for incoming webhook requests in bytes, e.g. 1048576 for 1MB"`
-	MaxQueueSize   int               `yaml:"max_queue_size" doc:"maximum number of payloads to hold in the queue for processing, leave empty for default"`
-	Service        string            `yaml:"service" doc:"type of webhook to serve, e.g. github, etc."`
-	Specific       *cmdyaml.Deferred `yaml:",inline" doc:"additional details about the webhook specific to the type of webhook being served, leave empty for default"`
+	DeliveryPath    string            `yaml:"delivery_path" doc:"path to receive webhooks on"`
+	RelayPath       string            `yaml:"relay_path" doc:"path to read relay payloads from"`
+	MaxPayloadSize  cmdyaml.ByteSize  `yaml:"max_payload_size" doc:"maximum allowed payload size for incoming webhook requests in bytes, e.g. 1048576 for 1MB"`
+	MaxQueueSize    int               `yaml:"max_queue_size" doc:"maximum number of payloads to hold in the queue for processing, leave empty for default"`
+	Service         string            `yaml:"service" doc:"type of webhook to serve, e.g. github, etc."`
+	ServiceSpecific *cmdyaml.Deferred `yaml:"service_specific" doc:"additional details specific to the type of webhook being served, leave empty for default"`
 }
 
 func (c *Config) UnmarshalYAML(node *yaml.Node) error {
 	type config Config
 	var cc config
-	if err := node.Decode(&cc); err != nil {
+	// Re-encode the node so we can run a strict decoder over it, catching
+	// unknown field names (e.g. "relay" instead of "relay_path").
+	data, err := yaml.Marshal(node)
+	if err != nil {
+		return err
+	}
+	dec := yaml.NewDecoder(bytes.NewReader(data))
+	dec.KnownFields(true)
+	if err := dec.Decode(&cc); err != nil {
 		return err
 	}
 	if cc.MaxQueueSize == 0 {
@@ -113,12 +122,12 @@ var (
 
 func ParseSpecific[T any](c Config) (T, error) {
 	var cfg T
-	if c.Specific == nil {
+	if c.ServiceSpecific == nil {
 		return cfg, ErrWrongServiceSpecificConfig
 	}
-	cfg, err := cmdyaml.ParseDeferred[T](c.Specific)
+	cfg, err := cmdyaml.ParseDeferred[T](c.ServiceSpecific)
 	if err != nil {
-		return cfg, fmt.Errorf("failed to parse github webhook config: %w", err)
+		return cfg, fmt.Errorf("failed to parse %v webhook config: %w", c.Service, err)
 	}
 	return cfg, nil
 }

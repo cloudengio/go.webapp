@@ -42,12 +42,12 @@ func ParseSpecific[T any](c Config) (T, error)
 ### Type Config
 ```go
 type Config struct {
-	DeliveryPath   string            `yaml:"delivery_path" doc:"path to receive webhooks on"`
-	RelayPath      string            `yaml:"relay_path" doc:"path to read relay payloads from"`
-	MaxPayloadSize cmdyaml.ByteSize  `yaml:"max_payload_size" doc:"maximum allowed payload size for incoming webhook requests in bytes, e.g. 1048576 for 1MB"`
-	MaxQueueSize   int               `yaml:"max_queue_size" doc:"maximum number of payloads to hold in the queue for processing, leave empty for default"`
-	Service        string            `yaml:"service" doc:"type of webhook to serve, e.g. github, etc."`
-	Specific       *cmdyaml.Deferred `yaml:",inline" doc:"additional details about the webhook specific to the type of webhook being served, leave empty for default"`
+	DeliveryPath    string            `yaml:"delivery_path" doc:"path to receive webhooks on"`
+	RelayPath       string            `yaml:"relay_path" doc:"path to read relay payloads from"`
+	MaxPayloadSize  cmdyaml.ByteSize  `yaml:"max_payload_size" doc:"maximum allowed payload size for incoming webhook requests in bytes, e.g. 1048576 for 1MB"`
+	MaxQueueSize    int               `yaml:"max_queue_size" doc:"maximum number of payloads to hold in the queue for processing, leave empty for default"`
+	Service         string            `yaml:"service" doc:"type of webhook to serve, e.g. github, etc."`
+	ServiceSpecific *cmdyaml.Deferred `yaml:"service_specific" doc:"additional details specific to the type of webhook being served, leave empty for default"`
 }
 ```
 Config represents the configuration for a webhook server.
