@@ -8,6 +8,7 @@ import (
 	"context"
 	"testing"
 
+	"cloudeng.io/cmdutil/cmdyaml"
 	"cloudeng.io/cmdutil/keys"
 	"cloudeng.io/webapp/webhooks"
 	"gopkg.in/yaml.v3"
@@ -17,11 +18,12 @@ const githubConfigYAML = `
 delivery_path: "/webhook"
 relay_path: "/relay"
 service: "github"
-user: "myuser"
 max_payload_size: 1MiB
-secrets:
-  - "mytoken"
-  - "othertoken[otheruser]"
+service_specific:
+  user: "myuser"
+  secrets:
+    - "mytoken"
+    - "othertoken[otheruser]"
 `
 
 func TestConfigSecretsConfig(t *testing.T) {
@@ -70,10 +72,10 @@ func TestConfigSecretsConfig(t *testing.T) {
 }
 
 func TestConfigNilSpecific(t *testing.T) {
-	cfg := webhooks.Config{Service: "github", Specific: nil}
+	cfg := webhooks.Config{Service: "github", ServiceSpecific: nil}
 	_, err := webhooks.ParseSpecific[webhooks.SecretsConfig](cfg)
 	if err == nil {
-		t.Fatalf("expected error for nil Specific")
+		t.Fatalf("expected error for nil ServiceSpecific")
 	}
 }
 
@@ -238,9 +240,10 @@ config:
   delivery_path: "/hook"
   relay_path: "/relay"
   service: "github"
-  user: "alice"
-  secrets:
-    - my-secret
+  service_specific:
+    user: "alice"
+    secrets:
+      - my-secret
 extra_flag: true
 `
 	var entry relayEntry
@@ -266,6 +269,82 @@ extra_flag: true
 	if len(sc.SecretSpecs) != 1 || sc.SecretSpecs[0].ID != "my-secret" {
 		t.Errorf("SecretSpecs: got %v, want [{ID:my-secret}]", sc.SecretSpecs)
 	}
+}
+
+// TestConfigStrictParsing verifies strict-mode behaviour for webhooks.Config.
+// Because UnmarshalYAML uses a strict decoder internally, unknown field names
+// are always rejected — even outside of cmdyaml.ParseConfigStringStrict.
+// Service-specific YAML must live under the service_specific: key.
+func TestConfigStrictParsing(t *testing.T) {
+	t.Run("valid config no error", func(t *testing.T) {
+		const input = `
+delivery_path: "/hook"
+relay_path: "/relay"
+service: "github"
+`
+		var cfg webhooks.Config
+		if err := cmdyaml.ParseConfigStringStrict(input, &cfg); err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+	})
+
+	t.Run("service_specific block accepted", func(t *testing.T) {
+		const input = `
+delivery_path: "/hook"
+service: "github"
+service_specific:
+  user: "alice"
+  secrets:
+    - "tok"
+`
+		var cfg webhooks.Config
+		if err := cmdyaml.ParseConfigStringStrict(input, &cfg); err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if cfg.ServiceSpecific == nil {
+			t.Error("ServiceSpecific should be non-nil")
+		}
+	})
+
+	t.Run("wrong type for max_queue_size", func(t *testing.T) {
+		const input = `delivery_path: "/hook"
+max_queue_size: "not-a-number"
+`
+		var cfg webhooks.Config
+		if err := cmdyaml.ParseConfigStringStrict(input, &cfg); err == nil {
+			t.Fatal("expected error for wrong type, got nil")
+		}
+	})
+
+	t.Run("wrong type for max_payload_size", func(t *testing.T) {
+		const input = `delivery_path: "/hook"
+max_payload_size: [1, 2, 3]
+`
+		var cfg webhooks.Config
+		if err := cmdyaml.ParseConfigStringStrict(input, &cfg); err == nil {
+			t.Fatal("expected error for wrong type, got nil")
+		}
+	})
+
+	t.Run("unknown field is rejected", func(t *testing.T) {
+		const input = `delivery_path: "/hook"
+completely_unknown_key: "value"
+`
+		var cfg webhooks.Config
+		if err := cmdyaml.ParseConfigStringStrict(input, &cfg); err == nil {
+			t.Fatal("expected error for unknown field, got nil")
+		}
+	})
+
+	t.Run("relay typo is rejected", func(t *testing.T) {
+		const input = `delivery_path: "/hook"
+relay: "/path"
+`
+		var cfg webhooks.Config
+		if err := yaml.Unmarshal([]byte(input), &cfg); err == nil {
+			t.Fatal("expected error for unknown field 'relay', got nil")
+		}
+	})
 }
 
 func TestConfigMarshalYAML_ExplicitValues(t *testing.T) {
