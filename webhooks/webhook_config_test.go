@@ -55,14 +55,13 @@ func TestConfigSecretsConfig(t *testing.T) {
 		"myuser":    "mytoken",
 		"otheruser": "othertoken",
 	}
+	got := make(map[string]string)
 	for _, ks := range sc.SecretSpecs {
-		wantID, ok := want[ks.User]
-		if !ok {
-			t.Errorf("unexpected user %q in SecretSpecs", ks.User)
-			continue
-		}
-		if ks.ID != wantID {
-			t.Errorf("SecretSpecs[user=%q].ID: got %q, want %q", ks.User, ks.ID, wantID)
+		got[ks.User] = ks.ID
+	}
+	for k, v := range want {
+		if got[k] != v {
+			t.Errorf("SecretSpecs: for user %q got ID %q, want %q", k, got[k], v)
 		}
 	}
 }

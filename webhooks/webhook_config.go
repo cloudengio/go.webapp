@@ -81,8 +81,8 @@ func (c Config) Options() []Option {
 //	bob@example.com:
 //	  - other-secret
 type SecretsConfig struct {
-	Secrets     map[string][]string `yaml:"-"`
-	SecretSpecs []keys.KeySpec      `yaml:"-"`
+	Secrets     map[string][]string `yaml:"-" doc:"map of users to lists of secret IDs, where users are service specific (e.g. GitHub usernames or email addresses) and secret IDs identify entries in the key store"`
+	SecretSpecs []keys.KeySpec      `yaml:"-" doc:"-"`
 }
 
 func (sc *SecretsConfig) UnmarshalYAML(node *yaml.Node) error {
@@ -91,6 +91,11 @@ func (sc *SecretsConfig) UnmarshalYAML(node *yaml.Node) error {
 		return fmt.Errorf("unmarshal SecretsConfig: %v", err)
 	}
 	sc.Secrets = secrets
+	var totalSpecs int
+	for _, ids := range secrets {
+		totalSpecs += len(ids)
+	}
+	sc.SecretSpecs = make([]keys.KeySpec, 0, totalSpecs)
 	for user, ids := range secrets {
 		for _, id := range ids {
 			sc.SecretSpecs = append(sc.SecretSpecs, keys.KeySpec{User: user, ID: id})
