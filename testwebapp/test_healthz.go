@@ -1,3 +1,7 @@
+// Copyright 2025 cloudeng llc. All rights reserved.
+// Use of this source code is governed by the Apache-2.0
+// license that can be found in the LICENSE file.
+
 package testwebapp
 
 // HealthzTest can be used to validate /healthz endpoints.
@@ -33,6 +37,9 @@ func NewHealthzTest(client *http.Client, specs ...HealthzSpec) *HealthzTest {
 }
 
 func (h HealthzTest) Run(ctx context.Context) error {
+	if len(h.specs) == 0 {
+		return nil
+	}
 	var g errgroup.T
 	for _, spec := range h.specs {
 		if spec.NumHealthChecks == 0 {

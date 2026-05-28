@@ -98,6 +98,45 @@ func (h HealthzTest) Run(ctx context.Context) error
 
 
 
+### Type MetricsReporter
+```go
+type MetricsReporter func(ctx context.Context, client *http.Client, url string, expectedMetrics []string) (found, missing []string, err error)
+```
+
+
+### Type MetricsSpec
+```go
+type MetricsSpec struct {
+	URL         string   `yaml:"url,omitempty"`
+	MetricNames []string `yaml:"names,omitempty"`
+}
+```
+
+
+### Type MetricsTest
+```go
+type MetricsTest struct {
+	// contains filtered or unexported fields
+}
+```
+
+### Functions
+
+```go
+func NewMetricsTest(client *http.Client, reporter MetricsReporter, specs ...MetricsSpec) *MetricsTest
+```
+
+
+
+### Methods
+
+```go
+func (m MetricsTest) Run(ctx context.Context) error
+```
+
+
+
+
 ### Type RedirectSpec
 ```go
 type RedirectSpec struct {
