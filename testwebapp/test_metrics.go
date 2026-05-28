@@ -13,6 +13,7 @@ import (
 	"cloudeng.io/sync/errgroup"
 )
 
+// MetricsTest can be used to validate /metrics endpoints.
 type MetricsTest struct {
 	client   *http.Client
 	reporter MetricsReporter
@@ -38,6 +39,9 @@ func (m MetricsTest) Run(ctx context.Context) error {
 	if len(m.specs) == 0 {
 		return nil
 	}
+	if m.reporter == nil {
+		return fmt.Errorf("metrics reporter is nil")
+	}
 	var g errgroup.T
 	for _, metric := range m.specs {
 		g.Go(func() error {
@@ -47,7 +51,7 @@ func (m MetricsTest) Run(ctx context.Context) error {
 			}
 			ctxlog.Info(ctx, "found expected metrics", "url", metric.URL, "metrics", found)
 			if len(missing) > 0 {
-				return fmt.Errorf("some expected metrics were missing: %v", missing)
+				return fmt.Errorf("some expected metrics for url %v were missing: %v", metric.URL, missing)
 			}
 			return nil
 		})
