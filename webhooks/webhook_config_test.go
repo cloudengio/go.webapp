@@ -20,10 +20,10 @@ relay_path: "/relay"
 service: "github"
 max_payload_size: 1MiB
 service_specific:
-  user: "myuser"
-  secrets:
-    - "mytoken"
-    - "othertoken[otheruser]"
+  myuser:
+    - mytoken
+  otheruser:
+    - othertoken
 `
 
 func TestConfigSecretsConfig(t *testing.T) {
@@ -48,27 +48,23 @@ func TestConfigSecretsConfig(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ParseSpecific: %v", err)
 	}
-	if sc.User != "myuser" {
-		t.Errorf("User: got %q, want %q", sc.User, "myuser")
-	}
 	if got, want := len(sc.SecretSpecs), 2; got != want {
 		t.Fatalf("SecretSpecs: got %d, want %d", got, want)
 	}
-	// "mytoken" has no user in the spec, so the top-level User is applied.
-	if sc.SecretSpecs[0].ID != "mytoken" {
-		t.Errorf("SecretSpecs[0].ID: got %q, want %q", sc.SecretSpecs[0].ID, "mytoken")
+	want := map[string]string{
+		"myuser":    "mytoken",
+		"otheruser": "othertoken",
 	}
-	if sc.SecretSpecs[0].User != "myuser" {
-		t.Errorf("SecretSpecs[0].User: got %q, want %q", sc.SecretSpecs[0].User, "myuser")
+	for _, ks := range sc.SecretSpecs {
+		wantID, ok := want[ks.User]
+		if !ok {
+			t.Errorf("unexpected user %q in SecretSpecs", ks.User)
+			continue
+		}
+		if ks.ID != wantID {
+			t.Errorf("SecretSpecs[user=%q].ID: got %q, want %q", ks.User, ks.ID, wantID)
+		}
 	}
-	// "othertoken[otheruser]" has an explicit user.
-	if sc.SecretSpecs[1].ID != "othertoken" {
-		t.Errorf("SecretSpecs[1].ID: got %q, want %q", sc.SecretSpecs[1].ID, "othertoken")
-	}
-	if sc.SecretSpecs[1].User != "otheruser" {
-		t.Errorf("SecretSpecs[1].User: got %q, want %q", sc.SecretSpecs[1].User, "otheruser")
-	}
-
 }
 
 func TestConfigNilSpecific(t *testing.T) {
@@ -241,8 +237,7 @@ config:
   relay_path: "/relay"
   service: "github"
   service_specific:
-    user: "alice"
-    secrets:
+    alice:
       - my-secret
 extra_flag: true
 `
@@ -263,11 +258,8 @@ extra_flag: true
 	if err != nil {
 		t.Fatalf("ParseSpecific: %v", err)
 	}
-	if sc.User != "alice" {
-		t.Errorf("User: got %q, want %q", sc.User, "alice")
-	}
-	if len(sc.SecretSpecs) != 1 || sc.SecretSpecs[0].ID != "my-secret" {
-		t.Errorf("SecretSpecs: got %v, want [{ID:my-secret}]", sc.SecretSpecs)
+	if len(sc.SecretSpecs) != 1 || sc.SecretSpecs[0].ID != "my-secret" || sc.SecretSpecs[0].User != "alice" {
+		t.Errorf("SecretSpecs: got %v, want [{User:alice ID:my-secret}]", sc.SecretSpecs)
 	}
 }
 
@@ -293,9 +285,8 @@ service: "github"
 delivery_path: "/hook"
 service: "github"
 service_specific:
-  user: "alice"
-  secrets:
-    - "tok"
+  alice:
+    - tok
 `
 		var cfg webhooks.Config
 		if err := cmdyaml.ParseConfigStringStrict(input, &cfg); err != nil {
