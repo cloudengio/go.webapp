@@ -119,6 +119,7 @@ type MetricsTest struct {
 	// contains filtered or unexported fields
 }
 ```
+MetricsTest can be used to validate /metrics endpoints.
 
 ### Functions
 
