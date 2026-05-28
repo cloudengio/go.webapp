@@ -6,6 +6,7 @@ package webhooks_test
 
 import (
 	"context"
+	"slices"
 	"testing"
 
 	"cloudeng.io/cmdutil/cmdyaml"
@@ -358,4 +359,116 @@ func TestConfigMarshalYAML_ExplicitValues(t *testing.T) {
 	if got.MaxPayloadSize != 512 {
 		t.Errorf("MaxPayloadSize: got %d, want 512", got.MaxPayloadSize)
 	}
+}
+
+// TestSecretsConfigMarshalYAML covers the three MarshalYAML paths:
+//  1. Secrets map set (populated by UnmarshalYAML): marshal returns that map.
+//  2. Only SecretSpecs set (constructed programmatically): marshal builds the map from specs.
+//  3. Both nil (zero value): marshal returns an empty map.
+//
+// Each case is also round-tripped through yaml.Unmarshal to verify the output
+// is valid and decodes back to equivalent SecretSpecs.
+func TestSecretsConfigMarshalYAML(t *testing.T) {
+	sortSpecs := func(specs []keys.KeySpec) []keys.KeySpec {
+		s := append([]keys.KeySpec(nil), specs...)
+		slices.SortFunc(s, func(a, b keys.KeySpec) int {
+			if a.User != b.User {
+				if a.User < b.User {
+					return -1
+				}
+				return 1
+			}
+			if a.ID < b.ID {
+				return -1
+			}
+			if a.ID > b.ID {
+				return 1
+			}
+			return 0
+		})
+		return s
+	}
+
+	t.Run("SecretsMapSet", func(t *testing.T) {
+		// Populate via unmarshal so sc.Secrets is set.
+		const input = `
+alice:
+  - tok1
+  - tok2
+bob:
+  - tok3
+`
+		var sc webhooks.SecretsConfig
+		if err := yaml.Unmarshal([]byte(input), &sc); err != nil {
+			t.Fatalf("Unmarshal: %v", err)
+		}
+		data, err := yaml.Marshal(sc)
+		if err != nil {
+			t.Fatalf("Marshal: %v", err)
+		}
+		var roundtrip webhooks.SecretsConfig
+		if err := yaml.Unmarshal(data, &roundtrip); err != nil {
+			t.Fatalf("Unmarshal round-trip: %v", err)
+		}
+		if got, want := len(roundtrip.SecretSpecs), 3; got != want {
+			t.Fatalf("SecretSpecs len: got %d, want %d", got, want)
+		}
+		got := sortSpecs(roundtrip.SecretSpecs)
+		want := sortSpecs([]keys.KeySpec{
+			{User: "alice", ID: "tok1"},
+			{User: "alice", ID: "tok2"},
+			{User: "bob", ID: "tok3"},
+		})
+		for i := range got {
+			if got[i] != want[i] {
+				t.Errorf("SecretSpecs[%d]: got %+v, want %+v", i, got[i], want[i])
+			}
+		}
+	})
+
+	t.Run("OnlySecretSpecs", func(t *testing.T) {
+		// Programmatically constructed: Secrets is nil, SecretSpecs is set.
+		// MarshalYAML must build the map from SecretSpecs.
+		sc := webhooks.SecretsConfig{
+			SecretSpecs: []keys.KeySpec{
+				{User: "alice", ID: "tok1"},
+				{User: "alice", ID: "tok2"},
+				{User: "bob", ID: "tok3"},
+			},
+		}
+		data, err := yaml.Marshal(sc)
+		if err != nil {
+			t.Fatalf("Marshal: %v", err)
+		}
+		var roundtrip webhooks.SecretsConfig
+		if err := yaml.Unmarshal(data, &roundtrip); err != nil {
+			t.Fatalf("Unmarshal round-trip: %v", err)
+		}
+		if got, want := len(roundtrip.SecretSpecs), 3; got != want {
+			t.Fatalf("SecretSpecs len: got %d, want %d", got, want)
+		}
+		got := sortSpecs(roundtrip.SecretSpecs)
+		want := sortSpecs(sc.SecretSpecs)
+		for i := range got {
+			if got[i] != want[i] {
+				t.Errorf("SecretSpecs[%d]: got %+v, want %+v", i, got[i], want[i])
+			}
+		}
+	})
+
+	t.Run("ZeroValue", func(t *testing.T) {
+		// Both Secrets and SecretSpecs are nil: MarshalYAML returns an empty map.
+		var sc webhooks.SecretsConfig
+		data, err := yaml.Marshal(sc)
+		if err != nil {
+			t.Fatalf("Marshal: %v", err)
+		}
+		var roundtrip webhooks.SecretsConfig
+		if err := yaml.Unmarshal(data, &roundtrip); err != nil {
+			t.Fatalf("Unmarshal round-trip: %v", err)
+		}
+		if len(roundtrip.SecretSpecs) != 0 {
+			t.Errorf("SecretSpecs: got %v, want empty", roundtrip.SecretSpecs)
+		}
+	})
 }

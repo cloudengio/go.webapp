@@ -105,10 +105,18 @@ func (sc *SecretsConfig) UnmarshalYAML(node *yaml.Node) error {
 }
 
 func (sc SecretsConfig) MarshalYAML() (any, error) {
-	if sc.Secrets == nil {
+	if sc.Secrets != nil {
+		return sc.Secrets, nil
+	}
+	if sc.SecretSpecs == nil {
 		return map[string][]string{}, nil
 	}
-	return sc.Secrets, nil
+	secrets := make(map[string][]string, len(sc.SecretSpecs))
+	for _, spec := range sc.SecretSpecs {
+		secrets[spec.User] = append(secrets[spec.User], spec.ID)
+	}
+	return secrets, nil
+
 }
 
 func (sc SecretsConfig) TokensFromContext(ctx context.Context) ([]keys.Token, error) {
