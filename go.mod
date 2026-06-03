@@ -3,18 +3,18 @@ module cloudeng.io/webapp
 go 1.26
 
 require (
-	cloudeng.io/cmdutil v0.0.0-20260528213209-7516c0362b93
+	cloudeng.io/cmdutil v0.0.0-20260602205728-76c4accb8394
 	cloudeng.io/errors v0.0.14-0.20260312171538-61fcde6ce278
-	cloudeng.io/file v0.0.0-20260528213209-7516c0362b93
-	cloudeng.io/io v0.0.0-20260528213209-7516c0362b93
-	cloudeng.io/logging v0.0.0-20260528213209-7516c0362b93
-	cloudeng.io/net v0.0.0-20260528213209-7516c0362b93
-	cloudeng.io/os v0.0.0-20260528213209-7516c0362b93
+	cloudeng.io/file v0.0.0-20260602205728-76c4accb8394
+	cloudeng.io/io v0.0.0-20260602205728-76c4accb8394
+	cloudeng.io/logging v0.0.0-20260602205728-76c4accb8394
+	cloudeng.io/net v0.0.0-20260602205728-76c4accb8394
+	cloudeng.io/os v0.0.0-20260602205728-76c4accb8394
 	cloudeng.io/sync v0.0.11
 	github.com/chromedp/cdproto v0.0.0-20260427013145-5737772c319b
 	github.com/cloudengio/chromedp v0.0.0-20260505165647-6dc9039fb140
 	github.com/gaissmai/bart v0.28.0
-	github.com/go-json-experiment/json v0.0.0-20260520185125-572e7c383686
+	github.com/go-json-experiment/json v0.0.0-20260601182631-00ed12fed2a6
 	github.com/go-webauthn/webauthn v0.17.4
 	github.com/lestrrat-go/jwx/v3 v3.1.1
 	github.com/stretchr/testify v1.11.1
@@ -24,8 +24,8 @@ require (
 )
 
 require (
-	cloudeng.io/algo v0.0.0-20260528213209-7516c0362b93 // indirect
-	cloudeng.io/sys v0.0.0-20260528213209-7516c0362b93 // indirect
+	cloudeng.io/algo v0.0.0-20260602205728-76c4accb8394 // indirect
+	cloudeng.io/sys v0.0.0-20260602205728-76c4accb8394 // indirect
 	cloudeng.io/text v0.0.16-0.20260312171538-61fcde6ce278 // indirect
 	github.com/chromedp/sysutil v1.1.0 // indirect
 	github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc // indirect
@@ -40,7 +40,6 @@ require (
 	github.com/golang-jwt/jwt/v5 v5.3.1 // indirect
 	github.com/google/go-tpm v0.9.8 // indirect
 	github.com/google/uuid v1.6.0 // indirect
-	github.com/kr/pretty v0.3.1 // indirect
 	github.com/lestrrat-go/blackmagic v1.0.4 // indirect
 	github.com/lestrrat-go/dsig v1.3.0 // indirect
 	github.com/lestrrat-go/dsig-secp256k1 v1.0.0 // indirect
@@ -49,7 +48,6 @@ require (
 	github.com/lestrrat-go/option/v2 v2.0.0 // indirect
 	github.com/philhofer/fwd v1.2.0 // indirect
 	github.com/pmezard/go-difflib v1.0.1-0.20181226105442-5d4384ee4fb2 // indirect
-	github.com/rogpeppe/go-internal v1.14.1 // indirect
 	github.com/segmentio/asm v1.2.1 // indirect
 	github.com/tinylib/msgp v1.6.4 // indirect
 	github.com/valyala/fastjson v1.6.10 // indirect
@@ -57,5 +55,4 @@ require (
 	golang.org/x/sync v0.20.0 // indirect
 	golang.org/x/sys v0.45.0 // indirect
 	golang.org/x/text v0.37.0 // indirect
-	gopkg.in/check.v1 v1.0.0-20201130134442-10cb98267c6c // indirect
 )

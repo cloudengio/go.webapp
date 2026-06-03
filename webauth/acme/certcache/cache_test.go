@@ -32,6 +32,10 @@ func newMockCacheFS() *mockCacheFS {
 	}
 }
 
+func (m *mockCacheFS) ReadFile(name string) ([]byte, error) {
+	return m.ReadFileCtx(context.Background(), name)
+}
+
 func (m *mockCacheFS) ReadFileCtx(_ context.Context, name string) ([]byte, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()

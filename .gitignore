@@ -27,6 +27,7 @@ go.work.sum
 node_modules
 webapp-sample-vite
 cmd/acme/acme
+cmd/acme/extract-intermediate.sh
 cmd/webapp/webapp
 webauth/webauthn/get-ssl-certs
 webauth/webauthn/passkeys/*.pem

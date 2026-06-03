@@ -43,6 +43,7 @@ var ErrCacheMiss = autocert.ErrCacheMiss
 // StoreFS defines an interface that combines reading, writing
 // and deleting files and is used to create an acme/autocert cache.
 type StoreFS interface {
+	ReadFile(name string) ([]byte, error)
 	ReadFileCtx(ctx context.Context, name string) ([]byte, error)
 	WriteFileCtx(ctx context.Context, name string, data []byte, perm fs.FileMode) error
 	Delete(ctx context.Context, name string) error
@@ -283,6 +284,10 @@ func NewLocalStore(dir string) (StoreFS, error) {
 
 func (lc *localCache) path(name string) string {
 	return filepath.Join(lc.root, name)
+}
+
+func (lc *localCache) ReadFile(name string) ([]byte, error) {
+	return lc.ReadFileCtx(context.Background(), name)
 }
 
 // Implement autocert.StoreFS.
