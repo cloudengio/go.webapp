@@ -1,0 +1,7 @@
+ignore:
+  - id: GO-2026-5037
+    why: wait for github to update to 1.26.4
+  - id: GO-2026-5038
+    why: wait for github to update to 1.26.4
+  - id: GO-2026-5039
+    why: wait for github to update to 1.26.4

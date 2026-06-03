@@ -191,6 +191,7 @@ backing store using the specified name.
 ### Type StoreFS
 ```go
 type StoreFS interface {
+	ReadFile(name string) ([]byte, error)
 	ReadFileCtx(ctx context.Context, name string) ([]byte, error)
 	WriteFileCtx(ctx context.Context, name string, data []byte, perm fs.FileMode) error
 	Delete(ctx context.Context, name string) error

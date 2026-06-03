@@ -564,6 +564,41 @@ specified URL with the specified status code.
 
 
 
+### Type ServeWithHeaders
+```go
+type ServeWithHeaders struct {
+	// contains filtered or unexported fields
+}
+```
+ServeWithHeaders is an http.Handler that serves a file with specified
+headers.
+
+### Functions
+
+```go
+func NewServeWithHeaders(headers http.Header, fs fs.FS, filename, urlpath string) ServeWithHeaders
+```
+NewServeWithHeaders creates a new ServeWithHeaders handler.
+
+
+
+### Methods
+
+```go
+func (s ServeWithHeaders) ServeHTTP(w http.ResponseWriter, r *http.Request)
+```
+ServeHTTP serves the file with the specified headers. If the requested URL
+path does not match the handler's URL path, it responds with 404 Not Found.
+
+
+```go
+func (s ServeWithHeaders) URLPath() string
+```
+URLPath returns the URL path that this handler serves.
+
+
+
+
 ### Type TLSCertConfig
 ```go
 type TLSCertConfig struct {
