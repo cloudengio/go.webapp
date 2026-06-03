@@ -37,8 +37,11 @@ func (s ServeWithHeaders) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	for k, v := range s.headers {
-		w.Header().Set(k, v[0])
+	for k, vs := range s.headers {
+		w.Header().Del(k)
+		for _, v := range vs {
+			w.Header().Add(k, v)
+		}
 	}
 	data, err := fs.ReadFile(s.fs, s.filename)
 	if err != nil {

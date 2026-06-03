@@ -121,8 +121,8 @@ func main() {
 	defer cancel(nil)
 	if err := cli().Dispatch(ctx); err != nil {
 		if context.Cause(ctx) == cmdutil.ErrInterrupt {
-			cmdutil.Exit("%v", cmdutil.ErrInterrupt)
+			cmdutil.Exitf("%v", cmdutil.ErrInterrupt)
 		}
-		cmdutil.Exit("%v", err)
+		cmdutil.Exitf("%v", err)
 	}
 }
