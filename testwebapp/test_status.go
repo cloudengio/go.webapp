@@ -8,6 +8,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 
 	"cloudeng.io/logging/ctxlog"
@@ -63,7 +64,11 @@ func (c *CheckStatus) verify(ctx context.Context, spec CheckStatusSpec, client *
 	if err != nil {
 		return fmt.Errorf("error: %v: %w", err, ErrCheckStatusUnexpectedError)
 	}
-	defer resp.Body.Close()
+	defer func() {
+		// drain to allow for connection reuse.
+		_, _ = io.Copy(io.Discard, resp.Body)
+		resp.Body.Close()
+	}()
 	if resp.StatusCode != spec.Code {
 		return fmt.Errorf("status code: %v, want: %v: %w", resp.StatusCode, spec.Code, ErrCheckStatusCodeMismatch)
 	}

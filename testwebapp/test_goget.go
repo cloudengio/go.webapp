@@ -33,6 +33,7 @@ func NewGoGetTest(specs ...goget.Spec) *GoGetTest {
 }
 
 func (g GoGetTest) Run(ctx context.Context, client *http.Client) error {
+	client = newClient(client)
 	var errs errors.M
 	for _, spec := range g.specs {
 		err := g.verify(ctx, spec, client)

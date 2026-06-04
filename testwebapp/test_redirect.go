@@ -77,7 +77,7 @@ func (r RedirectTest) verify(ctx context.Context, spec RedirectSpec, client *htt
 
 func newClient(client *http.Client) *http.Client {
 	if client == nil {
-		client = &http.Client{}
+		client = http.DefaultClient
 	}
 	cpy := *client
 	return &cpy

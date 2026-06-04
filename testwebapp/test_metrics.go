@@ -40,6 +40,7 @@ func (m MetricsTest) Run(ctx context.Context, client *http.Client) error {
 	if m.reporter == nil {
 		return fmt.Errorf("metrics reporter is nil")
 	}
+	client = newClient(client)
 	var g errgroup.T
 	for _, metric := range m.specs {
 		g.Go(func() error {

@@ -57,6 +57,7 @@ func (h HealthzTest) Run(ctx context.Context, client *http.Client) error {
 }
 
 func (h HealthzTest) run(ctx context.Context, spec HealthzSpec, client *http.Client) error {
+	client = newClient(client)
 	for i := 0; i < spec.NumHealthChecks; i++ {
 		ctxlog.Info(ctx, "healthz: checking", "url", spec.URL, "attempt", i+1)
 		reqCtx, reqCancel := context.WithTimeout(ctx, spec.Timeout)
