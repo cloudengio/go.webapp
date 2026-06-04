@@ -54,13 +54,13 @@ func TestMetricsTest(t *testing.T) {
 	srv := metricsServer("http_requests_total", "http_request_duration_seconds")
 	defer srv.Close()
 
-	mt := testwebapp.NewMetricsTest(srv.Client(), plainTextMetricsReporter,
+	mt := testwebapp.NewMetricsTest(plainTextMetricsReporter,
 		testwebapp.MetricsSpec{
 			URL:         srv.URL + "/metrics",
 			MetricNames: []string{"http_requests_total", "http_request_duration_seconds"},
 		},
 	)
-	if err := mt.Run(t.Context()); err != nil {
+	if err := mt.Run(t.Context(), srv.Client()); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }
@@ -69,13 +69,13 @@ func TestMetricsTest_MissingMetrics(t *testing.T) {
 	srv := metricsServer("http_requests_total")
 	defer srv.Close()
 
-	mt := testwebapp.NewMetricsTest(srv.Client(), plainTextMetricsReporter,
+	mt := testwebapp.NewMetricsTest(plainTextMetricsReporter,
 		testwebapp.MetricsSpec{
 			URL:         srv.URL + "/metrics",
 			MetricNames: []string{"http_requests_total", "http_request_duration_seconds"},
 		},
 	)
-	err := mt.Run(t.Context())
+	err := mt.Run(t.Context(), srv.Client())
 	if err == nil {
 		t.Fatal("expected error for missing metrics, got nil")
 	}
@@ -90,13 +90,13 @@ func TestMetricsTest_ServerError(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	mt := testwebapp.NewMetricsTest(srv.Client(), plainTextMetricsReporter,
+	mt := testwebapp.NewMetricsTest(plainTextMetricsReporter,
 		testwebapp.MetricsSpec{
 			URL:         srv.URL + "/metrics",
 			MetricNames: []string{"some_metric"},
 		},
 	)
-	err := mt.Run(t.Context())
+	err := mt.Run(t.Context(), srv.Client())
 	if err == nil {
 		t.Fatal("expected error for server error response, got nil")
 	}
@@ -106,17 +106,17 @@ func TestMetricsTest_ServerError(t *testing.T) {
 }
 
 func TestMetricsTest_NilReporter(t *testing.T) {
-	mt := testwebapp.NewMetricsTest(http.DefaultClient, nil,
+	mt := testwebapp.NewMetricsTest(nil,
 		testwebapp.MetricsSpec{URL: "http://localhost/metrics", MetricNames: []string{"x"}},
 	)
-	if err := mt.Run(t.Context()); err == nil {
+	if err := mt.Run(t.Context(), http.DefaultClient); err == nil {
 		t.Fatal("expected error for nil reporter, got nil")
 	}
 }
 
 func TestMetricsTest_NoSpecs(t *testing.T) {
-	mt := testwebapp.NewMetricsTest(http.DefaultClient, plainTextMetricsReporter)
-	if err := mt.Run(t.Context()); err != nil {
+	mt := testwebapp.NewMetricsTest(plainTextMetricsReporter)
+	if err := mt.Run(t.Context(), http.DefaultClient); err != nil {
 		t.Fatalf("expected no error for empty specs, got: %v", err)
 	}
 }
@@ -127,11 +127,11 @@ func TestMetricsTest_MultipleSpecs(t *testing.T) {
 	srv2 := metricsServer("beta_total", "gamma_total")
 	defer srv2.Close()
 
-	mt := testwebapp.NewMetricsTest(srv1.Client(), plainTextMetricsReporter,
+	mt := testwebapp.NewMetricsTest(plainTextMetricsReporter,
 		testwebapp.MetricsSpec{URL: srv1.URL + "/metrics", MetricNames: []string{"alpha_total"}},
 		testwebapp.MetricsSpec{URL: srv2.URL + "/metrics", MetricNames: []string{"beta_total", "gamma_total"}},
 	)
-	if err := mt.Run(t.Context()); err != nil {
+	if err := mt.Run(t.Context(), srv1.Client()); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }

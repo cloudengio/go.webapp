@@ -24,6 +24,13 @@ ErrRedirectStatusCodeMismatch = errors.New("redirect status code mismatch")
 
 ```
 
+### ErrCheckStatusUnexpectedError, ErrCheckStatusCodeMismatch
+```go
+ErrCheckStatusUnexpectedError = errors.New("check status unexpected error")
+ErrCheckStatusCodeMismatch = errors.New("check status code mismatch")
+
+```
+
 ### ErrTLSSpecUnexpectedError, ErrTLSInvalidSerialNumbers, ErrTLSInvalidValidFor, ErrTLSInvalidIssuer
 ```go
 ErrTLSSpecUnexpectedError = errors.New("tls unexpected error")
@@ -35,7 +42,73 @@ ErrTLSInvalidIssuer = errors.New("tls invalid issuer")
 
 
 
+## Functions
+### Func ClientMaxRedirects
+```go
+func ClientMaxRedirects(client *http.Client, maxRedirects int) *http.Client
+```
+ClientMaxRedirects returns a copy of the given client that follows up to
+maxRedirects redirects.
+
+### Func ClientNoRedirect
+```go
+func ClientNoRedirect(client *http.Client) *http.Client
+```
+ClientNoRedirect returns a copy of the given client that does not follow
+redirects.
+
+
+
 ## Types
+### Type CheckStatus
+```go
+type CheckStatus struct {
+	// contains filtered or unexported fields
+}
+```
+CheckStatus validates that a set of URLs return a given status code after
+following up to a configurable number of redirects.
+
+### Functions
+
+```go
+func NewCheckStatus(specs ...CheckStatusSpec) *CheckStatus
+```
+NewCheckStatus creates a new CheckStatus for the given specs.
+
+
+
+### Methods
+
+```go
+func (c *CheckStatus) Run(ctx context.Context, client *http.Client) error
+```
+
+
+
+
+### Type CheckStatusSpec
+```go
+type CheckStatusSpec struct {
+	URL       string `yaml:"url" json:"url"`
+	Code      int    `yaml:"code" json:"code"`
+	Redirects int    `yaml:"redirects" json:"redirects"`
+}
+```
+CheckStatusSpec represents a specification for a status check after
+following redirects.
+
+### Functions
+
+```go
+func GenerateCheckStatusSpecs(urls []string, code int, redirects int) []CheckStatusSpec
+```
+GenerateCheckStatusSpecs generates a slice of CheckStatusSpec for the given
+URLs, status code and number of redirects.
+
+
+
+
 ### Type GoGetTest
 ```go
 type GoGetTest struct {
@@ -48,7 +121,7 @@ paths.
 ### Functions
 
 ```go
-func NewGoGetTest(tlsClient *http.Client, specs ...goget.Spec) *GoGetTest
+func NewGoGetTest(specs ...goget.Spec) *GoGetTest
 ```
 
 
@@ -56,7 +129,7 @@ func NewGoGetTest(tlsClient *http.Client, specs ...goget.Spec) *GoGetTest
 ### Methods
 
 ```go
-func (g GoGetTest) Run(ctx context.Context) error
+func (g GoGetTest) Run(ctx context.Context, client *http.Client) error
 ```
 
 
@@ -84,7 +157,7 @@ HealthzTest can be used to validate /healthz endpoints.
 ### Functions
 
 ```go
-func NewHealthzTest(client *http.Client, specs ...HealthzSpec) *HealthzTest
+func NewHealthzTest(specs ...HealthzSpec) *HealthzTest
 ```
 
 
@@ -92,7 +165,7 @@ func NewHealthzTest(client *http.Client, specs ...HealthzSpec) *HealthzTest
 ### Methods
 
 ```go
-func (h HealthzTest) Run(ctx context.Context) error
+func (h HealthzTest) Run(ctx context.Context, client *http.Client) error
 ```
 
 
@@ -124,7 +197,7 @@ MetricsTest can be used to validate /metrics endpoints.
 ### Functions
 
 ```go
-func NewMetricsTest(client *http.Client, reporter MetricsReporter, specs ...MetricsSpec) *MetricsTest
+func NewMetricsTest(reporter MetricsReporter, specs ...MetricsSpec) *MetricsTest
 ```
 
 
@@ -132,7 +205,7 @@ func NewMetricsTest(client *http.Client, reporter MetricsReporter, specs ...Metr
 ### Methods
 
 ```go
-func (m MetricsTest) Run(ctx context.Context) error
+func (m MetricsTest) Run(ctx context.Context, client *http.Client) error
 ```
 
 
@@ -160,18 +233,18 @@ RedirectTest can be used to validate redirects for a set of URLs.
 ### Functions
 
 ```go
-func NewRedirectTest(client *http.Client, redirects ...RedirectSpec) *RedirectTest
+func NewRedirectTest(redirects ...RedirectSpec) *RedirectTest
 ```
-NewRedirectTest creates a new RedirectTest, if client.CheckRedirect is nil,
-it will be set to http.ErrUseLastResponse to ensure that redirects are not
-followed.
+NewRedirectTest creates a new RedirectTest. The client's CheckRedirect
+will be overridden to stop at the first redirect so that each hop can be
+inspected.
 
 
 
 ### Methods
 
 ```go
-func (r RedirectTest) Run(ctx context.Context) error
+func (r RedirectTest) Run(ctx context.Context, client *http.Client) error
 ```
 
 
@@ -194,6 +267,11 @@ type TLSSpec struct {
 TLSSpec represents a specification for a TLS test.
 
 ### Functions
+
+```go
+func LetsEncryptTLSSpec() TLSSpec
+```
+
 
 ```go
 func WithCustomCAPEMFile(s []TLSSpec, pemFile string) []TLSSpec

@@ -18,8 +18,7 @@ import (
 
 // HealthzTest can be used to validate /healthz endpoints.
 type HealthzTest struct {
-	client *http.Client
-	specs  []HealthzSpec
+	specs []HealthzSpec
 }
 
 type HealthzSpec struct {
@@ -29,14 +28,13 @@ type HealthzSpec struct {
 	NumHealthChecks int           `yaml:"num_health_checks" json:"num_health_checks"`
 }
 
-func NewHealthzTest(client *http.Client, specs ...HealthzSpec) *HealthzTest {
+func NewHealthzTest(specs ...HealthzSpec) *HealthzTest {
 	return &HealthzTest{
-		client: client,
-		specs:  specs,
+		specs: specs,
 	}
 }
 
-func (h HealthzTest) Run(ctx context.Context) error {
+func (h HealthzTest) Run(ctx context.Context, client *http.Client) error {
 	if len(h.specs) == 0 {
 		return nil
 	}
@@ -52,13 +50,14 @@ func (h HealthzTest) Run(ctx context.Context) error {
 			spec.Timeout = time.Second
 		}
 		g.Go(func() error {
-			return h.run(ctx, spec)
+			return h.run(ctx, spec, client)
 		})
 	}
 	return g.Wait()
 }
 
-func (h HealthzTest) run(ctx context.Context, spec HealthzSpec) error {
+func (h HealthzTest) run(ctx context.Context, spec HealthzSpec, client *http.Client) error {
+	client = newClient(client)
 	for i := 0; i < spec.NumHealthChecks; i++ {
 		ctxlog.Info(ctx, "healthz: checking", "url", spec.URL, "attempt", i+1)
 		reqCtx, reqCancel := context.WithTimeout(ctx, spec.Timeout)
@@ -68,7 +67,7 @@ func (h HealthzTest) run(ctx context.Context, spec HealthzSpec) error {
 			return fmt.Errorf("healthz: creating request: %w", err)
 		}
 
-		resp, err := h.client.Do(req) //nolint:gosec // G704 is too restrictive here
+		resp, err := client.Do(req) //nolint:gosec // G704 is too restrictive here
 		if err != nil {
 			return fmt.Errorf("healthz: performing request: %w", err)
 		}

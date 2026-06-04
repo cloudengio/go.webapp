@@ -30,9 +30,9 @@ func TestVerifyHealthz(t *testing.T) {
 		Interval:        time.Millisecond,
 		NumHealthChecks: 1,
 	}
-	ht := testwebapp.NewHealthzTest(client, spec)
+	ht := testwebapp.NewHealthzTest(spec)
 
-	if err := ht.Run(t.Context()); err != nil {
+	if err := ht.Run(t.Context(), client); err != nil {
 		t.Fatalf("healthz check failed: %v", err)
 	}
 }
@@ -57,8 +57,8 @@ func TestVerifyHealthz_Failures(t *testing.T) {
 			Interval:        time.Millisecond,
 			NumHealthChecks: 1,
 		}
-		ht := testwebapp.NewHealthzTest(client, spec)
-		err := ht.Run(t.Context())
+		ht := testwebapp.NewHealthzTest(spec)
+		err := ht.Run(t.Context(), client)
 		if err == nil {
 			t.Fatal("expected error, got nil")
 		}
@@ -73,8 +73,8 @@ func TestVerifyHealthz_Failures(t *testing.T) {
 			Interval:        time.Millisecond,
 			NumHealthChecks: 1,
 		}
-		ht := testwebapp.NewHealthzTest(client, spec)
-		err := ht.Run(t.Context())
+		ht := testwebapp.NewHealthzTest(spec)
+		err := ht.Run(t.Context(), client)
 		if err == nil {
 			t.Fatal("expected error, got nil")
 		}

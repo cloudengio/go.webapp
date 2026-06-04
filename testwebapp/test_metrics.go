@@ -15,7 +15,6 @@ import (
 
 // MetricsTest can be used to validate /metrics endpoints.
 type MetricsTest struct {
-	client   *http.Client
 	reporter MetricsReporter
 	specs    []MetricsSpec
 }
@@ -27,25 +26,25 @@ type MetricsSpec struct {
 
 type MetricsReporter func(ctx context.Context, client *http.Client, url string, expectedMetrics []string) (found, missing []string, err error)
 
-func NewMetricsTest(client *http.Client, reporter MetricsReporter, specs ...MetricsSpec) *MetricsTest {
+func NewMetricsTest(reporter MetricsReporter, specs ...MetricsSpec) *MetricsTest {
 	return &MetricsTest{
-		client:   client,
 		reporter: reporter,
 		specs:    specs,
 	}
 }
 
-func (m MetricsTest) Run(ctx context.Context) error {
+func (m MetricsTest) Run(ctx context.Context, client *http.Client) error {
 	if len(m.specs) == 0 {
 		return nil
 	}
 	if m.reporter == nil {
 		return fmt.Errorf("metrics reporter is nil")
 	}
+	client = newClient(client)
 	var g errgroup.T
 	for _, metric := range m.specs {
 		g.Go(func() error {
-			found, missing, err := m.reporter(ctx, m.client, metric.URL, metric.MetricNames)
+			found, missing, err := m.reporter(ctx, client, metric.URL, metric.MetricNames)
 			if err != nil {
 				return fmt.Errorf("error checking metrics existence at %v: %v", metric.URL, err)
 			}

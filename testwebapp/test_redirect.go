@@ -6,11 +6,12 @@ package testwebapp
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 
-	"cloudeng.io/errors"
 	"cloudeng.io/logging/ctxlog"
+	"cloudeng.io/sync/errgroup"
 )
 
 var (
@@ -29,42 +30,38 @@ type RedirectSpec struct {
 
 // RedirectTest can be used to validate redirects for a set of URLs.
 type RedirectTest struct {
-	client *http.Client
-	specs  []RedirectSpec
+	specs []RedirectSpec
 }
 
-// NewRedirectTest creates a new RedirectTest, if client.CheckRedirect
-// is nil, it will be set to http.ErrUseLastResponse to ensure that redirects
-// are not followed.
-func NewRedirectTest(client *http.Client, redirects ...RedirectSpec) *RedirectTest {
-	if client.CheckRedirect == nil {
-		client.CheckRedirect = func(_ *http.Request, _ []*http.Request) error {
-			return http.ErrUseLastResponse
-		}
-	}
-	return &RedirectTest{client: client, specs: redirects}
+// NewRedirectTest creates a new RedirectTest. The client's CheckRedirect will
+// be overridden to stop at the first redirect so that each hop can be inspected.
+func NewRedirectTest(redirects ...RedirectSpec) *RedirectTest {
+	return &RedirectTest{specs: redirects}
 }
 
-func (r RedirectTest) Run(ctx context.Context) error {
-	var errs errors.M
+func (r RedirectTest) Run(ctx context.Context, client *http.Client) error {
+	client = ClientNoRedirect(client)
+	var g errgroup.T
 	for _, spec := range r.specs {
-		err := r.verify(ctx, spec)
-		if err != nil {
-			ctxlog.Error(ctx, "redirect", "spec", spec, "success", false, "error", err)
-			errs.Append(fmt.Errorf("%v: %w", spec, err))
-			continue
-		}
-		ctxlog.Info(ctx, "redirect", "spec", spec, "success", true)
+		g.Go(func() error {
+			err := r.verify(ctx, spec, client)
+			if err != nil {
+				ctxlog.Error(ctx, "redirect", "spec", spec, "success", false, "error", err)
+				return fmt.Errorf("%v: %w", spec, err)
+			}
+			ctxlog.Info(ctx, "redirect", "spec", spec, "success", true)
+			return nil
+		})
 	}
-	return errs.Err()
+	return g.Wait()
 }
 
-func (r RedirectTest) verify(ctx context.Context, spec RedirectSpec) error {
+func (r RedirectTest) verify(ctx context.Context, spec RedirectSpec, client *http.Client) error {
 	req, err := http.NewRequestWithContext(ctx, "GET", spec.URL, nil)
 	if err != nil {
 		return fmt.Errorf("error: %v: %w", err, ErrRedirectUnexpectedError)
 	}
-	resp, err := r.client.Do(req) //nolint:gosec // G704 is too restrictive here
+	resp, err := client.Do(req) //nolint:gosec // G704 is too restrictive here
 	if err != nil {
 		return fmt.Errorf("error: %v: %w", err, ErrRedirectUnexpectedError)
 	}
@@ -76,4 +73,33 @@ func (r RedirectTest) verify(ctx context.Context, spec RedirectSpec) error {
 		return fmt.Errorf("location: %v, want: %v: %w", resp.Header.Get("Location"), spec.Target, ErrRedirectTargetMismatch)
 	}
 	return nil
+}
+
+func newClient(client *http.Client) *http.Client {
+	if client == nil {
+		client = http.DefaultClient
+	}
+	cpy := *client
+	return &cpy
+}
+
+// ClientNoRedirect returns a copy of the given client that does not follow redirects.
+func ClientNoRedirect(client *http.Client) *http.Client {
+	cpy := newClient(client)
+	cpy.CheckRedirect = func(_ *http.Request, _ []*http.Request) error {
+		return http.ErrUseLastResponse
+	}
+	return cpy
+}
+
+// ClientMaxRedirects returns a copy of the given client that follows up to maxRedirects redirects.
+func ClientMaxRedirects(client *http.Client, maxRedirects int) *http.Client {
+	cpy := newClient(client)
+	cpy.CheckRedirect = func(_ *http.Request, via []*http.Request) error {
+		if len(via) > maxRedirects {
+			return http.ErrUseLastResponse
+		}
+		return nil
+	}
+	return cpy
 }
