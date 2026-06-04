@@ -248,11 +248,11 @@ func NewConfig(opt ...ConfigOption) Config {
 	cfg.HTTPPort = 5002
 	cfg.TLSPort = 5001
 	cfg.TestCertBase = filepath.Join("test", "certs")
-	cfg.Address = "localhost:14000"
+	cfg.Address = "localhost:18000"
 	if cfg.opts.serverPort != 0 {
 		cfg.Address = fmt.Sprintf("localhost:%d", cfg.opts.serverPort)
 	}
-	cfg.ManagementAddress = "localhost:15000"
+	cfg.ManagementAddress = "localhost:19000"
 	if cfg.opts.managementPort != 0 {
 		cfg.ManagementAddress = fmt.Sprintf("localhost:%d", cfg.opts.managementPort)
 	}
