@@ -24,6 +24,13 @@ ErrRedirectStatusCodeMismatch = errors.New("redirect status code mismatch")
 
 ```
 
+### ErrCheckStatusUnexpectedError, ErrCheckStatusCodeMismatch
+```go
+ErrCheckStatusUnexpectedError = errors.New("check status unexpected error")
+ErrCheckStatusCodeMismatch = errors.New("check status code mismatch")
+
+```
+
 ### ErrTLSSpecUnexpectedError, ErrTLSInvalidSerialNumbers, ErrTLSInvalidValidFor, ErrTLSInvalidIssuer
 ```go
 ErrTLSSpecUnexpectedError = errors.New("tls unexpected error")
@@ -36,6 +43,55 @@ ErrTLSInvalidIssuer = errors.New("tls invalid issuer")
 
 
 ## Types
+### Type CheckStatus
+```go
+type CheckStatus struct {
+	// contains filtered or unexported fields
+}
+```
+CheckStatus validates that a set of URLs return a given status code after
+following up to a configurable number of redirects.
+
+### Functions
+
+```go
+func NewCheckStatus(specs ...CheckStatusSpec) *CheckStatus
+```
+NewCheckStatus creates a new CheckStatus for the given specs.
+
+
+
+### Methods
+
+```go
+func (c *CheckStatus) Run(ctx context.Context, client *http.Client) error
+```
+
+
+
+
+### Type CheckStatusSpec
+```go
+type CheckStatusSpec struct {
+	URL       string `yaml:"url" json:"url"`
+	Code      int    `yaml:"code" json:"code"`
+	Redirects int    `yaml:"redirects" json:"redirects"`
+}
+```
+CheckStatusSpec represents a specification for a status check after
+following redirects.
+
+### Functions
+
+```go
+func GenerateCheckStatusSpecs(urls []string, code int, redirects int) []CheckStatusSpec
+```
+GenerateCheckStatusSpecs generates a slice of CheckStatusSpec for the given
+URLs, status code and number of redirects.
+
+
+
+
 ### Type GoGetTest
 ```go
 type GoGetTest struct {
@@ -160,7 +216,7 @@ RedirectTest can be used to validate redirects for a set of URLs.
 ### Functions
 
 ```go
-func NewRedirectTest(client *http.Client, redirects ...RedirectSpec) *RedirectTest
+func NewRedirectTest(redirects ...RedirectSpec) *RedirectTest
 ```
 NewRedirectTest creates a new RedirectTest, if client.CheckRedirect is nil,
 it will be set to http.ErrUseLastResponse to ensure that redirects are not
@@ -171,7 +227,7 @@ followed.
 ### Methods
 
 ```go
-func (r RedirectTest) Run(ctx context.Context) error
+func (r RedirectTest) Run(ctx context.Context, client *http.Client) error
 ```
 
 
@@ -194,6 +250,11 @@ type TLSSpec struct {
 TLSSpec represents a specification for a TLS test.
 
 ### Functions
+
+```go
+func LetsEncryptConfig() TLSSpec
+```
+
 
 ```go
 func WithCustomCAPEMFile(s []TLSSpec, pemFile string) []TLSSpec

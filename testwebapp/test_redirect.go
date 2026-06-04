@@ -6,11 +6,12 @@ package testwebapp
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 
-	"cloudeng.io/errors"
 	"cloudeng.io/logging/ctxlog"
+	"cloudeng.io/sync/errgroup"
 )
 
 var (
@@ -29,42 +30,43 @@ type RedirectSpec struct {
 
 // RedirectTest can be used to validate redirects for a set of URLs.
 type RedirectTest struct {
-	client *http.Client
-	specs  []RedirectSpec
+	specs []RedirectSpec
 }
 
 // NewRedirectTest creates a new RedirectTest, if client.CheckRedirect
 // is nil, it will be set to http.ErrUseLastResponse to ensure that redirects
 // are not followed.
-func NewRedirectTest(client *http.Client, redirects ...RedirectSpec) *RedirectTest {
+func NewRedirectTest(redirects ...RedirectSpec) *RedirectTest {
+	return &RedirectTest{specs: redirects}
+}
+
+func (r RedirectTest) Run(ctx context.Context, client *http.Client) error {
 	if client.CheckRedirect == nil {
 		client.CheckRedirect = func(_ *http.Request, _ []*http.Request) error {
 			return http.ErrUseLastResponse
 		}
 	}
-	return &RedirectTest{client: client, specs: redirects}
-}
-
-func (r RedirectTest) Run(ctx context.Context) error {
-	var errs errors.M
+	var g errgroup.T
 	for _, spec := range r.specs {
-		err := r.verify(ctx, spec)
-		if err != nil {
-			ctxlog.Error(ctx, "redirect", "spec", spec, "success", false, "error", err)
-			errs.Append(fmt.Errorf("%v: %w", spec, err))
-			continue
-		}
-		ctxlog.Info(ctx, "redirect", "spec", spec, "success", true)
+		g.Go(func() error {
+			err := r.verify(ctx, spec, client)
+			if err != nil {
+				ctxlog.Error(ctx, "redirect", "spec", spec, "success", false, "error", err)
+				return fmt.Errorf("%v: %w", spec, err)
+			}
+			ctxlog.Info(ctx, "redirect", "spec", spec, "success", true)
+			return nil
+		})
 	}
-	return errs.Err()
+	return g.Wait()
 }
 
-func (r RedirectTest) verify(ctx context.Context, spec RedirectSpec) error {
+func (r RedirectTest) verify(ctx context.Context, spec RedirectSpec, client *http.Client) error {
 	req, err := http.NewRequestWithContext(ctx, "GET", spec.URL, nil)
 	if err != nil {
 		return fmt.Errorf("error: %v: %w", err, ErrRedirectUnexpectedError)
 	}
-	resp, err := r.client.Do(req) //nolint:gosec // G704 is too restrictive here
+	resp, err := client.Do(req) //nolint:gosec // G704 is too restrictive here
 	if err != nil {
 		return fmt.Errorf("error: %v: %w", err, ErrRedirectUnexpectedError)
 	}
