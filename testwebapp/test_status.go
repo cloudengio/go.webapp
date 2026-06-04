@@ -29,20 +29,19 @@ type CheckStatusSpec struct {
 // CheckStatus validates that a set of URLs return a given status code after
 // following up to a configurable number of redirects.
 type CheckStatus struct {
-	client *http.Client
-	specs  []CheckStatusSpec
+	specs []CheckStatusSpec
 }
 
 // NewCheckStatus creates a new CheckStatus for the given specs.
-func NewCheckStatus(client *http.Client, specs ...CheckStatusSpec) *CheckStatus {
-	return &CheckStatus{client: client, specs: specs}
+func NewCheckStatus(specs ...CheckStatusSpec) *CheckStatus {
+	return &CheckStatus{specs: specs}
 }
 
-func (c *CheckStatus) Run(ctx context.Context) error {
+func (c *CheckStatus) Run(ctx context.Context, client *http.Client) error {
 	var g errgroup.T
 	for _, spec := range c.specs {
 		g.Go(func() error {
-			err := c.verify(ctx, spec)
+			err := c.verify(ctx, spec, client)
 			if err != nil {
 				ctxlog.Error(ctx, "check-status", "spec", spec, "success", false, "error", err)
 				return fmt.Errorf("%v: %w", spec, err)
@@ -54,8 +53,8 @@ func (c *CheckStatus) Run(ctx context.Context) error {
 	return g.Wait()
 }
 
-func (c *CheckStatus) verify(ctx context.Context, spec CheckStatusSpec) error {
-	client := newClientMaxRedirects(c.client, spec.Redirects)
+func (c *CheckStatus) verify(ctx context.Context, spec CheckStatusSpec, client *http.Client) error {
+	client = ClientMaxRedirects(client, spec.Redirects)
 	req, err := http.NewRequestWithContext(ctx, "GET", spec.URL, nil)
 	if err != nil {
 		return fmt.Errorf("error: %v: %w", err, ErrCheckStatusUnexpectedError)

@@ -25,18 +25,17 @@ var (
 
 // GoGetTest can be used to validate go-get meta tags for a set of import paths.
 type GoGetTest struct {
-	client *http.Client
-	specs  []goget.Spec
+	specs []goget.Spec
 }
 
-func NewGoGetTest(client *http.Client, specs ...goget.Spec) *GoGetTest {
-	return &GoGetTest{client: client, specs: specs}
+func NewGoGetTest(specs ...goget.Spec) *GoGetTest {
+	return &GoGetTest{specs: specs}
 }
 
-func (g GoGetTest) Run(ctx context.Context) error {
+func (g GoGetTest) Run(ctx context.Context, client *http.Client) error {
 	var errs errors.M
 	for _, spec := range g.specs {
-		err := g.verify(ctx, spec)
+		err := g.verify(ctx, spec, client)
 		if err != nil {
 			ctxlog.Error(ctx, "goget", "spec", spec, "success", false, "error", err)
 			errs.Append(fmt.Errorf("%v: %w", spec, err))
@@ -47,13 +46,13 @@ func (g GoGetTest) Run(ctx context.Context) error {
 	return errs.Err()
 }
 
-func (g GoGetTest) verify(ctx context.Context, expected goget.Spec) error {
+func (g GoGetTest) verify(ctx context.Context, expected goget.Spec, client *http.Client) error {
 	u := "https://" + expected.ImportPath + "?go-get=1"
 	req, err := http.NewRequestWithContext(ctx, "GET", u, nil)
 	if err != nil {
 		return ErrGoGetUnexpectedError
 	}
-	return verify(req, g.client, expected)
+	return verify(req, client, expected)
 }
 
 func verify(req *http.Request, client *http.Client, expected goget.Spec) error {

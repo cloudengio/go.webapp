@@ -21,8 +21,8 @@ func TestVerifyGoGet(t *testing.T) {
 		Content:    "cloudeng.io git https://github.com/cloudengio/go.pkgs",
 	}
 	client := &http.Client{}
-	ggt := testwebapp.NewGoGetTest(client, spec)
-	if err := ggt.Run(t.Context()); err != nil {
+	ggt := testwebapp.NewGoGetTest(spec)
+	if err := ggt.Run(t.Context(), client); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -51,8 +51,8 @@ func TestVerifyGoGet_Local(t *testing.T) {
 			ImportPath: strings.TrimPrefix(tlsServer.URL, "https://") + "/missing",
 			Content:    "example.com/mod git https://github.com/example/mod",
 		}
-		ggt := testwebapp.NewGoGetTest(tlsClient, spec)
-		if err := ggt.Run(t.Context()); err == nil || !errors.Is(err, testwebapp.ErrGoGetPathNotFound) {
+		ggt := testwebapp.NewGoGetTest(spec)
+		if err := ggt.Run(t.Context(), tlsClient); err == nil || !errors.Is(err, testwebapp.ErrGoGetPathNotFound) {
 			t.Errorf("expected error for 404, got %v", err)
 		}
 	})
@@ -62,8 +62,8 @@ func TestVerifyGoGet_Local(t *testing.T) {
 			ImportPath: importPath,
 			Content:    "example.com/mod git https://github.com/example/WRONG",
 		}
-		ggt := testwebapp.NewGoGetTest(tlsClient, spec)
-		if err := ggt.Run(t.Context()); err == nil || !errors.Is(err, testwebapp.ErrGoGetContentMismatch) {
+		ggt := testwebapp.NewGoGetTest(spec)
+		if err := ggt.Run(t.Context(), tlsClient); err == nil || !errors.Is(err, testwebapp.ErrGoGetContentMismatch) {
 			t.Errorf("expected error for content mismatch, got %v", err)
 		}
 	})
@@ -77,8 +77,8 @@ func TestVerifyGoGet_Local(t *testing.T) {
 			ImportPath: strings.TrimPrefix(tlsServer.URL, "https://") + "/nometa",
 			Content:    "whatever",
 		}
-		ggt := testwebapp.NewGoGetTest(tlsClient, spec)
-		if err := ggt.Run(t.Context()); err == nil || !errors.Is(err, testwebapp.ErrGoGetNotFound) {
+		ggt := testwebapp.NewGoGetTest(spec)
+		if err := ggt.Run(t.Context(), tlsClient); err == nil || !errors.Is(err, testwebapp.ErrGoGetNotFound) {
 			t.Errorf("expected error for missing meta tag, got %v", err)
 		}
 	})

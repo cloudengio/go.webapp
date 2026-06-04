@@ -132,12 +132,13 @@ func (t TLSTest) verify(ctx context.Context, spec TLSSpec) error {
 	return validator.Validate(ctx, spec.Host, port)
 }
 
-func LetsEncryptConfig() TLSSpec {
+func LetsEncryptTLSSpec() TLSSpec {
+	const tlsVersionTLS13 uint16 = 0x0304 // TLS 1.3
 	return TLSSpec{
 		ExpandDNSNames:     true,
 		CheckSerialNumbers: true,
 		ValidFor:           240 * time.Hour, // cert should be valid for at least 10 days
-		TLSMinVersion:      0x0304,          // TLS 1.3
-		IssuerREs:          []string{`Lets Encrypt`},
+		TLSMinVersion:      tlsVersionTLS13, // TLS 1.3
+		IssuerREs:          []string{`Let'?s Encrypt`},
 	}
 }

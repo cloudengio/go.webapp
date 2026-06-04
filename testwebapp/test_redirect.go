@@ -30,18 +30,17 @@ type RedirectSpec struct {
 
 // RedirectTest can be used to validate redirects for a set of URLs.
 type RedirectTest struct {
-	client *http.Client
-	specs  []RedirectSpec
+	specs []RedirectSpec
 }
 
 // NewRedirectTest creates a new RedirectTest. The client's CheckRedirect will
 // be overridden to stop at the first redirect so that each hop can be inspected.
-func NewRedirectTest(client *http.Client, redirects ...RedirectSpec) *RedirectTest {
-	return &RedirectTest{client: client, specs: redirects}
+func NewRedirectTest(redirects ...RedirectSpec) *RedirectTest {
+	return &RedirectTest{specs: redirects}
 }
 
-func (r RedirectTest) Run(ctx context.Context) error {
-	client := newClientNoRedirect(r.client)
+func (r RedirectTest) Run(ctx context.Context, client *http.Client) error {
+	client = ClientNoRedirect(client)
 	var g errgroup.T
 	for _, spec := range r.specs {
 		g.Go(func() error {
@@ -84,7 +83,8 @@ func newClient(client *http.Client) *http.Client {
 	return &cpy
 }
 
-func newClientNoRedirect(client *http.Client) *http.Client {
+// ClientNoRedirect returns a copy of the given client that does not follow redirects.
+func ClientNoRedirect(client *http.Client) *http.Client {
 	cpy := newClient(client)
 	cpy.CheckRedirect = func(_ *http.Request, _ []*http.Request) error {
 		return http.ErrUseLastResponse
@@ -92,9 +92,10 @@ func newClientNoRedirect(client *http.Client) *http.Client {
 	return cpy
 }
 
-func newClientMaxRedirects(client *http.Client, maxRedirects int) *http.Client {
+// ClientMaxRedirects returns a copy of the given client that follows up to maxRedirects redirects.
+func ClientMaxRedirects(client *http.Client, maxRedirects int) *http.Client {
 	cpy := newClient(client)
-	cpy.CheckRedirect = func(req *http.Request, via []*http.Request) error {
+	cpy.CheckRedirect = func(_ *http.Request, via []*http.Request) error {
 		if len(via) > maxRedirects {
 			return http.ErrUseLastResponse
 		}
