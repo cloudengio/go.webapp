@@ -207,8 +207,8 @@ func init() {
 const pebbleConfig = `
 {
     "pebble": {
-        "listenAddress": "0.0.0.0:14000",
-        "managementListenAddress": "0.0.0.0:15000",
+        "listenAddress": "0.0.0.0:18000",
+        "managementListenAddress": "0.0.0.0:19000",
         "certificate": "test/certs/localhost/cert.pem",
         "privateKey": "test/certs/localhost/key.pem",
         "httpPort": 5002,
