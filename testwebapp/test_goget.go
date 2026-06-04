@@ -25,12 +25,12 @@ var (
 
 // GoGetTest can be used to validate go-get meta tags for a set of import paths.
 type GoGetTest struct {
-	tlsClient *http.Client
-	specs     []goget.Spec
+	client *http.Client
+	specs  []goget.Spec
 }
 
-func NewGoGetTest(tlsClient *http.Client, specs ...goget.Spec) *GoGetTest {
-	return &GoGetTest{tlsClient: tlsClient, specs: specs}
+func NewGoGetTest(client *http.Client, specs ...goget.Spec) *GoGetTest {
+	return &GoGetTest{client: client, specs: specs}
 }
 
 func (g GoGetTest) Run(ctx context.Context) error {
@@ -53,7 +53,7 @@ func (g GoGetTest) verify(ctx context.Context, expected goget.Spec) error {
 	if err != nil {
 		return ErrGoGetUnexpectedError
 	}
-	return verify(req, g.tlsClient, expected)
+	return verify(req, g.client, expected)
 }
 
 func verify(req *http.Request, client *http.Client, expected goget.Spec) error {

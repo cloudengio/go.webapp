@@ -55,7 +55,7 @@ following up to a configurable number of redirects.
 ### Functions
 
 ```go
-func NewCheckStatus(specs ...CheckStatusSpec) *CheckStatus
+func NewCheckStatus(client *http.Client, specs ...CheckStatusSpec) *CheckStatus
 ```
 NewCheckStatus creates a new CheckStatus for the given specs.
 
@@ -64,7 +64,7 @@ NewCheckStatus creates a new CheckStatus for the given specs.
 ### Methods
 
 ```go
-func (c *CheckStatus) Run(ctx context.Context, client *http.Client) error
+func (c *CheckStatus) Run(ctx context.Context) error
 ```
 
 
@@ -104,7 +104,7 @@ paths.
 ### Functions
 
 ```go
-func NewGoGetTest(tlsClient *http.Client, specs ...goget.Spec) *GoGetTest
+func NewGoGetTest(client *http.Client, specs ...goget.Spec) *GoGetTest
 ```
 
 
@@ -216,18 +216,18 @@ RedirectTest can be used to validate redirects for a set of URLs.
 ### Functions
 
 ```go
-func NewRedirectTest(redirects ...RedirectSpec) *RedirectTest
+func NewRedirectTest(client *http.Client, redirects ...RedirectSpec) *RedirectTest
 ```
-NewRedirectTest creates a new RedirectTest, if client.CheckRedirect is nil,
-it will be set to http.ErrUseLastResponse to ensure that redirects are not
-followed.
+NewRedirectTest creates a new RedirectTest. The client's CheckRedirect
+will be overridden to stop at the first redirect so that each hop can be
+inspected.
 
 
 
 ### Methods
 
 ```go
-func (r RedirectTest) Run(ctx context.Context, client *http.Client) error
+func (r RedirectTest) Run(ctx context.Context) error
 ```
 
 

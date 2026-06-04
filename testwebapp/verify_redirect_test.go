@@ -47,8 +47,8 @@ func TestVerifyRedirect(t *testing.T) {
 			},
 		}
 
-		rt := testwebapp.NewRedirectTest(specs...)
-		if err := rt.Run(t.Context(), client); err != nil {
+		rt := testwebapp.NewRedirectTest(client, specs...)
+		if err := rt.Run(t.Context()); err != nil {
 			t.Errorf("expected success, got %v", err)
 		}
 	})
@@ -59,8 +59,8 @@ func TestVerifyRedirect(t *testing.T) {
 			Target: "https://example.com/target",
 			Code:   http.StatusFound, // Expecting 302, getting 301
 		}
-		rt := testwebapp.NewRedirectTest(spec)
-		err := rt.Run(t.Context(), client)
+		rt := testwebapp.NewRedirectTest(client, spec)
+		err := rt.Run(t.Context())
 		if err == nil || !errors.Is(err, testwebapp.ErrRedirectStatusCodeMismatch) {
 			t.Errorf("expected ErrRedirectStatusCodeMismatch, got %v", err)
 		}
@@ -72,8 +72,8 @@ func TestVerifyRedirect(t *testing.T) {
 			Target: "https://example.com/WRONG",
 			Code:   http.StatusMovedPermanently,
 		}
-		rt := testwebapp.NewRedirectTest(spec)
-		err := rt.Run(t.Context(), client)
+		rt := testwebapp.NewRedirectTest(client, spec)
+		err := rt.Run(t.Context())
 		if err == nil || !errors.Is(err, testwebapp.ErrRedirectTargetMismatch) {
 			t.Errorf("expected ErrRedirectTargetMismatch, got %v", err)
 		}
@@ -86,8 +86,8 @@ func TestVerifyRedirect(t *testing.T) {
 			Target: "any",
 			Code:   301,
 		}
-		rt := testwebapp.NewRedirectTest(spec)
-		err := rt.Run(t.Context(), client)
+		rt := testwebapp.NewRedirectTest(client, spec)
+		err := rt.Run(t.Context())
 		if err == nil || !errors.Is(err, testwebapp.ErrRedirectUnexpectedError) {
 			t.Errorf("expected ErrRedirectUnexpectedError, got %v", err)
 		}

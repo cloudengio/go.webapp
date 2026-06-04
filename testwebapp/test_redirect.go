@@ -30,22 +30,18 @@ type RedirectSpec struct {
 
 // RedirectTest can be used to validate redirects for a set of URLs.
 type RedirectTest struct {
-	specs []RedirectSpec
+	client *http.Client
+	specs  []RedirectSpec
 }
 
-// NewRedirectTest creates a new RedirectTest, if client.CheckRedirect
-// is nil, it will be set to http.ErrUseLastResponse to ensure that redirects
-// are not followed.
-func NewRedirectTest(redirects ...RedirectSpec) *RedirectTest {
-	return &RedirectTest{specs: redirects}
+// NewRedirectTest creates a new RedirectTest. The client's CheckRedirect will
+// be overridden to stop at the first redirect so that each hop can be inspected.
+func NewRedirectTest(client *http.Client, redirects ...RedirectSpec) *RedirectTest {
+	return &RedirectTest{client: client, specs: redirects}
 }
 
-func (r RedirectTest) Run(ctx context.Context, client *http.Client) error {
-	if client.CheckRedirect == nil {
-		client.CheckRedirect = func(_ *http.Request, _ []*http.Request) error {
-			return http.ErrUseLastResponse
-		}
-	}
+func (r RedirectTest) Run(ctx context.Context) error {
+	client := newClientNoRedirect(r.client)
 	var g errgroup.T
 	for _, spec := range r.specs {
 		g.Go(func() error {
@@ -78,4 +74,31 @@ func (r RedirectTest) verify(ctx context.Context, spec RedirectSpec, client *htt
 		return fmt.Errorf("location: %v, want: %v: %w", resp.Header.Get("Location"), spec.Target, ErrRedirectTargetMismatch)
 	}
 	return nil
+}
+
+func newClient(client *http.Client) *http.Client {
+	if client == nil {
+		client = &http.Client{}
+	}
+	cpy := *client
+	return &cpy
+}
+
+func newClientNoRedirect(client *http.Client) *http.Client {
+	cpy := newClient(client)
+	cpy.CheckRedirect = func(_ *http.Request, _ []*http.Request) error {
+		return http.ErrUseLastResponse
+	}
+	return cpy
+}
+
+func newClientMaxRedirects(client *http.Client, maxRedirects int) *http.Client {
+	cpy := newClient(client)
+	cpy.CheckRedirect = func(req *http.Request, via []*http.Request) error {
+		if len(via) > maxRedirects {
+			return http.ErrUseLastResponse
+		}
+		return nil
+	}
+	return cpy
 }
