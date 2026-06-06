@@ -32,3 +32,5 @@ cmd/webapp/webapp
 webauth/webauthn/get-ssl-certs
 webauth/webauthn/passkeys/*.pem
 webauth/webauthn/passkeys/mkcert-ca
+
+.gograph/

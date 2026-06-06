@@ -193,6 +193,10 @@ func (r *Relay) ServeWebhook(w http.ResponseWriter, req *http.Request) {
 // If the request context is cancelled while waiting, it logs the cancellation
 // and returns without responding.
 func (r *Relay) WaitForWebhook(w http.ResponseWriter, req *http.Request) {
+	if req.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
 	select {
 	case job, ok := <-r.fifo.Out():
 		if !ok {

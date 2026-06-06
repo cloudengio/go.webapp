@@ -3,18 +3,18 @@ module cloudeng.io/webapp/cmd/webapp
 go 1.26
 
 require (
-	cloudeng.io/cmdutil v0.0.0-20260602205728-76c4accb8394
+	cloudeng.io/cmdutil v0.0.0-20260605174237-2d6c1041426f
 	cloudeng.io/webapp v0.0.0-20251211202122-3206a59d8279
 	github.com/go-chi/chi/v5 v5.3.0
 )
 
 require (
 	cloudeng.io/errors v0.0.14-0.20260312171538-61fcde6ce278 // indirect
-	cloudeng.io/file v0.0.0-20260602205728-76c4accb8394 // indirect
-	cloudeng.io/io v0.0.0-20260602205728-76c4accb8394 // indirect
-	cloudeng.io/logging v0.0.0-20260602205728-76c4accb8394 // indirect
-	cloudeng.io/net v0.0.0-20260602205728-76c4accb8394 // indirect
-	cloudeng.io/os v0.0.0-20260602205728-76c4accb8394 // indirect
+	cloudeng.io/file v0.0.0-20260605174237-2d6c1041426f // indirect
+	cloudeng.io/io v0.0.0-20260605174237-2d6c1041426f // indirect
+	cloudeng.io/logging v0.0.0-20260605174237-2d6c1041426f // indirect
+	cloudeng.io/net v0.0.0-20260605174237-2d6c1041426f // indirect
+	cloudeng.io/os v0.0.0-20260606211206-13a5cf17eb80 // indirect
 	cloudeng.io/sync v0.0.11 // indirect
 	cloudeng.io/text v0.0.16-0.20260312171538-61fcde6ce278 // indirect
 	golang.org/x/net v0.55.0 // indirect
