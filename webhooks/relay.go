@@ -146,20 +146,20 @@ func (r *Relay) Stop(ctx context.Context) {
 // It responds with appropriate HTTP status codes based on the validation outcome.
 func (r *Relay) ServeWebhook(w http.ResponseWriter, req *http.Request) {
 	if req.ContentLength > r.opts.payloadLimit {
-		http.Error(w, "Payload too large", http.StatusRequestEntityTooLarge)
+		http.Error(w, "payload too large", http.StatusRequestEntityTooLarge)
 		return
 	}
 	if req.Header.Get("Content-Type") != "application/json" {
-		http.Error(w, "Unsupported content type", http.StatusUnsupportedMediaType)
+		http.Error(w, "unsupported content type", http.StatusUnsupportedMediaType)
 		return
 	}
 	if req.Method != http.MethodPost {
-		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
 	if req.Body == nil {
 		// Paranonoial check since http.Request should always have a non-nil Body, but we check it just in case.
-		http.Error(w, "Request body is required", http.StatusBadRequest)
+		http.Error(w, "request body is required", http.StatusBadRequest)
 		return
 	}
 	req.Body = http.MaxBytesReader(w, req.Body, r.opts.payloadLimit)
@@ -193,6 +193,10 @@ func (r *Relay) ServeWebhook(w http.ResponseWriter, req *http.Request) {
 // If the request context is cancelled while waiting, it logs the cancellation
 // and returns without responding.
 func (r *Relay) WaitForWebhook(w http.ResponseWriter, req *http.Request) {
+	if req.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
 	select {
 	case job, ok := <-r.fifo.Out():
 		if !ok {

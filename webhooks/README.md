@@ -36,6 +36,20 @@ func NoopValidator(req *http.Request) ([]byte, int)
 func ParseSpecific[T any](c Config) (T, error)
 ```
 
+### Func SHA256SignatureFromHeader
+```go
+func SHA256SignatureFromHeader(headerName string) func(req *http.Request) ([]byte, int)
+```
+SHA256SignatureFromHeader returns a function that extracts and decodes the
+HMAC SHA256 signature from the specified header in the HTTP request.
+
+### Func SignHTTPRequest
+```go
+func SignHTTPRequest(header http.Header, payload []byte, secret []byte, headerName string) error
+```
+SignHTTPRequest signs the given payload using the provided secret and sets
+the signature in the specified header of the HTTP request.
+
 
 
 ## Types
@@ -242,18 +256,18 @@ if validation fails.
 ### Functions
 
 ```go
-func GitHubValidator(getTokens func(ctx context.Context) ([]keys.Token, error)) (Validator, error)
+func SignatureValidator(getSignature func(req *http.Request) ([]byte, int), getTokens func(ctx context.Context) ([]keys.Token, error)) (Validator, error)
 ```
-GitHubValidator returns a Validator that verifies GitHub webhook payloads
+SignatureValidator returns a Validator that verifies webhook payloads
 using one of possibly multiple Tokens returned by the getTokens function.
-The token value is a byte slice that the validator uses to compute the HMAC
-SHA256 signature of the payload and compare it to the signature provided in
-the "X-Hub-Signature-256" header of the request. If a match is found, the
-payload is considered valid and returned; if none of the returned tokens'
-secrets match the signature, the payload is rejected and an appropriate HTTP
-status code is returned to indicate the error. It is the responsibility of
-the getTokens function to retrieve the tokens from the appropriate source,
-such as a file or a key store.
+The token value is a byte slice that the validator uses to compute the
+HMAC SHA256 signature of the payload and compare it to the signature
+provided in the request header as returned by the getSignature function.
+If a match is found, the payload is considered valid and returned; if none
+of the returned tokens' secrets match the signature, the payload is rejected
+and an appropriate HTTP status code is returned to indicate the error.
+It is the responsibility of the getTokens function to retrieve the tokens
+from the appropriate source, such as a file or a key store.
 
 
 
