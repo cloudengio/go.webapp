@@ -42,6 +42,108 @@ func signedRequest(t *testing.T, payload, secret []byte, header string) *http.Re
 	return req
 }
 
+func checkSHRHeaderFormat(t *testing.T, req *http.Request, header string) {
+	t.Helper()
+	val := req.Header.Get(header)
+	if val == "" {
+		t.Fatal("signature header not set")
+	}
+	if !bytes.HasPrefix([]byte(val), []byte("sha256=")) {
+		t.Errorf("header value %q does not start with sha256=", val)
+	}
+}
+
+func checkSHRCorrectSignature(t *testing.T, req *http.Request, header string, secret, payload []byte) {
+	t.Helper()
+	mac := hmac.New(sha256.New, secret)
+	mac.Write(payload)
+	want := "sha256=" + fmt.Sprintf("%x", mac.Sum(nil))
+	if got := req.Header.Get(header); got != want {
+		t.Errorf("got signature %q, want %q", got, want)
+	}
+}
+
+func checkSHRBodyReadable(t *testing.T, req *http.Request, payload []byte) {
+	t.Helper()
+	body, err := io.ReadAll(req.Body)
+	if err != nil {
+		t.Fatalf("reading body: %v", err)
+	}
+	if !bytes.Equal(body, payload) {
+		t.Errorf("got body %q, want %q", body, payload)
+	}
+}
+
+func checkSHRGetBodyCallable(t *testing.T, req *http.Request, payload []byte) {
+	t.Helper()
+	if req.GetBody == nil {
+		t.Fatal("GetBody is nil")
+	}
+	rc, err := req.GetBody()
+	if err != nil {
+		t.Fatalf("GetBody: %v", err)
+	}
+	body, err := io.ReadAll(rc)
+	if err != nil {
+		t.Fatalf("reading GetBody: %v", err)
+	}
+	if !bytes.Equal(body, payload) {
+		t.Errorf("got body %q, want %q", body, payload)
+	}
+}
+
+func checkSHRContentLength(t *testing.T, req *http.Request, payload []byte) {
+	t.Helper()
+	if got, want := req.ContentLength, int64(len(payload)); got != want {
+		t.Errorf("got ContentLength %d, want %d", got, want)
+	}
+}
+
+func checkSHRDifferentHeaderName(t *testing.T, payload, secret []byte, defaultHeader string) {
+	t.Helper()
+	req := httptest.NewRequest(http.MethodPost, "/", nil)
+	if err := webhooks.SignedHTTPRequest(req, payload, secret, "X-Custom-Sig"); err != nil {
+		t.Fatalf("SignedHTTPRequest: %v", err)
+	}
+	if req.Header.Get("X-Custom-Sig") == "" {
+		t.Error("custom header not set")
+	}
+	if req.Header.Get(defaultHeader) != "" {
+		t.Error("unexpected default header was set")
+	}
+}
+
+func checkSHREmptyPayload(t *testing.T, secret []byte, header string) {
+	t.Helper()
+	req := httptest.NewRequest(http.MethodPost, "/", nil)
+	if err := webhooks.SignedHTTPRequest(req, []byte{}, secret, header); err != nil {
+		t.Fatalf("SignedHTTPRequest: %v", err)
+	}
+	if req.Header.Get(header) == "" {
+		t.Error("signature header not set for empty payload")
+	}
+	if req.ContentLength != 0 {
+		t.Errorf("got ContentLength %d, want 0", req.ContentLength)
+	}
+}
+
+func checkSHRRoundTrip(t *testing.T, payload, secret []byte, header string) {
+	t.Helper()
+	getSig := webhooks.SHA256SignatureFromHeader(header)
+	validator, err := webhooks.SignatureValidator(getSig, staticSecrets(secret))
+	if err != nil {
+		t.Fatalf("SignatureValidator: %v", err)
+	}
+	req := signedRequest(t, payload, secret, header)
+	got, status := validator(req)
+	if status != http.StatusOK {
+		t.Errorf("got status %d, want %d", status, http.StatusOK)
+	}
+	if !bytes.Equal(got, payload) {
+		t.Errorf("got payload %q, want %q", got, payload)
+	}
+}
+
 func TestSignedHTTPRequest(t *testing.T) {
 	payload := []byte(`{"action": "push"}`)
 	secret := []byte("my-secret")
@@ -52,100 +154,14 @@ func TestSignedHTTPRequest(t *testing.T) {
 		t.Fatalf("SignedHTTPRequest: %v", err)
 	}
 
-	t.Run("HeaderFormat", func(t *testing.T) {
-		val := req.Header.Get(header)
-		if val == "" {
-			t.Fatal("signature header not set")
-		}
-		if !bytes.HasPrefix([]byte(val), []byte("sha256=")) {
-			t.Errorf("header value %q does not start with sha256=", val)
-		}
-	})
-
-	t.Run("CorrectSignature", func(t *testing.T) {
-		mac := hmac.New(sha256.New, secret)
-		mac.Write(payload)
-		want := "sha256=" + fmt.Sprintf("%x", mac.Sum(nil))
-		got := req.Header.Get(header)
-		if got != want {
-			t.Errorf("got signature %q, want %q", got, want)
-		}
-	})
-
-	t.Run("BodyReadable", func(t *testing.T) {
-		body, err := io.ReadAll(req.Body)
-		if err != nil {
-			t.Fatalf("reading body: %v", err)
-		}
-		if !bytes.Equal(body, payload) {
-			t.Errorf("got body %q, want %q", body, payload)
-		}
-	})
-
-	t.Run("GetBodyCallable", func(t *testing.T) {
-		if req.GetBody == nil {
-			t.Fatal("GetBody is nil")
-		}
-		rc, err := req.GetBody()
-		if err != nil {
-			t.Fatalf("GetBody: %v", err)
-		}
-		body, err := io.ReadAll(rc)
-		if err != nil {
-			t.Fatalf("reading GetBody: %v", err)
-		}
-		if !bytes.Equal(body, payload) {
-			t.Errorf("got body %q, want %q", body, payload)
-		}
-	})
-
-	t.Run("ContentLength", func(t *testing.T) {
-		if got, want := req.ContentLength, int64(len(payload)); got != want {
-			t.Errorf("got ContentLength %d, want %d", got, want)
-		}
-	})
-
-	t.Run("DifferentHeaderName", func(t *testing.T) {
-		req2 := httptest.NewRequest(http.MethodPost, "/", nil)
-		if err := webhooks.SignedHTTPRequest(req2, payload, secret, "X-Custom-Sig"); err != nil {
-			t.Fatalf("SignedHTTPRequest: %v", err)
-		}
-		if req2.Header.Get("X-Custom-Sig") == "" {
-			t.Error("custom header not set")
-		}
-		if req2.Header.Get(header) != "" {
-			t.Error("unexpected default header was set")
-		}
-	})
-
-	t.Run("EmptyPayload", func(t *testing.T) {
-		req3 := httptest.NewRequest(http.MethodPost, "/", nil)
-		if err := webhooks.SignedHTTPRequest(req3, []byte{}, secret, header); err != nil {
-			t.Fatalf("SignedHTTPRequest: %v", err)
-		}
-		if req3.Header.Get(header) == "" {
-			t.Error("signature header not set for empty payload")
-		}
-		if req3.ContentLength != 0 {
-			t.Errorf("got ContentLength %d, want 0", req3.ContentLength)
-		}
-	})
-
-	t.Run("RoundTrip", func(t *testing.T) {
-		getSig := webhooks.SHA256SignatureFromHeader(header)
-		validator, err := webhooks.SignatureValidator(getSig, staticSecrets(secret))
-		if err != nil {
-			t.Fatalf("SignatureValidator: %v", err)
-		}
-		req4 := signedRequest(t, payload, secret, header)
-		got, status := validator(req4)
-		if status != http.StatusOK {
-			t.Errorf("got status %d, want %d", status, http.StatusOK)
-		}
-		if !bytes.Equal(got, payload) {
-			t.Errorf("got payload %q, want %q", got, payload)
-		}
-	})
+	t.Run("HeaderFormat", func(t *testing.T) { checkSHRHeaderFormat(t, req, header) })
+	t.Run("CorrectSignature", func(t *testing.T) { checkSHRCorrectSignature(t, req, header, secret, payload) })
+	t.Run("BodyReadable", func(t *testing.T) { checkSHRBodyReadable(t, req, payload) })
+	t.Run("GetBodyCallable", func(t *testing.T) { checkSHRGetBodyCallable(t, req, payload) })
+	t.Run("ContentLength", func(t *testing.T) { checkSHRContentLength(t, req, payload) })
+	t.Run("DifferentHeaderName", func(t *testing.T) { checkSHRDifferentHeaderName(t, payload, secret, header) })
+	t.Run("EmptyPayload", func(t *testing.T) { checkSHREmptyPayload(t, secret, header) })
+	t.Run("RoundTrip", func(t *testing.T) { checkSHRRoundTrip(t, payload, secret, header) })
 }
 
 func TestSHA256SignatureFromHeader(t *testing.T) {
@@ -269,7 +285,7 @@ func TestSignatureValidator(t *testing.T) {
 	t.Run("CustomGetSignature", func(t *testing.T) {
 		// Verify that SignatureValidator works with any getSignature function,
 		// not just SHA256SignatureFromHeader.
-		alwaysValid := func(req *http.Request) ([]byte, int) {
+		alwaysValid := func(_ *http.Request) ([]byte, int) {
 			mac := hmac.New(sha256.New, secret)
 			mac.Write(payload)
 			return mac.Sum(nil), http.StatusOK
