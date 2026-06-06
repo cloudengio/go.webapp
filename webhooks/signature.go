@@ -5,7 +5,6 @@
 package webhooks
 
 import (
-	"bytes"
 	"context"
 	"crypto/hmac"
 	"crypto/sha256"
@@ -80,20 +79,16 @@ func SignatureValidator(getSignature func(req *http.Request) ([]byte, int), getT
 	}, nil
 }
 
-// SignedHTTPRequest creates an HTTP request with the given payload and adds a signature
-// header computed using the provided secret and the specified header name.
-func SignedHTTPRequest(req *http.Request, payload []byte, secret []byte, headerName string) error {
+// SignHTTPRequest signs the given payload using the provided secret and sets
+// the signature in the specified header of the HTTP request.
+func SignHTTPRequest(header http.Header, payload []byte, secret []byte, headerName string) error {
 	mac := hmac.New(sha256.New, secret)
 	_, err := mac.Write(payload)
 	if err != nil {
 		return fmt.Errorf("error computing HMAC signature: %v", err)
 	}
 	signature := "sha256=" + hex.EncodeToString(mac.Sum(nil))
-	req.Header.Set(headerName, signature)
-	req.GetBody = func() (io.ReadCloser, error) {
-		return io.NopCloser(bytes.NewReader(payload)), nil
-	}
-	req.Body = io.NopCloser(bytes.NewReader(payload))
-	req.ContentLength = int64(len(payload))
+	header.Set(headerName, signature)
+	header.Set("Content-Length", fmt.Sprintf("%d", len(payload)))
 	return nil
 }

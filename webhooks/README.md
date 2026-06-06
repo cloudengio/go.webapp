@@ -43,13 +43,12 @@ func SHA256SignatureFromHeader(headerName string) func(req *http.Request) ([]byt
 SHA256SignatureFromHeader returns a function that extracts and decodes the
 HMAC SHA256 signature from the specified header in the HTTP request.
 
-### Func SignedHTTPRequest
+### Func SignHTTPRequest
 ```go
-func SignedHTTPRequest(req *http.Request, payload []byte, secret []byte, headerName string) error
+func SignHTTPRequest(header http.Header, payload []byte, secret []byte, headerName string) error
 ```
-SignedHTTPRequest creates an HTTP request with the given payload and adds a
-signature header computed using the provided secret and the specified header
-name.
+SignHTTPRequest signs the given payload using the provided secret and sets
+the signature in the specified header of the HTTP request.
 
 
 
