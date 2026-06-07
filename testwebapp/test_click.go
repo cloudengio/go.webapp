@@ -37,6 +37,7 @@ type ClickTest struct {
 
 type clickTestOptions struct {
 	timeout            time.Duration
+	elementTimeout     time.Duration
 	extraExecAllocOpts []chromedp.ExecAllocatorOption
 	ctxOpts            []chromedp.ContextOption
 	userDataDir        string
@@ -45,10 +46,17 @@ type clickTestOptions struct {
 // ClickOption represents options to configure ClickTest.
 type ClickOption func(*clickTestOptions)
 
-// WithTimeout sets the timeout for the click test execution.
+// WithTimeout sets the overall timeout for the click test execution (including startup and navigation).
 func WithTimeout(timeout time.Duration) ClickOption {
 	return func(o *clickTestOptions) {
 		o.timeout = timeout
+	}
+}
+
+// WithElementTimeout sets the timeout for waiting for each individual DOM element.
+func WithElementTimeout(timeout time.Duration) ClickOption {
+	return func(o *clickTestOptions) {
+		o.elementTimeout = timeout
 	}
 }
 
@@ -82,7 +90,10 @@ func NewClickTest(specs []ClickSpec, opts ...ClickOption) *ClickTest {
 		opt(&ct.opts)
 	}
 	if ct.opts.timeout == 0 {
-		ct.opts.timeout = 10 * time.Second
+		ct.opts.timeout = 30 * time.Second
+	}
+	if ct.opts.elementTimeout == 0 {
+		ct.opts.elementTimeout = 5 * time.Second
 	}
 	return ct
 }
@@ -109,7 +120,7 @@ func (c *ClickTest) Run(ctx context.Context) error {
 }
 
 func (c *ClickTest) verify(ctx context.Context, spec ClickSpec) (err error) {
-	// Create a per-spec timeout context.
+	// Create a per-spec overall timeout context.
 	ctx, cancel := context.WithTimeout(ctx, c.opts.timeout)
 	defer cancel()
 
@@ -120,7 +131,7 @@ func (c *ClickTest) verify(ctx context.Context, spec ClickSpec) (err error) {
 	if len(userDataDir) == 0 {
 		tempDir, err = os.MkdirTemp("", "clicktest-spec-")
 		if err != nil {
-			return fmt.Errorf("failed to create user data directory: %v: %w", err, ErrClickUnexpectedError)
+			return fmt.Errorf("failed to create user data directory: %w: %w", err, ErrClickUnexpectedError)
 		}
 		defer func() {
 			_ = os.RemoveAll(tempDir)
@@ -134,21 +145,26 @@ func (c *ClickTest) verify(ctx context.Context, spec ClickSpec) (err error) {
 	// Navigate to the URL first.
 	ctxlog.Info(chromeCtx, "clicktest: navigating", "url", spec.URL)
 	if err := chromedp.Run(chromeCtx, chromedp.Navigate(spec.URL)); err != nil {
-		return fmt.Errorf("failed to navigate to %s: %v: %w", spec.URL, err, ErrClickUnexpectedError)
+		return fmt.Errorf("failed to navigate to %s: %w: %w", spec.URL, err, ErrClickUnexpectedError)
 	}
 
 	// Sequentially check and click each selector.
 	for _, selector := range spec.Selectors {
 		ctxlog.Info(chromeCtx, "clicktest: waiting/clicking selector", "selector", selector)
-		err := chromedp.Run(chromeCtx,
+
+		// Create a separate timeout context specifically for this element check/click.
+		stepCtx, stepCancel := context.WithTimeout(chromeCtx, c.opts.elementTimeout)
+		err := chromedp.Run(stepCtx,
 			chromedp.WaitVisible(selector),
 			chromedp.Click(selector),
 		)
+		stepCancel()
+
 		if err != nil {
 			if errors.Is(err, context.DeadlineExceeded) {
-				return fmt.Errorf("selector %q not found or not visible before timeout: %v: %w", selector, err, ErrClickElementNotFound)
+				return fmt.Errorf("selector %q not found or not visible before timeout: %w: %w", selector, err, ErrClickElementNotFound)
 			}
-			return fmt.Errorf("error clicking selector %q: %v: %w", selector, err, ErrClickUnexpectedError)
+			return fmt.Errorf("error clicking selector %q: %w: %w", selector, err, ErrClickUnexpectedError)
 		}
 	}
 

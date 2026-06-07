@@ -61,7 +61,7 @@ func TestClick(t *testing.T) {
 				URL:       srv.URL,
 				Selectors: []string{"#btn1", "#nonexistent"},
 			},
-		}, testwebapp.WithTimeout(2*time.Second))
+		}, testwebapp.WithElementTimeout(2*time.Second))
 		err := ct.Run(t.Context())
 		if err == nil {
 			t.Fatal("expected failure, got nil")

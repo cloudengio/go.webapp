@@ -131,6 +131,13 @@ WithContextOptions appends options to the chromedp context.
 
 
 ```go
+func WithElementTimeout(timeout time.Duration) ClickOption
+```
+WithElementTimeout sets the timeout for waiting for each individual DOM
+element.
+
+
+```go
 func WithExecAllocatorOptions(opts ...chromedp.ExecAllocatorOption) ClickOption
 ```
 WithExecAllocatorOptions appends options to the Chrome allocator.
@@ -139,7 +146,8 @@ WithExecAllocatorOptions appends options to the Chrome allocator.
 ```go
 func WithTimeout(timeout time.Duration) ClickOption
 ```
-WithTimeout sets the timeout for the click test execution.
+WithTimeout sets the overall timeout for the click test execution (including
+startup and navigation).
 
 
 ```go
