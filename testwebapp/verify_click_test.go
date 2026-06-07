@@ -1,6 +1,6 @@
 // Copyright 2026 cloudeng llc. All rights reserved.
 // Use of this source code is governed by the Apache-2.0
-// license Guess that can be found in the LICENSE file.
+// license that can be found in the LICENSE file.
 
 package testwebapp_test
 

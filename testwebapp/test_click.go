@@ -120,7 +120,7 @@ func (c *ClickTest) verify(ctx context.Context, spec ClickSpec) (err error) {
 	if len(userDataDir) == 0 {
 		tempDir, err = os.MkdirTemp("", "clicktest-spec-")
 		if err != nil {
-			return fmt.Errorf("failed to create user data directory: %w: %w", err, ErrClickUnexpectedError)
+			return fmt.Errorf("failed to create user data directory: %v: %w", err, ErrClickUnexpectedError)
 		}
 		defer func() {
 			_ = os.RemoveAll(tempDir)
@@ -134,7 +134,7 @@ func (c *ClickTest) verify(ctx context.Context, spec ClickSpec) (err error) {
 	// Navigate to the URL first.
 	ctxlog.Info(chromeCtx, "clicktest: navigating", "url", spec.URL)
 	if err := chromedp.Run(chromeCtx, chromedp.Navigate(spec.URL)); err != nil {
-		return fmt.Errorf("failed to navigate to %s: %w: %w", spec.URL, err, ErrClickUnexpectedError)
+		return fmt.Errorf("failed to navigate to %s: %v: %w", spec.URL, err, ErrClickUnexpectedError)
 	}
 
 	// Sequentially check and click each selector.
@@ -146,9 +146,9 @@ func (c *ClickTest) verify(ctx context.Context, spec ClickSpec) (err error) {
 		)
 		if err != nil {
 			if errors.Is(err, context.DeadlineExceeded) {
-				return fmt.Errorf("selector %q not found or not visible before timeout: %w: %w", selector, err, ErrClickElementNotFound)
+				return fmt.Errorf("selector %q not found or not visible before timeout: %v: %w", selector, err, ErrClickElementNotFound)
 			}
-			return fmt.Errorf("error clicking selector %q: %w: %w", selector, err, ErrClickUnexpectedError)
+			return fmt.Errorf("error clicking selector %q: %v: %w", selector, err, ErrClickUnexpectedError)
 		}
 	}
 
