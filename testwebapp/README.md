@@ -6,6 +6,13 @@ import cloudeng.io/webapp/testwebapp
 
 
 ## Variables
+### ErrClickUnexpectedError, ErrClickElementNotFound
+```go
+ErrClickUnexpectedError = errors.New("click unexpected error")
+ErrClickElementNotFound = errors.New("click element not found")
+
+```
+
 ### ErrGoGetUnexpectedError, ErrGoGetPathNotFound, ErrGoGetNotFound, ErrGoGetContentMismatch
 ```go
 ErrGoGetUnexpectedError = errors.New("go-get unexpected error")
@@ -105,6 +112,88 @@ func GenerateCheckStatusSpecs(urls []string, code int, redirects int) []CheckSta
 ```
 GenerateCheckStatusSpecs generates a slice of CheckStatusSpec for the given
 URLs, status code and number of redirects.
+
+
+
+
+### Type ClickOption
+```go
+type ClickOption func(*clickTestOptions)
+```
+ClickOption represents options to configure ClickTest.
+
+### Functions
+
+```go
+func WithContextOptions(opts ...chromedp.ContextOption) ClickOption
+```
+WithContextOptions appends options to the chromedp context.
+
+
+```go
+func WithElementTimeout(timeout time.Duration) ClickOption
+```
+WithElementTimeout sets the timeout for waiting for each individual DOM
+element.
+
+
+```go
+func WithExecAllocatorOptions(opts ...chromedp.ExecAllocatorOption) ClickOption
+```
+WithExecAllocatorOptions appends options to the Chrome allocator.
+
+
+```go
+func WithTimeout(timeout time.Duration) ClickOption
+```
+WithTimeout sets the overall timeout for the click test execution (including
+startup and navigation).
+
+
+```go
+func WithUserDataDir(dir string) ClickOption
+```
+WithUserDataDir sets the user data directory for Chrome.
+
+
+
+
+### Type ClickSpec
+```go
+type ClickSpec struct {
+	URL       string   `yaml:"url" json:"url"`
+	Selectors []string `yaml:"selectors" json:"selectors"`
+}
+```
+ClickSpec represents a specification for verifying and clicking elements on
+a URL.
+
+
+### Type ClickTest
+```go
+type ClickTest struct {
+	// contains filtered or unexported fields
+}
+```
+ClickTest can be used to validate pages by navigating to a URL, waiting for
+DOM elements to exist/be visible, and clicking them sequentially.
+
+### Functions
+
+```go
+func NewClickTest(specs []ClickSpec, opts ...ClickOption) *ClickTest
+```
+NewClickTest creates a new ClickTest with the given specs and options.
+
+
+
+### Methods
+
+```go
+func (c *ClickTest) Run(ctx context.Context) error
+```
+Run executes the ClickTest specifications. It runs the specs concurrently
+and uses chromedp via chromedputil to control the browser.
 
 
 
@@ -302,6 +391,47 @@ func NewTLSTest(specs ...TLSSpec) *TLSTest
 
 ```go
 func (t *TLSTest) Run(ctx context.Context) error
+```
+
+
+
+
+### Type WebhookRoundTripSpec
+```go
+type WebhookRoundTripSpec struct {
+	DeliveryURL string `yaml:"delivery_url" doc:"URL that the webhook payload is delivered to"`
+	RelayURL    string `yaml:"relay_url" doc:"URL that the relayed result is read from"`
+}
+```
+WebhookRoundTripSpec defines a single webhook round-trip test: a signed
+payload is delivered to DeliveryURL and the relayed result is read back from
+RelayURL and compared to the original payload. The signer for each delivery
+URL is looked up from the map passed to NewWebhookRoundTripTest.
+
+
+### Type WebhookRoundTripTest
+```go
+type WebhookRoundTripTest struct {
+	// contains filtered or unexported fields
+}
+```
+WebhookRoundTripTest validates webhook relay round-trips for a set of specs.
+
+### Functions
+
+```go
+func NewWebhookRoundTripTest(signers map[string]operations.Signer, specs ...WebhookRoundTripSpec) *WebhookRoundTripTest
+```
+NewWebhookRoundTripTest creates a new WebhookRoundTripTest. signers maps
+each delivery URL to the operations.Signer used to sign payloads for that
+endpoint; a nil or missing entry means the request is sent unsigned.
+
+
+
+### Methods
+
+```go
+func (w *WebhookRoundTripTest) Run(ctx context.Context, client *http.Client) error
 ```
 
 

@@ -3,14 +3,15 @@ module cloudeng.io/webapp
 go 1.26
 
 require (
-	cloudeng.io/cmdutil v0.0.0-20260605174237-2d6c1041426f
+	cloudeng.io/cmdutil v0.0.0-20260606211206-13a5cf17eb80
 	cloudeng.io/errors v0.0.14-0.20260312171538-61fcde6ce278
-	cloudeng.io/file v0.0.0-20260605174237-2d6c1041426f
-	cloudeng.io/io v0.0.0-20260605174237-2d6c1041426f
-	cloudeng.io/logging v0.0.0-20260605174237-2d6c1041426f
-	cloudeng.io/net v0.0.0-20260605174237-2d6c1041426f
+	cloudeng.io/file v0.0.0-20260606211206-13a5cf17eb80
+	cloudeng.io/io v0.0.0-20260606211206-13a5cf17eb80
+	cloudeng.io/logging v0.0.0-20260606211206-13a5cf17eb80
+	cloudeng.io/net v0.0.0-20260606211206-13a5cf17eb80
 	cloudeng.io/os v0.0.0-20260606211206-13a5cf17eb80
 	cloudeng.io/sync v0.0.11
+	cloudeng.io/webapi/operations v0.0.0-20260606221558-8da71ff734ee
 	github.com/chromedp/cdproto v0.0.0-20260427013145-5737772c319b
 	github.com/cloudengio/chromedp v0.0.0-20260505165647-6dc9039fb140
 	github.com/gaissmai/bart v0.28.0
@@ -24,7 +25,7 @@ require (
 )
 
 require (
-	cloudeng.io/algo v0.0.0-20260605174237-2d6c1041426f // indirect
+	cloudeng.io/algo v0.0.0-20260606211206-13a5cf17eb80 // indirect
 	cloudeng.io/sys v0.0.0-20260606211206-13a5cf17eb80 // indirect
 	cloudeng.io/text v0.0.16-0.20260312171538-61fcde6ce278 // indirect
 	github.com/chromedp/sysutil v1.1.0 // indirect
@@ -44,7 +45,7 @@ require (
 	github.com/lestrrat-go/dsig v1.3.0 // indirect
 	github.com/lestrrat-go/dsig-secp256k1 v1.0.0 // indirect
 	github.com/lestrrat-go/httpcc v1.0.1 // indirect
-	github.com/lestrrat-go/httprc/v3 v3.0.5 // indirect
+	github.com/lestrrat-go/httprc/v3 v3.0.6 // indirect
 	github.com/lestrrat-go/option/v2 v2.0.0 // indirect
 	github.com/philhofer/fwd v1.2.0 // indirect
 	github.com/pmezard/go-difflib v1.0.1-0.20181226105442-5d4384ee4fb2 // indirect
