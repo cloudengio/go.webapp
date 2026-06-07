@@ -24,9 +24,10 @@ require (
 )
 
 require (
-	cloudeng.io/algo v0.0.0-20260605174237-2d6c1041426f // indirect
+	cloudeng.io/algo v0.0.0-20260606211206-13a5cf17eb80 // indirect
 	cloudeng.io/sys v0.0.0-20260606211206-13a5cf17eb80 // indirect
 	cloudeng.io/text v0.0.16-0.20260312171538-61fcde6ce278 // indirect
+	cloudeng.io/webapi/operations v0.0.0-20260606221558-8da71ff734ee // indirect
 	github.com/chromedp/sysutil v1.1.0 // indirect
 	github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc // indirect
 	github.com/decred/dcrd/dcrec/secp256k1/v4 v4.4.1 // indirect
