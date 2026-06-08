@@ -6,6 +6,7 @@ package testwebapp
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"time"
@@ -102,7 +103,10 @@ func DrainRelayURL[T any](ctx context.Context, client *http.Client, relayURL str
 			if ctx.Err() != nil {
 				return results, ctx.Err()
 			}
-			return results, nil
+			if errors.Is(idleCtx.Err(), context.DeadlineExceeded) {
+				return results, nil
+			}
+			return results, err
 		}
 		results = append(results, got)
 	}
