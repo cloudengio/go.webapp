@@ -226,6 +226,9 @@ YAML format (the node itself is the map — no wrapper key):
     bob@example.com:
       - other-secret
 
+Note that SecretsConfig cannot be inlined by a parent YAML struct, it must
+always be a named field.
+
 ### Methods
 
 ```go

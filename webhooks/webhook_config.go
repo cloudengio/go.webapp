@@ -80,6 +80,9 @@ func (c Config) Options() []Option {
 //	  - secret-id-2
 //	bob@example.com:
 //	  - other-secret
+//
+// Note that SecretsConfig cannot be inlined by a parent YAML struct,
+// it must always be a named field.
 type SecretsConfig struct {
 	Secrets     map[string][]string `yaml:"-" doc:"map of users to lists of secret IDs, where users are service specific (e.g. GitHub usernames or email addresses) and secret IDs identify entries in the key store"`
 	SecretSpecs []keys.KeySpec      `yaml:"-" doc:"-"`

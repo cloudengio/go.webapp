@@ -64,6 +64,15 @@ func ClientNoRedirect(client *http.Client) *http.Client
 ClientNoRedirect returns a copy of the given client that does not follow
 redirects.
 
+### Func DrainRelayURL
+```go
+func DrainRelayURL[T any](ctx context.Context, client *http.Client, relayURL string, timeout time.Duration) ([]T, error)
+```
+DrainRelayURL collects all payloads from relayURL, decoding each as T.
+It uses timeout as an idle deadline: after receiving a payload it resets the
+timer, so a short queue returns quickly. It returns when no payload arrives
+within timeout or ctx is cancelled.
+
 
 
 ## Types
