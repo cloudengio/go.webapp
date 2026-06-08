@@ -63,7 +63,6 @@ func (w *WebhookRoundTripTest) runOne(ctx context.Context, spec WebhookRoundTrip
 		ID:   fmt.Sprintf("test-%d", time.Now().UnixNano()),
 		Time: time.Now().UTC().Format(time.RFC3339Nano),
 	}
-
 	if err := w.deliver(ctx, spec, client, payload); err != nil {
 		return err
 	}
@@ -75,24 +74,53 @@ func (w *WebhookRoundTripTest) deliver(ctx context.Context, spec WebhookRoundTri
 	if signer := w.signers[spec.DeliveryURL]; signer != nil {
 		opts = append(opts, operations.WithSigner(signer))
 	}
+
 	ep := operations.NewPutEndpoint[webhookTestPayload, struct{}](opts...)
 	_, _, _, err := ep.Post(ctx, spec.DeliveryURL, payload)
 	if err != nil {
 		return fmt.Errorf("delivering webhook: %w", err)
 	}
+
 	return nil
+}
+
+// DrainRelayURL collects all payloads from relayURL, decoding each as T.
+// It uses timeout as an idle deadline: after receiving a payload it resets
+// the timer, so a short queue returns quickly. It returns when no payload
+// arrives within timeout or ctx is cancelled.
+func DrainRelayURL[T any](ctx context.Context, client *http.Client, relayURL string, timeout time.Duration) ([]T, error) {
+	ep := operations.NewEndpoint[T](operations.WithHTTPClient(client))
+	var results []T
+	for {
+		if ctx.Err() != nil {
+			return results, ctx.Err()
+		}
+		idleCtx, cancel := context.WithTimeout(ctx, timeout)
+		got, _, _, err := ep.Get(idleCtx, relayURL)
+		cancel()
+		if err != nil {
+			if ctx.Err() != nil {
+				return results, ctx.Err()
+			}
+			return results, nil
+		}
+		results = append(results, got)
+	}
 }
 
 func (w *WebhookRoundTripTest) wait(ctx context.Context, spec WebhookRoundTripSpec, client *http.Client, want webhookTestPayload) error {
 	ep := operations.NewEndpoint[webhookTestPayload](
 		operations.WithHTTPClient(client),
 	)
-	got, _, _, err := ep.Get(ctx, spec.RelayURL)
-	if err != nil {
-		return fmt.Errorf("waiting for relay: %w", err)
+	for {
+		got, data, _, err := ep.Get(ctx, spec.RelayURL)
+		if err != nil {
+			ctxlog.Error(ctx, "webhook-relay", "spec", spec, "got", string(data), "error", err)
+			return fmt.Errorf("waiting for relay: %w", err)
+		}
+		if got == want {
+			return nil
+		}
+		ctxlog.Info(ctx, "webhook-relay-skip", "spec", spec, "got", got, "want", want)
 	}
-	if got != want {
-		return fmt.Errorf("relay payload mismatch: got %+v, want %+v", got, want)
-	}
-	return nil
 }
