@@ -581,17 +581,10 @@ func NewServeFSWithHeaders(fs fs.FS, next http.Handler, rewrite func(string) str
 NewServeFSWithHeaders creates a new ServeFSWithHeaders handler that serves
 files from the provided fs.FS. The urlpaths registered via SetHeaders are
 used to look up which headers to apply; the optional rewrite function is
-applied to the URL path after the lookup to produce the FS file path.
+applied to the URL path at registration time to produce the FS file path.
 
-When serving with custom headers, a leading '/' is stripped from the
-(possibly rewritten) path before reading from the FS, so URL paths like
-"/index.html" map naturally to FS paths like "index.html" without needing a
-rewrite function.
-
-When SetHeaders is called with an empty header map the file is served via
-http.ServeFileFS, which receives the path before stripping. In that case
-the rewrite function must handle any necessary path transformation (e.g.
-stripping the leading '/').
+A leading '/' is stripped from the (possibly rewritten) path so URL paths
+like "/index.html" map naturally to FS paths like "index.html".
 
 The next handler is called for any URL path for which SetHeaders has not
 been called. If next is nil such requests are answered with 404 Not Found.
@@ -608,11 +601,11 @@ func (s *ServeFSWithHeaders) ServeHTTP(w http.ResponseWriter, r *http.Request)
 ```go
 func (s *ServeFSWithHeaders) SetHeaders(headers http.Header, urlpaths ...string)
 ```
-SetHeaders sets the headers to be used when serving the file at the
-specified URL path. If SetHeaders is not called for a URL path then the
-file will not be served and the next handler will be called instead.
-If SetHeaders is called with an empty header, the file will be served usng
-http.ServeFileFS without setting any additional headers.
+SetHeaders registers headers for the given URL paths. The FS path for each
+URL path is computed once here (applying rewrite if set, then stripping a
+leading '/'), so ServeHTTP never derives a file path from request data.
+If headers is empty the file is served via http.ServeFileFS without extra
+headers.
 
 
 
