@@ -39,7 +39,7 @@ func checkServeFSHeader(t *testing.T, resp *httptest.ResponseRecorder, key, want
 func checkServeFSBody(t *testing.T, resp *httptest.ResponseRecorder, want string) {
 	t.Helper()
 	body := resp.Body.String()
-	if got := string(body); got != want {
+	if got := body; got != want {
 		t.Errorf("body: got %q, want %q", got, want)
 	}
 }
