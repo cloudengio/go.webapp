@@ -564,19 +564,65 @@ specified URL with the specified status code.
 
 
 
+### Type ServeFSWithHeaders
+```go
+type ServeFSWithHeaders struct {
+	// contains filtered or unexported fields
+}
+```
+ServeFSWithHeaders is an http.Handler that serves files from an fs.FS with
+specified headers for specific URL paths.
+
+### Functions
+
+```go
+func NewServeFSWithHeaders(fs fs.FS, next http.Handler, rewrite func(string) string) *ServeFSWithHeaders
+```
+NewServeFSWithHeaders creates a new ServeFSWithHeaders handler that serves
+files from the provided fs.FS. The urlpaths registered via SetHeaders are
+used to look up which headers to apply; the optional rewrite function is
+applied to the URL path at registration time to produce the FS file path.
+
+A leading '/' is stripped from the (possibly rewritten) path so URL paths
+like "/index.html" map naturally to FS paths like "index.html".
+
+The next handler is called for any URL path for which SetHeaders has not
+been called. If next is nil such requests are answered with 404 Not Found.
+
+
+
+### Methods
+
+```go
+func (s *ServeFSWithHeaders) ServeHTTP(w http.ResponseWriter, r *http.Request)
+```
+
+
+```go
+func (s *ServeFSWithHeaders) SetHeaders(headers http.Header, urlpaths ...string)
+```
+SetHeaders registers headers for the given URL paths. The FS path for each
+URL path is computed once here (applying rewrite if set, then stripping a
+leading '/'), so ServeHTTP never derives a file path from request data.
+If headers is empty the file is served via http.ServeFileFS without extra
+headers.
+
+
+
+
 ### Type ServeWithHeaders
 ```go
 type ServeWithHeaders struct {
 	// contains filtered or unexported fields
 }
 ```
-ServeWithHeaders is an http.Handler that serves a file with specified
-headers.
+ServeWithHeaders is an http.Handler that serves a byte slice with specified
+headers and only supports GET requests to a specific URL path.
 
 ### Functions
 
 ```go
-func NewServeWithHeaders(headers http.Header, fs fs.FS, filename, urlpath string) ServeWithHeaders
+func NewServeWithHeaders(headers http.Header, data []byte, urlpath string) ServeWithHeaders
 ```
 NewServeWithHeaders creates a new ServeWithHeaders handler.
 
