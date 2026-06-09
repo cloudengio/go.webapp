@@ -564,19 +564,72 @@ specified URL with the specified status code.
 
 
 
+### Type ServeFSWithHeaders
+```go
+type ServeFSWithHeaders struct {
+	// contains filtered or unexported fields
+}
+```
+ServeFSWithHeaders is an http.Handler that serves files from an fs.FS with
+specified headers for specific URL paths.
+
+### Functions
+
+```go
+func NewServeFSWithHeaders(fs fs.FS, next http.Handler, rewrite func(string) string) *ServeFSWithHeaders
+```
+NewServeFSWithHeaders creates a new ServeFSWithHeaders handler that serves
+files from the provided fs.FS. The urlpaths registered via SetHeaders are
+used to look up which headers to apply; the optional rewrite function is
+applied to the URL path after the lookup to produce the FS file path.
+
+When serving with custom headers, a leading '/' is stripped from the
+(possibly rewritten) path before reading from the FS, so URL paths like
+"/index.html" map naturally to FS paths like "index.html" without needing a
+rewrite function.
+
+When SetHeaders is called with an empty header map the file is served via
+http.ServeFileFS, which receives the path before stripping. In that case
+the rewrite function must handle any necessary path transformation (e.g.
+stripping the leading '/').
+
+The next handler is called for any URL path for which SetHeaders has not
+been called. If next is nil such requests are answered with 404 Not Found.
+
+
+
+### Methods
+
+```go
+func (s *ServeFSWithHeaders) ServeHTTP(w http.ResponseWriter, r *http.Request)
+```
+
+
+```go
+func (s *ServeFSWithHeaders) SetHeaders(headers http.Header, urlpaths ...string)
+```
+SetHeaders sets the headers to be used when serving the file at the
+specified URL path. If SetHeaders is not called for a URL path then the
+file will not be served and the next handler will be called instead.
+If SetHeaders is called with an empty header, the file will be served usng
+http.ServeFileFS without setting any additional headers.
+
+
+
+
 ### Type ServeWithHeaders
 ```go
 type ServeWithHeaders struct {
 	// contains filtered or unexported fields
 }
 ```
-ServeWithHeaders is an http.Handler that serves a file with specified
-headers.
+ServeWithHeaders is an http.Handler that serves a byte slice with specified
+headers and only supports GET requests to a specific URL path.
 
 ### Functions
 
 ```go
-func NewServeWithHeaders(headers http.Header, fs fs.FS, filename, urlpath string) ServeWithHeaders
+func NewServeWithHeaders(headers http.Header, data []byte, urlpath string) ServeWithHeaders
 ```
 NewServeWithHeaders creates a new ServeWithHeaders handler.
 

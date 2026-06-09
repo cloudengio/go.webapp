@@ -5,10 +5,7 @@
 package webapp_test
 
 import (
-	"context"
-	"errors"
 	"io"
-	"io/fs"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -16,39 +13,14 @@ import (
 	"cloudeng.io/webapp"
 )
 
-type mockReadFileFS struct {
-	files map[string][]byte
-}
-
-func (m *mockReadFileFS) ReadFile(name string) ([]byte, error) {
-	return m.ReadFileCtx(context.Background(), name)
-}
-
-func (m *mockReadFileFS) ReadFileCtx(_ context.Context, name string) ([]byte, error) {
-	if data, ok := m.files[name]; ok {
-		return data, nil
-	}
-	return nil, &mockNotFoundError{name}
-}
-
-func (m *mockReadFileFS) Open(_ string) (fs.File, error) {
-	return nil, errors.New("Open not implemented")
-}
-
-type mockNotFoundError struct{ name string }
-
-func (e *mockNotFoundError) Error() string { return "not found: " + e.name }
-
 func TestServeWithHeaders(t *testing.T) {
 	const content = "icon-data"
-	const filename = "favicon.ico"
 	const urlpath = "/favicon.ico"
 
-	fs := &mockReadFileFS{files: map[string][]byte{filename: []byte(content)}}
 	h := webapp.NewServeWithHeaders(http.Header{
 		"Content-Type":  {"image/x-icon"},
 		"Cache-Control": {"public, max-age=86400"},
-	}, fs, filename, urlpath)
+	}, []byte(content), urlpath)
 
 	if got, want := h.URLPath(), urlpath; got != want {
 		t.Errorf("URLPath: got %q, want %q", got, want)
@@ -84,16 +56,12 @@ func TestServeWithHeaders(t *testing.T) {
 	if got, want := w.Result().StatusCode, http.StatusNotFound; got != want {
 		t.Errorf("wrong path: got %v, want %v", got, want)
 	}
-}
 
-func TestServeWithHeaders_FileNotFound(t *testing.T) {
-	fs := &mockReadFileFS{files: map[string][]byte{}}
-	h := webapp.NewServeWithHeaders(http.Header{"Content-Type": {"image/x-icon"}}, fs, "missing.ico", "/favicon.ico")
-
-	req := httptest.NewRequest(http.MethodGet, "/favicon.ico", nil)
-	w := httptest.NewRecorder()
+	// Non-GET returns 405.
+	req = httptest.NewRequest(http.MethodPost, urlpath, nil)
+	w = httptest.NewRecorder()
 	h.ServeHTTP(w, req)
-	if got, want := w.Result().StatusCode, http.StatusInternalServerError; got != want {
-		t.Errorf("got %v, want %v", got, want)
+	if got, want := w.Result().StatusCode, http.StatusMethodNotAllowed; got != want {
+		t.Errorf("POST: got %v, want %v", got, want)
 	}
 }
