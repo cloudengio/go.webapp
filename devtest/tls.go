@@ -5,20 +5,25 @@
 package devtest
 
 import (
+	"context"
 	"crypto"
 	"crypto/ecdsa"
 	"crypto/ed25519"
 	"crypto/rand"
 	"crypto/rsa"
+	"crypto/tls"
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/pem"
 	"fmt"
 	"math/big"
 	"net"
+	"net/http"
 	"os"
 	"os/exec"
 	"time"
+
+	"cloudeng.io/net/http/httpfs"
 )
 
 // NewSelfSignedCertUsingMkcert uses mkcert (https://github.com/FiloSottile/mkcert) to
@@ -241,10 +246,33 @@ func allIPS() []string {
 // will return the system cert pool.
 // It is intended for testing purposes only.
 func CertPoolForTesting(pemFiles ...string) (*x509.CertPool, error) {
-	if len(pemFiles) == 0 {
-		return x509.SystemCertPool()
+	return certPoolForTesting(nil, pemFiles...)
+}
+
+// CertPoolWithSystemRootsForTesting returns a new x509.CertPool containing the
+// system root certs and the certs in the specified pem files.  If no pem files
+// are specified it will return a cert pool with just the system roots.
+// It is intended for testing purposes only.
+func CertPoolWithSystemRootsForTesting(pemFiles ...string) (*x509.CertPool, error) {
+	sysPool, err := x509.SystemCertPool()
+	if err != nil {
+		return nil, fmt.Errorf("failed to load system cert pool: %w", err)
 	}
-	rootCAs := x509.NewCertPool()
+	return certPoolForTesting(sysPool, pemFiles...)
+}
+
+func certPoolForTesting(pool *x509.CertPool, pemFiles ...string) (*x509.CertPool, error) {
+	if len(pemFiles) == 0 {
+		if pool == nil {
+			return x509.SystemCertPool()
+		} else {
+			return pool, nil
+		}
+	}
+	rootCAs := pool
+	if rootCAs == nil {
+		rootCAs = x509.NewCertPool()
+	}
 	for _, pemFile := range pemFiles {
 		if len(pemFile) == 0 {
 			continue
@@ -260,4 +288,50 @@ func CertPoolForTesting(pemFiles ...string) (*x509.CertPool, error) {
 		}
 	}
 	return rootCAs, nil
+}
+
+// DownloadCertChain downloads the certificate chain from the given URLs
+// and returns the parsed certificates. It uses an insecure HTTP client
+// since the certs may not be trusted yet.
+func DownloadCertChain(ctx context.Context, urls ...string) ([]*x509.Certificate, error) {
+	client := &http.Client{
+		Transport: &http.Transport{
+			TLSClientConfig: &tls.Config{
+				InsecureSkipVerify: true, //nolint:gosec // bootstrapping trust anchor, cert cannot be verified before download
+			},
+		},
+	}
+	var certs []*x509.Certificate
+	fs := httpfs.New(client)
+	for _, url := range urls {
+		data, err := fs.ReadFileCtx(ctx, url)
+		if err != nil {
+			return nil, fmt.Errorf("failed to download cert from %q: %w", url, err)
+		}
+		block, _ := pem.Decode(data)
+		if block == nil {
+			return nil, fmt.Errorf("failed to decode PEM from %q: no block found", url)
+		}
+		cert, err := x509.ParseCertificate(block.Bytes)
+		if err != nil {
+			return nil, fmt.Errorf("failed to parse certificate from %q: %w", url, err)
+		}
+		certs = append(certs, cert)
+	}
+	return certs, nil
+}
+
+// WriteCertChainToPEMFile writes the given certificates to a PEM file at
+// the specified path.
+func WriteCertChainToPEMFile(certs []*x509.Certificate, pemFile string) error {
+	var pemData []byte
+	for _, cert := range certs {
+
+		pemBlock := &pem.Block{
+			Type:  "CERTIFICATE",
+			Bytes: cert.Raw,
+		}
+		pemData = append(pemData, pem.EncodeToMemory(pemBlock)...)
+	}
+	return os.WriteFile(pemFile, pemData, 0600)
 }

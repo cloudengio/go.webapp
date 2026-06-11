@@ -6,6 +6,7 @@ package testwebapp
 
 import (
 	"context"
+	"crypto/x509"
 	"errors"
 	"fmt"
 	"os"
@@ -15,75 +16,146 @@ import (
 	"cloudeng.io/sync/errgroup"
 	"cloudeng.io/webapp/devtest/chromedputil"
 	"github.com/cloudengio/chromedp"
+	"gopkg.in/yaml.v3"
 )
 
 var (
-	ErrClickUnexpectedError = errors.New("click unexpected error")
-	ErrClickElementNotFound = errors.New("click element not found")
+	ErrNavigateUnexpectedError = errors.New("click unexpected error")
+	ErrNavigateElementNotFound = errors.New("click element not found")
 )
 
-// ClickSpec represents a specification for verifying and clicking elements on a URL.
-type ClickSpec struct {
-	URL       string   `yaml:"url" json:"url"`
-	Selectors []string `yaml:"selectors" json:"selectors"`
+// SelectorAction is an enum of the actions that can be performed on a DOM
+// element after it becomes visible. Use WithSelectorActions for actions not
+// covered by this enum (e.g. right-click via MouseClickNode).
+type SelectorAction string
+
+const (
+	// SelectorActionNone waits for the element to be visible but performs no
+	// further action. This is the default when no action is specified.
+	SelectorActionNone SelectorAction = ""
+	// SelectorActionClick performs a single left click on the element.
+	SelectorActionClick SelectorAction = "click"
+	// SelectorActionDoubleClick performs a double left click on the element.
+	SelectorActionDoubleClick SelectorAction = "double_click"
+)
+
+func (a SelectorAction) MarshalYAML() (any, error) {
+	return string(a), nil
 }
 
-// ClickTest can be used to validate pages by navigating to a URL,
+func (a *SelectorAction) UnmarshalYAML(value *yaml.Node) error {
+	var s string
+	if err := value.Decode(&s); err != nil {
+		return err
+	}
+	switch SelectorAction(s) {
+	case SelectorActionNone, SelectorActionClick, SelectorActionDoubleClick:
+		*a = SelectorAction(s)
+		return nil
+	default:
+		return fmt.Errorf("unknown SelectorAction %q; valid values: %q, %q",
+			s, SelectorActionClick, SelectorActionDoubleClick)
+	}
+}
+
+func (a SelectorAction) chromedpActions(selector string) []chromedp.Action {
+	switch a {
+	case SelectorActionClick:
+		return []chromedp.Action{chromedp.Click(selector)}
+	case SelectorActionDoubleClick:
+		return []chromedp.Action{chromedp.DoubleClick(selector)}
+	default:
+		return nil
+	}
+}
+
+// NavigationSpec represents a specification for verifying and interacting with
+// elements on a URL. Action is applied to every selector in Selectors; use
+// WithSelectorActions to override the action for individual selectors.
+type NavigationSpec struct {
+	URL       string         `yaml:"url" json:"url"`
+	Selectors []string       `yaml:"selectors" json:"selectors"`
+	Action    SelectorAction `yaml:"action" json:"action"`
+}
+
+// NavigationTest can be used to validate pages by navigating to a URL,
 // waiting for DOM elements to exist/be visible, and clicking them sequentially.
-type ClickTest struct {
-	specs []ClickSpec
-	opts  clickTestOptions
+type NavigationTest struct {
+	specs []NavigationSpec
+	opts  navigateTestOptions
 }
 
-type clickTestOptions struct {
+type navigateTestOptions struct {
 	timeout            time.Duration
 	elementTimeout     time.Duration
 	extraExecAllocOpts []chromedp.ExecAllocatorOption
 	ctxOpts            []chromedp.ContextOption
 	userDataDir        string
+	selectorActions    map[string][]chromedp.Action
 }
 
-// ClickOption represents options to configure ClickTest.
-type ClickOption func(*clickTestOptions)
+// NavigateOption represents options to configure NavigationTest.
+type NavigateOption func(*navigateTestOptions)
 
 // WithTimeout sets the overall timeout for the click test execution (including startup and navigation).
-func WithTimeout(timeout time.Duration) ClickOption {
-	return func(o *clickTestOptions) {
+func WithTimeout(timeout time.Duration) NavigateOption {
+	return func(o *navigateTestOptions) {
 		o.timeout = timeout
 	}
 }
 
 // WithElementTimeout sets the timeout for waiting for each individual DOM element.
-func WithElementTimeout(timeout time.Duration) ClickOption {
-	return func(o *clickTestOptions) {
+func WithElementTimeout(timeout time.Duration) NavigateOption {
+	return func(o *navigateTestOptions) {
 		o.elementTimeout = timeout
 	}
 }
 
 // WithExecAllocatorOptions appends options to the Chrome allocator.
-func WithExecAllocatorOptions(opts ...chromedp.ExecAllocatorOption) ClickOption {
-	return func(o *clickTestOptions) {
+func WithExecAllocatorOptions(opts ...chromedp.ExecAllocatorOption) NavigateOption {
+	return func(o *navigateTestOptions) {
 		o.extraExecAllocOpts = append(o.extraExecAllocOpts, opts...)
 	}
 }
 
 // WithContextOptions appends options to the chromedp context.
-func WithContextOptions(opts ...chromedp.ContextOption) ClickOption {
-	return func(o *clickTestOptions) {
+func WithContextOptions(opts ...chromedp.ContextOption) NavigateOption {
+	return func(o *navigateTestOptions) {
 		o.ctxOpts = append(o.ctxOpts, opts...)
 	}
 }
 
 // WithUserDataDir sets the user data directory for Chrome.
-func WithUserDataDir(dir string) ClickOption {
-	return func(o *clickTestOptions) {
+func WithUserDataDir(dir string) NavigateOption {
+	return func(o *navigateTestOptions) {
 		o.userDataDir = dir
 	}
 }
 
-// NewClickTest creates a new ClickTest with the given specs and options.
-func NewClickTest(specs []ClickSpec, opts ...ClickOption) *ClickTest {
-	ct := &ClickTest{
+// WithSuppressedCertErrorsFor configures Chrome to suppress certificate errors
+// for connections whose chain includes one of the provided CA certificates.
+// Intended for testing against servers using locally issued certificates such
+// as those from the Pebble ACME test server.
+func WithSuppressedCertErrorsFor(certs ...*x509.Certificate) NavigateOption {
+	return WithExecAllocatorOptions(chromedputil.CertPoolAllocatorOption(certs...))
+}
+
+// WithSelectorActions registers chromedp actions to run after WaitVisible for
+// the given selector. If no actions are registered for a selector, only
+// WaitVisible is performed. Call this option once per selector that requires
+// additional interaction (e.g. chromedp.Click).
+func WithSelectorActions(selector string, actions ...chromedp.Action) NavigateOption {
+	return func(o *navigateTestOptions) {
+		if o.selectorActions == nil {
+			o.selectorActions = make(map[string][]chromedp.Action)
+		}
+		o.selectorActions[selector] = actions
+	}
+}
+
+// NewNavigationTest creates a new NavigationTest with the given specs and options.
+func NewNavigationTest(specs []NavigationSpec, opts ...NavigateOption) *NavigationTest {
+	ct := &NavigationTest{
 		specs: specs,
 	}
 	for _, opt := range opts {
@@ -98,9 +170,10 @@ func NewClickTest(specs []ClickSpec, opts ...ClickOption) *ClickTest {
 	return ct
 }
 
-// Run executes the ClickTest specifications. It runs the specs concurrently
+// Run executes the NavigationTest specifications. It runs the specs concurrently
 // and uses chromedp via chromedputil to control the browser.
-func (c *ClickTest) Run(ctx context.Context) error {
+func (c *NavigationTest) Run(ctx context.Context) error {
+	ctxlog.Info(ctx, "navigation-test: starting", "num_specs", len(c.specs))
 	if len(c.specs) == 0 {
 		return nil
 	}
@@ -109,17 +182,17 @@ func (c *ClickTest) Run(ctx context.Context) error {
 		g.Go(func() error {
 			err := c.verify(ctx, spec)
 			if err != nil {
-				ctxlog.Error(ctx, "clicktest", "spec", spec, "success", false, "error", err)
+				ctxlog.Error(ctx, "navigation-test", "spec", spec, "success", false, "error", err)
 				return fmt.Errorf("%v: %w", spec, err)
 			}
-			ctxlog.Info(ctx, "clicktest", "spec", spec, "success", true)
+			ctxlog.Info(ctx, "navigation-test", "spec", spec, "success", true)
 			return nil
 		})
 	}
 	return g.Wait()
 }
 
-func (c *ClickTest) verify(ctx context.Context, spec ClickSpec) (err error) {
+func (c *NavigationTest) verify(ctx context.Context, spec NavigationSpec) (err error) {
 	// Create a per-spec overall timeout context.
 	ctx, cancel := context.WithTimeout(ctx, c.opts.timeout)
 	defer cancel()
@@ -129,9 +202,9 @@ func (c *ClickTest) verify(ctx context.Context, spec ClickSpec) (err error) {
 	userDataDir := c.opts.userDataDir
 	var tempDir string
 	if len(userDataDir) == 0 {
-		tempDir, err = os.MkdirTemp("", "clicktest-spec-")
+		tempDir, err = os.MkdirTemp("", "navigation-test-spec-")
 		if err != nil {
-			return fmt.Errorf("failed to create user data directory: %w: %w", err, ErrClickUnexpectedError)
+			return fmt.Errorf("failed to create user data directory: %w: %w", err, ErrNavigateUnexpectedError)
 		}
 		defer func() {
 			_ = os.RemoveAll(tempDir)
@@ -143,30 +216,35 @@ func (c *ClickTest) verify(ctx context.Context, spec ClickSpec) (err error) {
 	defer chromeCancel()
 
 	// Navigate to the URL first.
-	ctxlog.Info(chromeCtx, "clicktest: navigating", "url", spec.URL)
+	ctxlog.Info(chromeCtx, "navigation-test: navigating", "url", spec.URL)
 	if err := chromedp.Run(chromeCtx, chromedp.Navigate(spec.URL)); err != nil {
-		return fmt.Errorf("failed to navigate to %s: %w: %w", spec.URL, err, ErrClickUnexpectedError)
+		return fmt.Errorf("failed to navigate to %s: %w: %w", spec.URL, err, ErrNavigateUnexpectedError)
 	}
 
-	// Sequentially check and click each selector.
+	// Wait for (and optionally act on) each selector in parallel.
+	var g errgroup.T
 	for _, selector := range spec.Selectors {
-		ctxlog.Info(chromeCtx, "clicktest: waiting/clicking selector", "selector", selector)
-
-		// Create a separate timeout context specifically for this element check/click.
-		stepCtx, stepCancel := context.WithTimeout(chromeCtx, c.opts.elementTimeout)
-		err := chromedp.Run(stepCtx,
-			chromedp.WaitVisible(selector),
-			chromedp.Click(selector),
-		)
-		stepCancel()
-
-		if err != nil {
-			if errors.Is(err, context.DeadlineExceeded) {
-				return fmt.Errorf("selector %q not found or not visible before timeout: %w: %w", selector, err, ErrClickElementNotFound)
+		g.Go(func() error {
+			actions := []chromedp.Action{chromedp.WaitVisible(selector)}
+			if extra, ok := c.opts.selectorActions[selector]; ok {
+				actions = append(actions, extra...)
+			} else if specActions := spec.Action.chromedpActions(selector); len(specActions) > 0 {
+				actions = append(actions, specActions...)
 			}
-			return fmt.Errorf("error clicking selector %q: %w: %w", selector, err, ErrClickUnexpectedError)
-		}
-	}
+			ctxlog.Info(chromeCtx, "navigatetest: waiting for selector", "selector", selector, "num_actions", len(actions)-1)
 
-	return nil
+			stepCtx, stepCancel := context.WithTimeout(chromeCtx, c.opts.elementTimeout)
+			err := chromedp.Run(stepCtx, actions...)
+			stepCancel()
+
+			if err != nil {
+				if errors.Is(err, context.DeadlineExceeded) {
+					return fmt.Errorf("selector %q not found or not visible before timeout: %w: %w", selector, err, ErrNavigateElementNotFound)
+				}
+				return fmt.Errorf("error on selector %q: %w: %w", selector, err, ErrNavigateUnexpectedError)
+			}
+			return nil
+		})
+	}
+	return g.Wait()
 }

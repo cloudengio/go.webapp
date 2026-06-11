@@ -33,6 +33,7 @@ func NewGoGetTest(specs ...goget.Spec) *GoGetTest {
 }
 
 func (g GoGetTest) Run(ctx context.Context, client *http.Client) error {
+	ctxlog.Info(ctx, "goget: starting", "num_specs", len(g.specs))
 	client = newClient(client)
 	var errs errors.M
 	for _, spec := range g.specs {

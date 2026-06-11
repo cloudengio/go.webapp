@@ -8,7 +8,10 @@ package chromedputil
 
 import (
 	"context"
+	"crypto/sha256"
+	"crypto/x509"
 	_ "embed"
+	"encoding/base64"
 	"fmt"
 	"io"
 	"os"
@@ -17,6 +20,7 @@ import (
 	"strings"
 	"text/template"
 
+	"cloudeng.io/logging/ctxlog"
 	"github.com/chromedp/cdproto/runtime"
 	"github.com/cloudengio/chromedp"
 	"github.com/go-json-experiment/json"
@@ -216,13 +220,28 @@ func IsPlatformObject(obj *runtime.RemoteObject) bool {
 	return platformInfo.Type != ""
 }
 
+// CertPoolAllocatorOption returns an ExecAllocatorOption that configures Chrome
+// to suppress certificate errors for connections whose certificate chain contains
+// a certificate matching one of the provided CA certificates. It uses Chrome's
+// --ignore-certificate-errors-spki-list flag with the SHA-256 SPKI fingerprint
+// of each certificate. This is intended for testing against servers using locally
+// issued certificates such as those from the Pebble ACME test server.
+func CertPoolAllocatorOption(certs ...*x509.Certificate) chromedp.ExecAllocatorOption {
+	hashes := make([]string, len(certs))
+	for i, cert := range certs {
+		sum := sha256.Sum256(cert.RawSubjectPublicKeyInfo)
+		hashes[i] = base64.StdEncoding.EncodeToString(sum[:])
+	}
+	return chromedp.Flag("ignore-certificate-errors-spki-list", strings.Join(hashes, ","))
+}
+
 // WithExecAllocatorForCI returns a chromedp context with an ExecAllocator
 // configured appropriately for CI systems as opposed to when running locally.
 // The CI configuration may disable sandboxing for example.
 func WithExecAllocatorForCI(ctx context.Context, userDataDir string, extraExecAllocOpts ...chromedp.ExecAllocatorOption) (context.Context, func()) {
 	chromeBin := ChromeBinPathOnCI()
 	modifyCmd := func(cmd *exec.Cmd) {
-		fmt.Printf("chrome command line: %v %v\n", cmd.Path, cmd.Args[1:])
+		ctxlog.Info(ctx, "chrome command line", "path", cmd.Path, "args", cmd.Args[1:])
 	}
 	if len(chromeBin) == 0 {
 		opts := slices.Clone(chromedp.DefaultExecAllocatorOptions[:])
@@ -230,16 +249,16 @@ func WithExecAllocatorForCI(ctx context.Context, userDataDir string, extraExecAl
 		opts = append(opts, chromedp.ModifyCmdFunc(modifyCmd))
 		return chromedp.NewExecAllocator(ctx, opts...)
 	}
-	fmt.Printf("Detected CI environment via CHROME_BIN_PATH=%s\n", chromeBin)
+	ctxlog.Info(ctx, "detected CI environment", "CHROME_BIN_PATH", chromeBin)
 	if len(userDataDir) == 0 {
 		userDataDir = UserDataDirOnCI()
 	}
-	fmt.Printf("WARNING: chromedp/chrome: sandboxing disabled\n")
+	ctxlog.Warn(ctx, "chromedp/chrome: sandboxing disabled")
 	allOpts := []chromedp.ExecAllocatorOption{
 		chromedp.ExecPath(chromeBin),
 	}
 	if len(userDataDir) > 0 {
-		fmt.Printf("Detected CI environment, using  CHROME_USER_DATA_DIR=%s\n", userDataDir)
+		ctxlog.Info(ctx, "detected CI environment", "CHROME_USER_DATA_DIR", userDataDir)
 		allOpts = append(allOpts, chromedp.UserDataDir(userDataDir))
 	}
 	allOpts = append(allOpts, AllocatorOptsForCI...)

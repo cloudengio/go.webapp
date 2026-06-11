@@ -35,6 +35,7 @@ func NewHealthzTest(specs ...HealthzSpec) *HealthzTest {
 }
 
 func (h HealthzTest) Run(ctx context.Context, client *http.Client) error {
+	ctxlog.Info(ctx, "healthz: starting", "num_specs", len(h.specs))
 	if len(h.specs) == 0 {
 		return nil
 	}
@@ -47,10 +48,14 @@ func (h HealthzTest) Run(ctx context.Context, client *http.Client) error {
 			spec.Interval = time.Second
 		}
 		if spec.Timeout == 0 {
-			spec.Timeout = time.Second
+			spec.Timeout = time.Second * 10
 		}
 		g.Go(func() error {
-			return h.run(ctx, spec, client)
+			err := h.run(ctx, spec, client)
+			if err != nil {
+				ctxlog.Error(ctx, "healthz", "spec", spec, "success", false, "error", err)
+			}
+			return err
 		})
 	}
 	return g.Wait()

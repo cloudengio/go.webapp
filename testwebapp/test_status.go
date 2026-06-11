@@ -39,6 +39,7 @@ func NewCheckStatus(specs ...CheckStatusSpec) *CheckStatus {
 }
 
 func (c *CheckStatus) Run(ctx context.Context, client *http.Client) error {
+	ctxlog.Info(ctx, "check-status: starting", "num_specs", len(c.specs))
 	var g errgroup.T
 	for _, spec := range c.specs {
 		g.Go(func() error {

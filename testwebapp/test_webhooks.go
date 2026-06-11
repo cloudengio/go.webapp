@@ -39,6 +39,7 @@ func NewWebhookRoundTripTest(signers map[string]operations.Signer, specs ...Webh
 }
 
 func (w *WebhookRoundTripTest) Run(ctx context.Context, client *http.Client) error {
+	ctxlog.Info(ctx, "webhook-roundtrip: starting", "num_specs", len(w.specs))
 	var g errgroup.T
 	for _, spec := range w.specs {
 		g.Go(func() error {

@@ -6,6 +6,7 @@ package testwebapp
 
 import (
 	"context"
+	"crypto/x509"
 	"fmt"
 	"net/http"
 	"regexp"
@@ -14,6 +15,7 @@ import (
 	"cloudeng.io/errors"
 	"cloudeng.io/logging/ctxlog"
 	"cloudeng.io/webapp"
+	"cloudeng.io/webapp/devtest"
 	"cloudeng.io/webapp/tlsvalidate"
 )
 
@@ -21,12 +23,13 @@ import (
 type TLSSpec struct {
 	Host               string        `yaml:"host"`
 	Port               string        `yaml:"port"`
-	ExpandDNSNames     bool          `yaml:"expand-dns-names"`     // see tlsvalidate.WithExpandDNSNames
-	CheckSerialNumbers bool          `yaml:"check-serial-numbers"` // see tlsvalidate.WithCheckSerialNumbers
-	ValidFor           time.Duration `yaml:"valid-for"`            // see tlsvalidate.WithValidForAtLeast
-	TLSMinVersion      uint16        `yaml:"tls-min-version"`      // see tlsvalidate.WithTLSMinVersion
-	IssuerREs          []string      `yaml:"issuer-res"`           // see tlsvalidate.WithIssuerRegexps
-	CustomCAPEM        string        `yaml:"custom-ca-pem"`        // used tlsvalidate.WithCustomRootCAPEM
+	ExpandDNSNames     bool          `yaml:"expand-dns-names" doc:"see tlsvalidate.WithExpandDNSNames"`                                                              // see tlsvalidate.WithExpandDNSNames
+	CheckSerialNumbers bool          `yaml:"check-serial-numbers" doc:"see tlsvalidate.WithCheckSerialNumbers"`                                                      // see tlsvalidate.WithCheckSerialNumbers
+	ValidFor           time.Duration `yaml:"valid-for" doc:"see tlsvalidate.WithValidForAtLeast"`                                                                    // see tlsvalidate.WithValidForAtLeast
+	TLSMinVersion      uint16        `yaml:"tls-min-version" doc:"see tlsvalidate.WithTLSMinVersion"`                                                                // see tlsvalidate.WithTLSMinVersion
+	IssuerREs          []string      `yaml:"issuer-res" doc:"see tlsvalidate.WithIssuerRegexps"`                                                                     // see tlsvalidate.WithIssuerRegexps
+	CustomCAPEM        string        `yaml:"custom-ca-pem" doc:"used tlsvalidate.WithCustomRootCAPEM"`                                                               // used tlsvalidate.WithCustomRootCAPEM
+	CustomCAPEMOnly    bool          `yaml:"custom-ca-pem-only" doc:"if true, only the custom CA PEM file is used, otherwise it's appended to the system cert pool"` // if true, only the custom CA PEM file is used, otherwise it's appended to the system cert pool
 	issuerREs          []*regexp.Regexp
 	client             *http.Client
 }
@@ -92,6 +95,7 @@ func (t *TLSTest) configureHTTPClients(ctx context.Context) error {
 }
 
 func (t *TLSTest) Run(ctx context.Context) error {
+	ctxlog.Info(ctx, "tls: starting", "num_specs", len(t.specs))
 	if err := t.compileREs(); err != nil {
 		return err
 	}
@@ -111,19 +115,35 @@ func (t *TLSTest) Run(ctx context.Context) error {
 	return errs.Err()
 }
 
-func (s TLSSpec) options() []tlsvalidate.Option {
-	return []tlsvalidate.Option{
+func (s TLSSpec) options() ([]tlsvalidate.Option, error) {
+	o := []tlsvalidate.Option{
 		tlsvalidate.WithValidForAtLeast(s.ValidFor),
 		tlsvalidate.WithIssuerRegexps(s.issuerREs...),
 		tlsvalidate.WithCheckSerialNumbers(s.CheckSerialNumbers),
 		tlsvalidate.WithExpandDNSNames(s.ExpandDNSNames),
 		tlsvalidate.WithTLSMinVersion(s.TLSMinVersion),
-		tlsvalidate.WithCustomRootCAPEM(s.CustomCAPEM),
 	}
+	if len(s.CustomCAPEM) == 0 {
+		return o, nil
+	}
+	var err error
+	var certPool *x509.CertPool
+	if s.CustomCAPEMOnly {
+		certPool, err = devtest.CertPoolForTesting(s.CustomCAPEM)
+	} else {
+		certPool, err = devtest.CertPoolWithSystemRootsForTesting(s.CustomCAPEM)
+	}
+	if err != nil {
+		return nil, fmt.Errorf("failed to create cert pool: %w", err)
+	}
+	return append(o, tlsvalidate.WithRootCAs(certPool)), nil
 }
 
 func (t TLSTest) verify(ctx context.Context, spec TLSSpec) error {
-	opts := spec.options()
+	opts, err := spec.options()
+	if err != nil {
+		return err
+	}
 	validator := tlsvalidate.NewValidator(opts...)
 	port := spec.Port
 	if len(port) == 0 {
