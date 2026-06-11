@@ -228,9 +228,12 @@ func IsPlatformObject(obj *runtime.RemoteObject) bool {
 // issued certificates such as those from the Pebble ACME test server.
 func CertPoolAllocatorOption(certs ...*x509.Certificate) chromedp.ExecAllocatorOption {
 	hashes := make([]string, len(certs))
-	for i, cert := range certs {
+	for _, cert := range certs {
+		if cert == nil {
+			continue
+		}
 		sum := sha256.Sum256(cert.RawSubjectPublicKeyInfo)
-		hashes[i] = base64.StdEncoding.EncodeToString(sum[:])
+		hashes = append(hashes, base64.StdEncoding.EncodeToString(sum[:]))
 	}
 	return chromedp.Flag("ignore-certificate-errors-spki-list", strings.Join(hashes, ","))
 }

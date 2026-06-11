@@ -290,14 +290,18 @@ WithUserDataDir sets the user data directory for Chrome.
 ### Type NavigationSpec
 ```go
 type NavigationSpec struct {
-	URL       string         `yaml:"url" json:"url"`
-	Selectors []string       `yaml:"selectors" json:"selectors"`
-	Action    SelectorAction `yaml:"action" json:"action"`
+	URL               string         `yaml:"url"`
+	Selectors         []string       `yaml:"selectors"`
+	Action            SelectorAction `yaml:"action"`
+	SequentialActions bool           `yaml:"sequential_actions"`
 }
 ```
 NavigationSpec represents a specification for verifying and interacting
 with elements on a URL. Action is applied to every selector in Selectors;
 use WithSelectorActions to override the action for individual selectors.
+By default all selectors are waited on concurrently; set SequentialActions
+to true when the actions have ordering dependencies (e.g. clicking one
+element causes another to appear).
 
 
 ### Type NavigationTest
@@ -306,8 +310,8 @@ type NavigationTest struct {
 	// contains filtered or unexported fields
 }
 ```
-NavigationTest can be used to validate pages by navigating to a URL, waiting
-for DOM elements to exist/be visible, and clicking them sequentially.
+NavigationTest can be used to validate pages by navigating to a URL,
+waiting for DOM elements to exist/be visible, and optionally acting on them.
 
 ### Functions
 

@@ -131,12 +131,12 @@ func TestPebble_RealServer(t *testing.T) {
 func TestPebbleURL(t *testing.T) {
 	var empty pebble.ServerURL
 	if empty.Enabled() {
-		t.Error("empty PebbleCAURL should not be enabled")
+		t.Error("empty pebble.ServerURL should not be enabled")
 	}
 
 	base := pebble.ServerURL("https://localhost:15000")
 	if !base.Enabled() {
-		t.Error("non-empty ServerURL should be enabled")
+		t.Error("non-empty pebble.ServerURL should be enabled")
 	}
 	if got, want := base.RootURL(), "https://localhost:15000/roots/0"; got != want {
 		t.Errorf("RootURL: got %q, want %q", got, want)

@@ -125,9 +125,23 @@ func TestClick(t *testing.T) {
 	t.Run("SuccessSequentialClick", func(t *testing.T) {
 		ct := testwebapp.NewNavigationTest([]testwebapp.NavigationSpec{
 			{
+				URL:               srv.URL,
+				Selectors:         []string{"#btn1", "#btn2"},
+				Action:            testwebapp.SelectorActionClick,
+				SequentialActions: true,
+			},
+		})
+		if err := ct.Run(t.Context()); err != nil {
+			t.Fatalf("expected success, got %v", err)
+		}
+	})
+
+	t.Run("SuccessParallelWait", func(t *testing.T) {
+		// btn1 is present from page load; no ordering dependency so parallel is fine.
+		ct := testwebapp.NewNavigationTest([]testwebapp.NavigationSpec{
+			{
 				URL:       srv.URL,
-				Selectors: []string{"#btn1", "#btn2"},
-				Action:    testwebapp.SelectorActionClick,
+				Selectors: []string{"#btn1", "#result"},
 			},
 		})
 		if err := ct.Run(t.Context()); err != nil {

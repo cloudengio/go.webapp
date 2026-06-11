@@ -72,14 +72,18 @@ func (a SelectorAction) chromedpActions(selector string) []chromedp.Action {
 // NavigationSpec represents a specification for verifying and interacting with
 // elements on a URL. Action is applied to every selector in Selectors; use
 // WithSelectorActions to override the action for individual selectors.
+// By default all selectors are waited on concurrently; set SequentialActions
+// to true when the actions have ordering dependencies (e.g. clicking one
+// element causes another to appear).
 type NavigationSpec struct {
-	URL       string         `yaml:"url" json:"url"`
-	Selectors []string       `yaml:"selectors" json:"selectors"`
-	Action    SelectorAction `yaml:"action" json:"action"`
+	URL               string         `yaml:"url"`
+	Selectors         []string       `yaml:"selectors"`
+	Action            SelectorAction `yaml:"action"`
+	SequentialActions bool           `yaml:"sequential_actions"`
 }
 
 // NavigationTest can be used to validate pages by navigating to a URL,
-// waiting for DOM elements to exist/be visible, and clicking them sequentially.
+// waiting for DOM elements to exist/be visible, and optionally acting on them.
 type NavigationTest struct {
 	specs []NavigationSpec
 	opts  navigateTestOptions
@@ -221,30 +225,39 @@ func (c *NavigationTest) verify(ctx context.Context, spec NavigationSpec) (err e
 		return fmt.Errorf("failed to navigate to %s: %w: %w", spec.URL, err, ErrNavigateUnexpectedError)
 	}
 
-	// Wait for (and optionally act on) each selector in parallel.
+	if spec.SequentialActions {
+		for _, selector := range spec.Selectors {
+			if err := c.runSelector(chromeCtx, spec, selector); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
 	var g errgroup.T
 	for _, selector := range spec.Selectors {
-		g.Go(func() error {
-			actions := []chromedp.Action{chromedp.WaitVisible(selector)}
-			if extra, ok := c.opts.selectorActions[selector]; ok {
-				actions = append(actions, extra...)
-			} else if specActions := spec.Action.chromedpActions(selector); len(specActions) > 0 {
-				actions = append(actions, specActions...)
-			}
-			ctxlog.Info(chromeCtx, "navigatetest: waiting for selector", "selector", selector, "num_actions", len(actions)-1)
-
-			stepCtx, stepCancel := context.WithTimeout(chromeCtx, c.opts.elementTimeout)
-			err := chromedp.Run(stepCtx, actions...)
-			stepCancel()
-
-			if err != nil {
-				if errors.Is(err, context.DeadlineExceeded) {
-					return fmt.Errorf("selector %q not found or not visible before timeout: %w: %w", selector, err, ErrNavigateElementNotFound)
-				}
-				return fmt.Errorf("error on selector %q: %w: %w", selector, err, ErrNavigateUnexpectedError)
-			}
-			return nil
-		})
+		g.Go(func() error { return c.runSelector(chromeCtx, spec, selector) })
 	}
 	return g.Wait()
+}
+
+func (c *NavigationTest) runSelector(ctx context.Context, spec NavigationSpec, selector string) error {
+	actions := []chromedp.Action{chromedp.WaitVisible(selector)}
+	if extra, ok := c.opts.selectorActions[selector]; ok {
+		actions = append(actions, extra...)
+	} else if specActions := spec.Action.chromedpActions(selector); len(specActions) > 0 {
+		actions = append(actions, specActions...)
+	}
+	ctxlog.Info(ctx, "navigatetest: waiting for selector", "selector", selector, "num_actions", len(actions)-1)
+
+	stepCtx, stepCancel := context.WithTimeout(ctx, c.opts.elementTimeout)
+	err := chromedp.Run(stepCtx, actions...)
+	stepCancel()
+
+	if err != nil {
+		if errors.Is(err, context.DeadlineExceeded) {
+			return fmt.Errorf("selector %q not found or not visible before timeout: %w: %w", selector, err, ErrNavigateElementNotFound)
+		}
+		return fmt.Errorf("error on selector %q: %w: %w", selector, err, ErrNavigateUnexpectedError)
+	}
+	return nil
 }

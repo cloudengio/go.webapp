@@ -265,9 +265,8 @@ func certPoolForTesting(pool *x509.CertPool, pemFiles ...string) (*x509.CertPool
 	if len(pemFiles) == 0 {
 		if pool == nil {
 			return x509.SystemCertPool()
-		} else {
-			return pool, nil
 		}
+		return pool, nil
 	}
 	rootCAs := pool
 	if rootCAs == nil {
@@ -326,7 +325,9 @@ func DownloadCertChain(ctx context.Context, urls ...string) ([]*x509.Certificate
 func WriteCertChainToPEMFile(certs []*x509.Certificate, pemFile string) error {
 	var pemData []byte
 	for _, cert := range certs {
-
+		if cert == nil {
+			continue
+		}
 		pemBlock := &pem.Block{
 			Type:  "CERTIFICATE",
 			Bytes: cert.Raw,
