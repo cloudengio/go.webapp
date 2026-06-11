@@ -450,3 +450,12 @@ func (pc Config) ValidateCertificate(ctx context.Context, cert *x509.Certificate
 	}
 	return nil
 }
+
+// ServerURL is the base URL of the Pebble management API (e.g. "https://localhost:15000").
+// Root and intermediate certs are fetched from the standard Pebble management API
+// paths (/roots/0 and /intermediates/0).
+type ServerURL string
+
+func (p ServerURL) Enabled() bool           { return p != "" }
+func (p ServerURL) RootURL() string         { return string(p) + "/roots/0" }
+func (p ServerURL) IntermediateURL() string { return string(p) + "/intermediates/0" }

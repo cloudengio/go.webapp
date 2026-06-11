@@ -34,6 +34,7 @@ func NewMetricsTest(reporter MetricsReporter, specs ...MetricsSpec) *MetricsTest
 }
 
 func (m MetricsTest) Run(ctx context.Context, client *http.Client) error {
+	ctxlog.Info(ctx, "metrics: starting", "num_specs", len(m.specs))
 	if len(m.specs) == 0 {
 		return nil
 	}
@@ -46,12 +47,15 @@ func (m MetricsTest) Run(ctx context.Context, client *http.Client) error {
 		g.Go(func() error {
 			found, missing, err := m.reporter(ctx, client, metric.URL, metric.MetricNames)
 			if err != nil {
+				ctxlog.Error(ctx, "metrics", "spec", metric, "success", false, "error", err)
 				return fmt.Errorf("error checking metrics existence at %v: %v", metric.URL, err)
 			}
-			ctxlog.Info(ctx, "found expected metrics", "url", metric.URL, "metrics", found)
 			if len(missing) > 0 {
-				return fmt.Errorf("some expected metrics for url %v were missing: %v", metric.URL, missing)
+				err := fmt.Errorf("some expected metrics for url %v were missing: %v", metric.URL, missing)
+				ctxlog.Error(ctx, "metrics", "spec", metric, "success", false, "error", err)
+				return err
 			}
+			ctxlog.Info(ctx, "metrics", "spec", metric, "found", found, "success", true)
 			return nil
 		})
 	}

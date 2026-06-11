@@ -6,10 +6,10 @@ import cloudeng.io/webapp/testwebapp
 
 
 ## Variables
-### ErrClickUnexpectedError, ErrClickElementNotFound
+### ErrNavigateUnexpectedError, ErrNavigateElementNotFound
 ```go
-ErrClickUnexpectedError = errors.New("click unexpected error")
-ErrClickElementNotFound = errors.New("click element not found")
+ErrNavigateUnexpectedError = errors.New("click unexpected error")
+ErrNavigateElementNotFound = errors.New("click element not found")
 
 ```
 
@@ -125,88 +125,6 @@ URLs, status code and number of redirects.
 
 
 
-### Type ClickOption
-```go
-type ClickOption func(*clickTestOptions)
-```
-ClickOption represents options to configure ClickTest.
-
-### Functions
-
-```go
-func WithContextOptions(opts ...chromedp.ContextOption) ClickOption
-```
-WithContextOptions appends options to the chromedp context.
-
-
-```go
-func WithElementTimeout(timeout time.Duration) ClickOption
-```
-WithElementTimeout sets the timeout for waiting for each individual DOM
-element.
-
-
-```go
-func WithExecAllocatorOptions(opts ...chromedp.ExecAllocatorOption) ClickOption
-```
-WithExecAllocatorOptions appends options to the Chrome allocator.
-
-
-```go
-func WithTimeout(timeout time.Duration) ClickOption
-```
-WithTimeout sets the overall timeout for the click test execution (including
-startup and navigation).
-
-
-```go
-func WithUserDataDir(dir string) ClickOption
-```
-WithUserDataDir sets the user data directory for Chrome.
-
-
-
-
-### Type ClickSpec
-```go
-type ClickSpec struct {
-	URL       string   `yaml:"url" json:"url"`
-	Selectors []string `yaml:"selectors" json:"selectors"`
-}
-```
-ClickSpec represents a specification for verifying and clicking elements on
-a URL.
-
-
-### Type ClickTest
-```go
-type ClickTest struct {
-	// contains filtered or unexported fields
-}
-```
-ClickTest can be used to validate pages by navigating to a URL, waiting for
-DOM elements to exist/be visible, and clicking them sequentially.
-
-### Functions
-
-```go
-func NewClickTest(specs []ClickSpec, opts ...ClickOption) *ClickTest
-```
-NewClickTest creates a new ClickTest with the given specs and options.
-
-
-
-### Methods
-
-```go
-func (c *ClickTest) Run(ctx context.Context) error
-```
-Run executes the ClickTest specifications. It runs the specs concurrently
-and uses chromedp via chromedputil to control the browser.
-
-
-
-
 ### Type GoGetTest
 ```go
 type GoGetTest struct {
@@ -309,6 +227,113 @@ func (m MetricsTest) Run(ctx context.Context, client *http.Client) error
 
 
 
+### Type NavigateOption
+```go
+type NavigateOption func(*navigateTestOptions)
+```
+NavigateOption represents options to configure NavigationTest.
+
+### Functions
+
+```go
+func WithContextOptions(opts ...chromedp.ContextOption) NavigateOption
+```
+WithContextOptions appends options to the chromedp context.
+
+
+```go
+func WithElementTimeout(timeout time.Duration) NavigateOption
+```
+WithElementTimeout sets the timeout for waiting for each individual DOM
+element.
+
+
+```go
+func WithExecAllocatorOptions(opts ...chromedp.ExecAllocatorOption) NavigateOption
+```
+WithExecAllocatorOptions appends options to the Chrome allocator.
+
+
+```go
+func WithSelectorActions(selector string, actions ...chromedp.Action) NavigateOption
+```
+WithSelectorActions registers chromedp actions to run after WaitVisible
+for the given selector. If no actions are registered for a selector, only
+WaitVisible is performed. Call this option once per selector that requires
+additional interaction (e.g. chromedp.Click).
+
+
+```go
+func WithSuppressedCertErrorsFor(certs ...*x509.Certificate) NavigateOption
+```
+WithSuppressedCertErrorsFor configures Chrome to suppress certificate errors
+for connections whose chain includes one of the provided CA certificates.
+Intended for testing against servers using locally issued certificates such
+as those from the Pebble ACME test server.
+
+
+```go
+func WithTimeout(timeout time.Duration) NavigateOption
+```
+WithTimeout sets the overall timeout for the click test execution (including
+startup and navigation).
+
+
+```go
+func WithUserDataDir(dir string) NavigateOption
+```
+WithUserDataDir sets the user data directory for Chrome.
+
+
+
+
+### Type NavigationSpec
+```go
+type NavigationSpec struct {
+	URL               string         `yaml:"url"`
+	Selectors         []string       `yaml:"selectors"`
+	Action            SelectorAction `yaml:"action"`
+	SequentialActions bool           `yaml:"sequential_actions"`
+}
+```
+NavigationSpec represents a specification for verifying and interacting
+with elements on a URL. Action is applied to every selector in Selectors;
+use WithSelectorActions to override the action for individual selectors.
+By default all selectors are waited on concurrently; set SequentialActions
+to true when the actions have ordering dependencies (e.g. clicking one
+element causes another to appear).
+
+
+### Type NavigationTest
+```go
+type NavigationTest struct {
+	// contains filtered or unexported fields
+}
+```
+NavigationTest can be used to validate pages by navigating to a URL,
+waiting for DOM elements to exist/be visible, and optionally acting on them.
+
+### Functions
+
+```go
+func NewNavigationTest(specs []NavigationSpec, opts ...NavigateOption) *NavigationTest
+```
+NewNavigationTest creates a new NavigationTest with the given specs and
+options.
+
+
+
+### Methods
+
+```go
+func (c *NavigationTest) Run(ctx context.Context) error
+```
+Run executes the NavigationTest specifications. It runs the specs
+concurrently and uses chromedp via chromedputil to control the browser.
+
+
+
+
 ### Type RedirectSpec
 ```go
 type RedirectSpec struct {
@@ -348,17 +373,55 @@ func (r RedirectTest) Run(ctx context.Context, client *http.Client) error
 
 
 
+### Type SelectorAction
+```go
+type SelectorAction string
+```
+SelectorAction is an enum of the actions that can be performed on a DOM
+element after it becomes visible. Use WithSelectorActions for actions not
+covered by this enum (e.g. right-click via MouseClickNode).
+
+### Constants
+### SelectorActionNone, SelectorActionClick, SelectorActionDoubleClick
+```go
+// SelectorActionNone waits for the element to be visible but performs no
+// further action. This is the default when no action is specified.
+SelectorActionNone SelectorAction = ""
+// SelectorActionClick performs a single left click on the element.
+SelectorActionClick SelectorAction = "click"
+// SelectorActionDoubleClick performs a double left click on the element.
+SelectorActionDoubleClick SelectorAction = "double_click"
+
+```
+
+
+
+### Methods
+
+```go
+func (a SelectorAction) MarshalYAML() (any, error)
+```
+
+
+```go
+func (a *SelectorAction) UnmarshalYAML(value *yaml.Node) error
+```
+
+
+
+
 ### Type TLSSpec
 ```go
 type TLSSpec struct {
 	Host               string        `yaml:"host"`
 	Port               string        `yaml:"port"`
-	ExpandDNSNames     bool          `yaml:"expand-dns-names"`     // see tlsvalidate.WithExpandDNSNames
-	CheckSerialNumbers bool          `yaml:"check-serial-numbers"` // see tlsvalidate.WithCheckSerialNumbers
-	ValidFor           time.Duration `yaml:"valid-for"`            // see tlsvalidate.WithValidForAtLeast
-	TLSMinVersion      uint16        `yaml:"tls-min-version"`      // see tlsvalidate.WithTLSMinVersion
-	IssuerREs          []string      `yaml:"issuer-res"`           // see tlsvalidate.WithIssuerRegexps
-	CustomCAPEM        string        `yaml:"custom-ca-pem"`        // used tlsvalidate.WithCustomRootCAPEM
+	ExpandDNSNames     bool          `yaml:"expand-dns-names" doc:"see tlsvalidate.WithExpandDNSNames"`                                                              // see tlsvalidate.WithExpandDNSNames
+	CheckSerialNumbers bool          `yaml:"check-serial-numbers" doc:"see tlsvalidate.WithCheckSerialNumbers"`                                                      // see tlsvalidate.WithCheckSerialNumbers
+	ValidFor           time.Duration `yaml:"valid-for" doc:"see tlsvalidate.WithValidForAtLeast"`                                                                    // see tlsvalidate.WithValidForAtLeast
+	TLSMinVersion      uint16        `yaml:"tls-min-version" doc:"see tlsvalidate.WithTLSMinVersion"`                                                                // see tlsvalidate.WithTLSMinVersion
+	IssuerREs          []string      `yaml:"issuer-res" doc:"see tlsvalidate.WithIssuerRegexps"`                                                                     // see tlsvalidate.WithIssuerRegexps
+	CustomCAPEM        string        `yaml:"custom-ca-pem" doc:"used tlsvalidate.WithCustomRootCAPEM"`                                                               // used tlsvalidate.WithCustomRootCAPEM
+	CustomCAPEMOnly    bool          `yaml:"custom-ca-pem-only" doc:"if true, only the custom CA PEM file is used, otherwise it's appended to the system cert pool"` // if true, only the custom CA PEM file is used, otherwise it's appended to the system cert pool
 	// contains filtered or unexported fields
 }
 ```

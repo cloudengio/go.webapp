@@ -140,6 +140,33 @@ up testing.
 
 
 
+### Type ServerURL
+```go
+type ServerURL string
+```
+ServerURL is the base URL of the Pebble management API (e.g.
+"https://localhost:15000"). Root and intermediate certs are fetched from the
+standard Pebble management API paths (/roots/0 and /intermediates/0).
+
+### Methods
+
+```go
+func (p ServerURL) Enabled() bool
+```
+
+
+```go
+func (p ServerURL) IntermediateURL() string
+```
+
+
+```go
+func (p ServerURL) RootURL() string
+```
+
+
+
+
 ### Type T
 ```go
 type T struct {

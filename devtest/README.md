@@ -16,6 +16,23 @@ CertPoolForTesting returns a new x509.CertPool containing the certs in the
 specified pem files. If no pem files are specified nil it will return the
 system cert pool. It is intended for testing purposes only.
 
+### Func CertPoolWithSystemRootsForTesting
+```go
+func CertPoolWithSystemRootsForTesting(pemFiles ...string) (*x509.CertPool, error)
+```
+CertPoolWithSystemRootsForTesting returns a new x509.CertPool containing
+the system root certs and the certs in the specified pem files. If no pem
+files are specified it will return a cert pool with just the system roots.
+It is intended for testing purposes only.
+
+### Func DownloadCertChain
+```go
+func DownloadCertChain(ctx context.Context, urls ...string) ([]*x509.Certificate, error)
+```
+DownloadCertChain downloads the certificate chain from the given URLs and
+returns the parsed certificates. It uses an insecure HTTP client since the
+certs may not be trusted yet.
+
 ### Func NewSelfSignedCert
 ```go
 func NewSelfSignedCert(certFile, keyFile string, options ...SelfSignedOption) error
@@ -36,6 +53,13 @@ NewSelfSignedCertUsingMkcert uses mkcert
 (https://github.com/FiloSottile/mkcert) to create certificates. If mkcert
 --install has been run then these certificates will be trusted by the
 browser and other local applications.
+
+### Func WriteCertChainToPEMFile
+```go
+func WriteCertChainToPEMFile(certs []*x509.Certificate, pemFile string) error
+```
+WriteCertChainToPEMFile writes the given certificates to a PEM file at the
+specified path.
 
 
 

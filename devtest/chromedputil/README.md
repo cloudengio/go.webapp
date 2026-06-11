@@ -63,6 +63,18 @@ func AllocatorLoggingWithLevel(level int) []chromedp.ExecAllocatorOption
 AllocatorOptsVerboseLogging provides ExecAllocator options for verbose
 logging at the specified level.
 
+### Func CertPoolAllocatorOption
+```go
+func CertPoolAllocatorOption(certs ...*x509.Certificate) chromedp.ExecAllocatorOption
+```
+CertPoolAllocatorOption returns an ExecAllocatorOption that configures
+Chrome to suppress certificate errors for connections whose certificate
+chain contains a certificate matching one of the provided CA certificates.
+It uses Chrome's --ignore-certificate-errors-spki-list flag with the SHA-256
+SPKI fingerprint of each certificate. This is intended for testing against
+servers using locally issued certificates such as those from the Pebble ACME
+test server.
+
 ### Func ChromeBinPathOnCI
 ```go
 func ChromeBinPathOnCI() string

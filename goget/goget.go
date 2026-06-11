@@ -82,15 +82,15 @@ type handler struct {
 
 func (h handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if r.URL.Query().Get("go-get") != "1" {
-		h.fb.ServeHTTP(w, r) //nolint:errcheck
+		h.fb.ServeHTTP(w, r)
 		return
 	}
 	if strings.TrimSuffix(r.URL.Path, "/") != h.path {
-		h.fb.ServeHTTP(w, r) //nolint:errcheck
+		h.fb.ServeHTTP(w, r)
 		return
 	}
 	if hn := r.URL.Hostname(); len(hn) != 0 && hn != h.host {
-		h.fb.ServeHTTP(w, r) //nolint:errcheck
+		h.fb.ServeHTTP(w, r)
 		return
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")

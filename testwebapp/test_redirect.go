@@ -40,6 +40,7 @@ func NewRedirectTest(redirects ...RedirectSpec) *RedirectTest {
 }
 
 func (r RedirectTest) Run(ctx context.Context, client *http.Client) error {
+	ctxlog.Info(ctx, "redirect: starting", "num_specs", len(r.specs))
 	client = ClientNoRedirect(client)
 	var g errgroup.T
 	for _, spec := range r.specs {
