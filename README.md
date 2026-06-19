@@ -93,7 +93,7 @@ returns its DER encoding along with the parsed x509.Certificate.
 
 ### Func GetConfigForClientNoSNI
 ```go
-func GetConfigForClientNoSNI(matcher func(addr string) bool, tlsConfigNoSNI *tls.Config) func(clientHello *tls.ClientHelloInfo) (*tls.Config, error)
+func GetConfigForClientNoSNI(matcher func(addr string) bool, getConfig func(*tls.ClientHelloInfo) (*tls.Config, error)) func(*tls.ClientHelloInfo) (*tls.Config, error)
 ```
 GetConfigForClientNoSNI returns a function that can be used as the
 GetConfigForClient callback in a tls.Config to allow connections from

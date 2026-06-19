@@ -27,9 +27,7 @@ func (m mockConn) RemoteAddr() net.Addr { return m.remote }
 func TestGetConfigForClientNoSNI(t *testing.T) {
 	tlsConfig := &tls.Config{}
 
-	// Create matcher function
 	matcher := func(addr string) bool {
-		// Just a simple matcher that matches a specific IP for testing
 		host, _, err := net.SplitHostPort(addr)
 		if err != nil {
 			host = addr
@@ -37,21 +35,32 @@ func TestGetConfigForClientNoSNI(t *testing.T) {
 		return host == "192.168.1.1" || host == "::1"
 	}
 
-	callback := GetConfigForClientNoSNI(matcher, tlsConfig)
+	getConfig := func(_ *tls.ClientHelloInfo) (*tls.Config, error) { return tlsConfig, nil }
 
-	// Case 1: ServerName is NOT empty (should return nil, nil)
-	chi := &tls.ClientHelloInfo{
-		ServerName: "example.com",
-	}
-	cfg, err := callback(chi)
+	callback := GetConfigForClientNoSNI(matcher, getConfig)
+
+	// Case 1: nil ClientHelloInfo — return nil, nil
+	cfg, err := callback(nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	if cfg != nil {
-		t.Errorf("expected nil config, got %v", cfg)
+		t.Errorf("expected nil config for nil ClientHelloInfo, got %v", cfg)
 	}
 
-	// Case 2: ServerName is empty, remote IP is matched
+	// Case 2: ServerName is set — use default TLS config
+	chi := &tls.ClientHelloInfo{
+		ServerName: "example.com",
+	}
+	cfg, err = callback(chi)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg != nil {
+		t.Errorf("expected nil config when SNI is present, got %v", cfg)
+	}
+
+	// Case 3: no SNI, matched remote IP — return custom config
 	chiPrivate := &tls.ClientHelloInfo{
 		ServerName: "",
 		Conn: mockConn{
@@ -63,10 +72,10 @@ func TestGetConfigForClientNoSNI(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	if cfg != tlsConfig {
-		t.Errorf("expected tlsConfig, got %v", cfg)
+		t.Errorf("expected tlsConfig for matched address, got %v", cfg)
 	}
 
-	// Case 3: ServerName is empty, remote IP is not matched
+	// Case 4: no SNI, unmatched remote IP — use default TLS config
 	chiPublic := &tls.ClientHelloInfo{
 		ServerName: "",
 		Conn: mockConn{
@@ -78,6 +87,16 @@ func TestGetConfigForClientNoSNI(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	if cfg != nil {
-		t.Errorf("expected nil config, got %v", cfg)
+		t.Errorf("expected nil config for unmatched address, got %v", cfg)
+	}
+
+	// Case 5: nil matcher — always returns nil, nil when no SNI
+	callbackNoMatcher := GetConfigForClientNoSNI(nil, getConfig)
+	cfg, err = callbackNoMatcher(chiPrivate)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg != nil {
+		t.Errorf("expected nil config with nil matcher, got %v", cfg)
 	}
 }

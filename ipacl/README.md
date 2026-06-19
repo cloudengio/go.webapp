@@ -6,16 +6,6 @@ import cloudeng.io/webapp/ipacl
 
 
 ## Functions
-### Func GetConfigForClientNoSNI
-```go
-func GetConfigForClientNoSNI(matcher func(addr string) bool, tlsConfigNoSNI *tls.Config) func(clientHello *tls.ClientHelloInfo) (*tls.Config, error)
-```
-GetConfigForClientNoSNI returns a function that can be used as the
-GetConfigForClient callback in a tls.Config to allow connections from
-addresses that match the provided matcher function that do not include
-an SNI (Server Name Indication) in the TLS handshake. This is primarily
-intended for use with load balancer health checks etc.
-
 ### Func IsPrivateIP
 ```go
 func IsPrivateIP(ipStr string) bool

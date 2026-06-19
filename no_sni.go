@@ -13,9 +13,9 @@ import (
 // addresses that match the provided matcher function that do not include an
 // SNI (Server Name Indication) in the TLS handshake. This is primarily intended
 // for use with load balancer health checks etc.
-func GetConfigForClientNoSNI(matcher func(addr string) bool, tlsConfigNoSNI *tls.Config) func(clientHello *tls.ClientHelloInfo) (*tls.Config, error) {
+func GetConfigForClientNoSNI(matcher func(addr string) bool, getConfig func(*tls.ClientHelloInfo) (*tls.Config, error)) func(*tls.ClientHelloInfo) (*tls.Config, error) {
 	if matcher == nil {
-		matcher = func(addr string) bool { return false }
+		matcher = func(string) bool { return false }
 	}
 	return func(clientHello *tls.ClientHelloInfo) (*tls.Config, error) {
 		if clientHello == nil || clientHello.Conn == nil || clientHello.ServerName != "" {
@@ -23,7 +23,7 @@ func GetConfigForClientNoSNI(matcher func(addr string) bool, tlsConfigNoSNI *tls
 		}
 		clientRemoteAddr := clientHello.Conn.RemoteAddr().String()
 		if matcher(clientRemoteAddr) {
-			return tlsConfigNoSNI, nil
+			return getConfig(clientHello)
 		}
 		return nil, nil // Use default TLS config for non-private clients
 	}
