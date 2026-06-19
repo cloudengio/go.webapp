@@ -14,9 +14,12 @@ import (
 // SNI (Server Name Indication) in the TLS handshake. This is primarily intended
 // for use with load balancer health checks etc.
 func GetConfigForClientNoSNI(matcher func(addr string) bool, tlsConfigNoSNI *tls.Config) func(clientHello *tls.ClientHelloInfo) (*tls.Config, error) {
+	if matcher == nil {
+		matcher = func(addr string) bool { return false }
+	}
 	return func(clientHello *tls.ClientHelloInfo) (*tls.Config, error) {
-		if clientHello.ServerName != "" {
-			return nil, nil
+		if clientHello == nil || clientHello.Conn == nil || clientHello.ServerName != "" {
+			return nil, nil // Use default TLS config for clients that provide SNI or if clientHello is nil
 		}
 		clientRemoteAddr := clientHello.Conn.RemoteAddr().String()
 		if matcher(clientRemoteAddr) {

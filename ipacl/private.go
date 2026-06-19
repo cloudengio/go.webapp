@@ -5,7 +5,6 @@
 package ipacl
 
 import (
-	"crypto/tls"
 	"fmt"
 	"net"
 	"net/netip"
@@ -68,22 +67,4 @@ func (ps *PrivateSubnet) Contains(addr string) bool {
 		return false
 	}
 	return ps.acl.Contains(ip)
-}
-
-// GetConfigForClientNoSNI returns a function that can be used as the
-// GetConfigForClient callback in a tls.Config to allow connections from
-// addresses that match the provided matcher function that do not include an
-// SNI (Server Name Indication) in the TLS handshake. This is primarily intended
-// for use with load balancer health checks etc.
-func GetConfigForClientNoSNI(matcher func(addr string) bool, tlsConfigNoSNI *tls.Config) func(clientHello *tls.ClientHelloInfo) (*tls.Config, error) {
-	return func(clientHello *tls.ClientHelloInfo) (*tls.Config, error) {
-		if clientHello.ServerName != "" {
-			return nil, nil
-		}
-		clientRemoteAddr := clientHello.Conn.RemoteAddr().String()
-		if matcher(clientRemoteAddr) {
-			return tlsConfigNoSNI, nil
-		}
-		return nil, nil // Use default TLS config for non-private clients
-	}
 }
