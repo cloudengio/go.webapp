@@ -17,9 +17,6 @@ func GetConfigForClientNoSNI(matcher func(addr string) bool, getConfig func(*tls
 	if matcher == nil {
 		matcher = func(string) bool { return false }
 	}
-	if matcher == nil {
-		matcher = func(string) bool { return false }
-	}
 	return func(clientHello *tls.ClientHelloInfo) (*tls.Config, error) {
 		if clientHello == nil || clientHello.Conn == nil || clientHello.ServerName != "" {
 			return nil, nil // Use default TLS config for clients that provide SNI or if clientHello is nil
