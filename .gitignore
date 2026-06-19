@@ -24,6 +24,8 @@ go.work.sum
 # env file
 .env
 
+.DS_Store
+
 node_modules
 webapp-sample-vite
 cmd/acme/acme

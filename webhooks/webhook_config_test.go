@@ -266,7 +266,7 @@ extra_flag: true
 
 // TestConfigStrictParsing verifies strict-mode behaviour for webhooks.Config.
 // Because UnmarshalYAML uses a strict decoder internally, unknown field names
-// are always rejected — even outside of cmdyaml.ParseConfigStringStrict.
+// are always rejected — even outside of cmdyaml.ParseConfigsStrict.
 // Service-specific YAML must live under the service_specific: key.
 func TestConfigStrictParsing(t *testing.T) {
 	t.Run("valid config no error", func(t *testing.T) {
@@ -276,7 +276,7 @@ relay_path: "/relay"
 service: "github"
 `
 		var cfg webhooks.Config
-		if err := cmdyaml.ParseConfigStringStrict(input, &cfg); err != nil {
+		if err := cmdyaml.ParseConfigsStrict(&cfg, []byte(input)); err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
 	})
@@ -290,7 +290,7 @@ service_specific:
     - tok
 `
 		var cfg webhooks.Config
-		if err := cmdyaml.ParseConfigStringStrict(input, &cfg); err != nil {
+		if err := cmdyaml.ParseConfigsStrict(&cfg, []byte(input)); err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
 		if cfg.ServiceSpecific == nil {
@@ -303,7 +303,7 @@ service_specific:
 max_queue_size: "not-a-number"
 `
 		var cfg webhooks.Config
-		if err := cmdyaml.ParseConfigStringStrict(input, &cfg); err == nil {
+		if err := cmdyaml.ParseConfigsStrict(&cfg, []byte(input)); err == nil {
 			t.Fatal("expected error for wrong type, got nil")
 		}
 	})
@@ -313,7 +313,7 @@ max_queue_size: "not-a-number"
 max_payload_size: [1, 2, 3]
 `
 		var cfg webhooks.Config
-		if err := cmdyaml.ParseConfigStringStrict(input, &cfg); err == nil {
+		if err := cmdyaml.ParseConfigsStrict(&cfg, []byte(input)); err == nil {
 			t.Fatal("expected error for wrong type, got nil")
 		}
 	})
@@ -323,7 +323,7 @@ max_payload_size: [1, 2, 3]
 completely_unknown_key: "value"
 `
 		var cfg webhooks.Config
-		if err := cmdyaml.ParseConfigStringStrict(input, &cfg); err == nil {
+		if err := cmdyaml.ParseConfigsStrict(&cfg, []byte(input)); err == nil {
 			t.Fatal("expected error for unknown field, got nil")
 		}
 	})
