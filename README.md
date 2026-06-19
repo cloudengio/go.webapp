@@ -91,6 +91,16 @@ func FindLeafPEM(certsPEM []*pem.Block) ([]byte, *x509.Certificate, error)
 FindLeafPEM searches the supplied PEM blocks for the leaf certificate and
 returns its DER encoding along with the parsed x509.Certificate.
 
+### Func GetConfigForClientNoSNI
+```go
+func GetConfigForClientNoSNI(matcher func(addr string) bool, tlsConfigNoSNI *tls.Config) func(clientHello *tls.ClientHelloInfo) (*tls.Config, error)
+```
+GetConfigForClientNoSNI returns a function that can be used as the
+GetConfigForClient callback in a tls.Config to allow connections from
+addresses that match the provided matcher function that do not include
+an SNI (Server Name Indication) in the TLS handshake. This is primarily
+intended for use with load balancer health checks etc.
+
 ### Func HealthzHandler
 ```go
 func HealthzHandler() http.Handler

@@ -6,6 +6,24 @@ import cloudeng.io/webapp/ipacl
 
 
 ## Functions
+### Func GetConfigForClientNoSNI
+```go
+func GetConfigForClientNoSNI(matcher func(addr string) bool, tlsConfigNoSNI *tls.Config) func(clientHello *tls.ClientHelloInfo) (*tls.Config, error)
+```
+GetConfigForClientNoSNI returns a function that can be used as the
+GetConfigForClient callback in a tls.Config to allow connections from
+addresses that match the provided matcher function that do not include
+an SNI (Server Name Indication) in the TLS handshake. This is primarily
+intended for use with load balancer health checks etc.
+
+### Func IsPrivateIP
+```go
+func IsPrivateIP(ipStr string) bool
+```
+IsPrivateIP checks if the given IP address string is a private IP address.
+It returns true if the IP address is in a private range (RFC 1918 or RFC
+4193) or is a loopback address. It also supports CIDR prefixes.
+
 ### Func NewHandler
 ```go
 func NewHandler(handler http.Handler, allow, deny Contains, opts ...Option) http.Handler
@@ -128,6 +146,36 @@ WithCounters returns an Option that sets three Counters: 1. one that is
 incremented when a request is denied because the IP address is in the deny
 ACL 2. one that is incremented if the address is not in the allow ACL 3.
 one that is incremented on error
+
+
+
+
+### Type PrivateSubnet
+```go
+type PrivateSubnet struct {
+	// contains filtered or unexported fields
+}
+```
+PrivateSubnet represents a set of private IP addresses defined by CIDR
+prefixes.
+
+### Functions
+
+```go
+func NewPrivateSubnet(addrs ...string) (*PrivateSubnet, error)
+```
+NewPrivateSubnet creates a new PrivateSubnet from a list of CIDR prefixes or
+IP addresses.
+
+
+
+### Methods
+
+```go
+func (ps *PrivateSubnet) Contains(addr string) bool
+```
+Contains checks if the given address (which may include an optional port) is
+contained within the private subnet.
 
 
 
