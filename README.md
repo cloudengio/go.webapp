@@ -397,6 +397,16 @@ pool. It takes precedence over WithCustomCAPEMFile.
 
 
 ```go
+func WithDNSResolverAddr(addr string) HTTPClientOption
+```
+WithDNSResolverAddr configures the HTTP client to send all of its DNS
+resolution requests to the DNS server at the specified address, rather than
+using the system's default resolver. addr may be a bare IP address, in which
+case the standard DNS port (53) is used, or an address that includes an
+explicit port.
+
+
+```go
 func WithTracingTransport(to ...httptracing.TraceRoundtripOption) HTTPClientOption
 ```
 WithTracingTransport configures the HTTP client to use a tracing round

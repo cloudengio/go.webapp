@@ -91,103 +91,144 @@ func newCert(t *testing.T, name string, isCA bool, signer *x509.Certificate, sig
 
 func TestNewHTTPClient(t *testing.T) {
 	ctx := context.Background()
+	t.Run("default", func(t *testing.T) { testNewHTTPClientDefault(ctx, t) })
+	t.Run("with-custom-ca", func(t *testing.T) { testNewHTTPClientWithCustomCA(ctx, t) })
+	t.Run("with-dns-resolver-addr", func(t *testing.T) { testNewHTTPClientWithDNSResolverAddr(ctx, t) })
+	t.Run("with-tracing", func(t *testing.T) { testNewHTTPClientWithTracing(ctx, t) })
+}
 
-	t.Run("default", func(t *testing.T) {
-		client, err := webapp.NewHTTPClient(ctx)
-		if err != nil {
-			t.Fatalf("NewHTTPClient failed: %v", err)
-		}
-		if client == nil {
-			t.Fatal("expected a client, got nil")
-		}
-		transport, ok := client.Transport.(*http.Transport)
-		if !ok {
-			t.Fatalf("expected a default http.Transport, got %T", client.Transport)
-		}
-		if transport.TLSClientConfig.RootCAs != nil {
-			t.Error("expected default RootCAs to be nil")
-		}
-	})
+func testNewHTTPClientDefault(ctx context.Context, t *testing.T) {
+	client, err := webapp.NewHTTPClient(ctx)
+	if err != nil {
+		t.Fatalf("NewHTTPClient failed: %v", err)
+	}
+	if client == nil {
+		t.Fatal("expected a client, got nil")
+	}
+	transport, ok := client.Transport.(*http.Transport)
+	if !ok {
+		t.Fatalf("expected a default http.Transport, got %T", client.Transport)
+	}
+	if transport.TLSClientConfig.RootCAs != nil {
+		t.Error("expected default RootCAs to be nil")
+	}
+}
 
-	t.Run("with-custom-ca", func(t *testing.T) {
-		// 1. Create a root CA and a server cert signed by it.
-		rootCert, rootKey := newCert(t, "test-ca", true, nil, nil)
-		serverCert, serverKey := newCert(t, "localhost", false, rootCert, rootKey)
+func testNewHTTPClientWithCustomCA(ctx context.Context, t *testing.T) {
+	// 1. Create a root CA and a server cert signed by it.
+	rootCert, rootKey := newCert(t, "test-ca", true, nil, nil)
+	serverCert, serverKey := newCert(t, "localhost", false, rootCert, rootKey)
 
-		// 2. Start a TLS server with the server cert.
-		server := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-			w.WriteHeader(http.StatusOK)
-		}))
-		server.TLS = &tls.Config{
-			MinVersion: tls.VersionTLS13,
-			Certificates: []tls.Certificate{{
-				Certificate: [][]byte{serverCert.Raw},
-				PrivateKey:  serverKey,
-			}},
-		}
-		server.StartTLS()
-		defer server.Close()
+	// 2. Start a TLS server with the server cert.
+	server := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	server.TLS = &tls.Config{
+		MinVersion: tls.VersionTLS13,
+		Certificates: []tls.Certificate{{
+			Certificate: [][]byte{serverCert.Raw},
+			PrivateKey:  serverKey,
+		}},
+	}
+	server.StartTLS()
+	defer server.Close()
 
-		// 3. Write the root CA to a temp file.
-		tmpDir := t.TempDir()
-		caPemFile := filepath.Join(tmpDir, "ca.pem")
-		pemBytes := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: rootCert.Raw})
-		if err := os.WriteFile(caPemFile, pemBytes, 0600); err != nil {
-			t.Fatal(err)
-		}
+	// 3. Write the root CA to a temp file.
+	tmpDir := t.TempDir()
+	caPemFile := filepath.Join(tmpDir, "ca.pem")
+	pemBytes := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: rootCert.Raw})
+	if err := os.WriteFile(caPemFile, pemBytes, 0600); err != nil {
+		t.Fatal(err)
+	}
 
-		// 4. Create a client with the custom CA and make a request.
-		client, err := webapp.NewHTTPClient(ctx, webapp.WithCustomCAPEMFile(caPemFile))
-		if err != nil {
-			t.Fatalf("NewHTTPClient with custom CA failed: %v", err)
-		}
+	// 4. Create a client with the custom CA and make a request.
+	client, err := webapp.NewHTTPClient(ctx, webapp.WithCustomCAPEMFile(caPemFile))
+	if err != nil {
+		t.Fatalf("NewHTTPClient with custom CA failed: %v", err)
+	}
 
-		resp, err := client.Get(server.URL)
-		if err != nil {
-			t.Fatalf("request with custom CA failed: %v", err)
-		}
-		resp.Body.Close()
-		if resp.StatusCode != http.StatusOK {
-			t.Errorf("expected status OK, got %v", resp.Status)
-		}
+	resp, err := client.Get(server.URL)
+	if err != nil {
+		t.Fatalf("request with custom CA failed: %v", err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Errorf("expected status OK, got %v", resp.Status)
+	}
 
-		// 5. Create a default client and ensure the request fails.
-		defaultClient := &http.Client{}
-		_, err = defaultClient.Get(server.URL)
-		if err == nil {
-			t.Fatal("expected request with default client to fail")
-		}
-		expected := noCertError()
-		if !strings.Contains(err.Error(), expected) {
-			t.Errorf("expected %q, got: %v", expected, err)
-		}
-	})
+	// 5. Create a default client and ensure the request fails.
+	defaultClient := &http.Client{}
+	_, err = defaultClient.Get(server.URL)
+	if err == nil {
+		t.Fatal("expected request with default client to fail")
+	}
+	expected := noCertError()
+	if !strings.Contains(err.Error(), expected) {
+		t.Errorf("expected %q, got: %v", expected, err)
+	}
+}
 
-	t.Run("with-tracing", func(t *testing.T) {
-		var logBuf bytes.Buffer
-		logger := slog.New(slog.NewJSONHandler(&logBuf, nil))
+func testNewHTTPClientWithDNSResolverAddr(ctx context.Context, t *testing.T) {
+	pc, err := net.ListenPacket("udp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("failed to start fake DNS server: %v", err)
+	}
+	defer pc.Close()
 
-		client, err := webapp.NewHTTPClient(ctx, webapp.WithTracingTransport(
-			httptracing.WithTraceLogger(logger),
-		))
-		if err != nil {
-			t.Fatalf("NewHTTPClient with tracing failed: %v", err)
+	received := make(chan struct{}, 1)
+	go func() {
+		buf := make([]byte, 512)
+		if _, _, err := pc.ReadFrom(buf); err == nil {
+			received <- struct{}{}
 		}
+	}()
 
-		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-			w.WriteHeader(http.StatusOK)
-		}))
-		defer server.Close()
+	client, err := webapp.NewHTTPClient(ctx, webapp.WithDNSResolverAddr(pc.LocalAddr().String()))
+	if err != nil {
+		t.Fatalf("NewHTTPClient with custom DNS resolver failed: %v", err)
+	}
 
-		resp, err := client.Get(server.URL)
-		if err != nil {
-			t.Fatalf("request with tracing client failed: %v", err)
-		}
-		resp.Body.Close()
+	reqCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
+	defer cancel()
+	req, err := http.NewRequestWithContext(reqCtx, http.MethodGet, "http://this-host-does-not-exist.invalid/", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := client.Do(req); err == nil {
+		t.Fatal("expected request to fail since the fake DNS server never replies")
+	}
 
-		logOutput := logBuf.String()
-		if !strings.Contains(logOutput, `"method":"GET`) {
-			t.Errorf("log output does not contain request trace: %s", logOutput)
-		}
-	})
+	select {
+	case <-received:
+	case <-time.After(2 * time.Second):
+		t.Fatal("expected a DNS query to be sent to the custom resolver address")
+	}
+}
+
+func testNewHTTPClientWithTracing(ctx context.Context, t *testing.T) {
+	var logBuf bytes.Buffer
+	logger := slog.New(slog.NewJSONHandler(&logBuf, nil))
+
+	client, err := webapp.NewHTTPClient(ctx, webapp.WithTracingTransport(
+		httptracing.WithTraceLogger(logger),
+	))
+	if err != nil {
+		t.Fatalf("NewHTTPClient with tracing failed: %v", err)
+	}
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+
+	resp, err := client.Get(server.URL)
+	if err != nil {
+		t.Fatalf("request with tracing client failed: %v", err)
+	}
+	resp.Body.Close()
+
+	logOutput := logBuf.String()
+	if !strings.Contains(logOutput, `"method":"GET`) {
+		t.Errorf("log output does not contain request trace: %s", logOutput)
+	}
 }
