@@ -13,6 +13,7 @@ import (
 	"net/http"
 	"os"
 	"slices"
+	"time"
 
 	"cloudeng.io/logging/ctxlog"
 	"cloudeng.io/net/http/httptracing"
@@ -97,7 +98,11 @@ func NewHTTPClient(ctx context.Context, opts ...HTTPClientOption) (*http.Client,
 				return d.DialContext(ctx, network, dnsServerAddr)
 			},
 		}
-		dialer := &net.Dialer{Resolver: resolver}
+		dialer := &net.Dialer{
+			Timeout:   30 * time.Second,
+			KeepAlive: 30 * time.Second,
+			Resolver:  resolver,
+		}
 		transport.DialContext = dialer.DialContext
 	}
 
