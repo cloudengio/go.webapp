@@ -45,12 +45,12 @@ func WithTracingTransport(to ...httptracing.TraceRoundtripOption) HTTPClientOpti
 	}
 }
 
-// WithDNSResolverAddr configures the HTTP client to send all of its DNS
+// WithDNSServer configures the HTTP client to send all of its DNS
 // resolution requests to the DNS server at the specified address, rather
 // than using the system's default resolver. addr may be a bare IP address,
 // in which case the standard DNS port (53) is used, or an address that
 // includes an explicit port.
-func WithDNSResolverAddr(addr string) HTTPClientOption {
+func WithDNSServer(addr string) HTTPClientOption {
 	return func(o *httpClientOptions) {
 		o.dnsResolverAddr = addr
 	}

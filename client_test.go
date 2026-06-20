@@ -93,7 +93,7 @@ func TestNewHTTPClient(t *testing.T) {
 	ctx := context.Background()
 	t.Run("default", func(t *testing.T) { testNewHTTPClientDefault(ctx, t) })
 	t.Run("with-custom-ca", func(t *testing.T) { testNewHTTPClientWithCustomCA(ctx, t) })
-	t.Run("with-dns-resolver-addr", func(t *testing.T) { testNewHTTPClientWithDNSResolverAddr(ctx, t) })
+	t.Run("with-dns-resolver-addr", func(t *testing.T) { testNewHTTPClientWithDNSServer(ctx, t) })
 	t.Run("with-tracing", func(t *testing.T) { testNewHTTPClientWithTracing(ctx, t) })
 }
 
@@ -168,7 +168,7 @@ func testNewHTTPClientWithCustomCA(ctx context.Context, t *testing.T) {
 	}
 }
 
-func testNewHTTPClientWithDNSResolverAddr(ctx context.Context, t *testing.T) {
+func testNewHTTPClientWithDNSServer(ctx context.Context, t *testing.T) {
 	pc, err := net.ListenPacket("udp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatalf("failed to start fake DNS server: %v", err)
@@ -183,7 +183,7 @@ func testNewHTTPClientWithDNSResolverAddr(ctx context.Context, t *testing.T) {
 		}
 	}()
 
-	client, err := webapp.NewHTTPClient(ctx, webapp.WithDNSResolverAddr(pc.LocalAddr().String()))
+	client, err := webapp.NewHTTPClient(ctx, webapp.WithDNSServer(pc.LocalAddr().String()))
 	if err != nil {
 		t.Fatalf("NewHTTPClient with custom DNS resolver failed: %v", err)
 	}
