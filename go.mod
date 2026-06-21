@@ -6,9 +6,9 @@ require (
 	cloudeng.io/cmdutil v0.0.0-20260618005359-67c7fb3db35d
 	cloudeng.io/errors v0.0.14-0.20260312171538-61fcde6ce278
 	cloudeng.io/file v0.0.0-20260618005359-67c7fb3db35d
-	cloudeng.io/io v0.0.0-20260618005359-67c7fb3db35d
-	cloudeng.io/logging v0.0.0-20260618005359-67c7fb3db35d
-	cloudeng.io/net v0.0.0-20260618005359-67c7fb3db35d
+	cloudeng.io/io v0.0.0-20260621005150-1f2f4ecc2626
+	cloudeng.io/logging v0.0.0-20260621005150-1f2f4ecc2626
+	cloudeng.io/net v0.0.0-20260621005150-1f2f4ecc2626
 	cloudeng.io/os v0.0.0-20260618005359-67c7fb3db35d
 	cloudeng.io/sync v0.0.11
 	cloudeng.io/webapi/operations v0.0.0-20260611201645-3409afb52c4c
@@ -26,7 +26,7 @@ require (
 
 require (
 	cloudeng.io/algo v0.0.0-20260618005359-67c7fb3db35d // indirect
-	cloudeng.io/sys v0.0.0-20260618005359-67c7fb3db35d // indirect
+	cloudeng.io/sys v0.0.0-20260621005150-1f2f4ecc2626 // indirect
 	cloudeng.io/text v0.0.16-0.20260312171538-61fcde6ce278 // indirect
 	github.com/chromedp/sysutil v1.1.0 // indirect
 	github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc // indirect
