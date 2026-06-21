@@ -9,9 +9,11 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"fmt"
+	"net"
 	"net/http"
 	"os"
 	"slices"
+	"time"
 
 	"cloudeng.io/logging/ctxlog"
 	"cloudeng.io/net/http/httptracing"
@@ -44,10 +46,22 @@ func WithTracingTransport(to ...httptracing.TraceRoundtripOption) HTTPClientOpti
 	}
 }
 
+// WithDNSServer configures the HTTP client to send all of its DNS
+// resolution requests to the DNS server at the specified address, rather
+// than using the system's default resolver. addr may be a bare IP address,
+// in which case the standard DNS port (53) is used, or an address that
+// includes an explicit port.
+func WithDNSServer(addr string) HTTPClientOption {
+	return func(o *httpClientOptions) {
+		o.dnsResolverAddr = addr
+	}
+}
+
 type httpClientOptions struct {
-	caPEMFile   string
-	caPool      *x509.CertPool
-	tracingOpts []httptracing.TraceRoundtripOption
+	caPEMFile       string
+	caPool          *x509.CertPool
+	tracingOpts     []httptracing.TraceRoundtripOption
+	dnsResolverAddr string
 }
 
 // NewHTTPClient creates a new HTTP client configured according to the specified options.
@@ -71,6 +85,25 @@ func NewHTTPClient(ctx context.Context, opts ...HTTPClientOption) (*http.Client,
 			return nil, fmt.Errorf("failed to obtain cert pool containing %v: %w", caPEMFile, err)
 		}
 		transport.TLSClientConfig.RootCAs = rootCAs
+	}
+
+	if dnsServerAddr := options.dnsResolverAddr; dnsServerAddr != "" {
+		if _, _, err := net.SplitHostPort(dnsServerAddr); err != nil {
+			dnsServerAddr = net.JoinHostPort(dnsServerAddr, "53")
+		}
+		resolver := &net.Resolver{
+			PreferGo: true,
+			Dial: func(ctx context.Context, network, _ string) (net.Conn, error) {
+				var d net.Dialer
+				return d.DialContext(ctx, network, dnsServerAddr)
+			},
+		}
+		dialer := &net.Dialer{
+			Timeout:   30 * time.Second,
+			KeepAlive: 30 * time.Second,
+			Resolver:  resolver,
+		}
+		transport.DialContext = dialer.DialContext
 	}
 
 	httpClient := &http.Client{
