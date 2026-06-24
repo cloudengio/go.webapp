@@ -21,8 +21,11 @@ import (
 
 // TLSSpec represents a specification for a TLS test.
 type TLSSpec struct {
-	Host               string        `yaml:"host"`
-	Port               string        `yaml:"port"`
+	Host string `yaml:"host"`
+	Port string `yaml:"port"`
+
+	CustomDNSServer string `yaml:"custom-dns-server" doc:"custom DNS server to use for resolving hostnames, if empty the system resolver is used"` // custom DNS server to use for resolving hostnames, if empty the system resolver is used
+
 	ExpandDNSNames     bool          `yaml:"expand-dns-names" doc:"see tlsvalidate.WithExpandDNSNames"`                                                              // see tlsvalidate.WithExpandDNSNames
 	CheckSerialNumbers bool          `yaml:"check-serial-numbers" doc:"see tlsvalidate.WithCheckSerialNumbers"`                                                      // see tlsvalidate.WithCheckSerialNumbers
 	ValidFor           time.Duration `yaml:"valid-for" doc:"see tlsvalidate.WithValidForAtLeast"`                                                                    // see tlsvalidate.WithValidForAtLeast
@@ -122,6 +125,7 @@ func (s TLSSpec) options() ([]tlsvalidate.Option, error) {
 		tlsvalidate.WithCheckSerialNumbers(s.CheckSerialNumbers),
 		tlsvalidate.WithExpandDNSNames(s.ExpandDNSNames),
 		tlsvalidate.WithTLSMinVersion(s.TLSMinVersion),
+		tlsvalidate.WithCustomDNSServer(s.CustomDNSServer),
 	}
 	if len(s.CustomCAPEM) == 0 {
 		return o, nil

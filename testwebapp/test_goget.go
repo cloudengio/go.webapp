@@ -82,7 +82,15 @@ func verify(req *http.Request, client *http.Client, expected goget.Spec) error {
 	expectedTagSlash := fmt.Sprintf(`<meta name="go-import" content="%s"/>`, expected.Content)
 	if !strings.Contains(bodyStr, expectedTagSlash) &&
 		!strings.Contains(bodyStr, expectedTag) {
-		return fmt.Errorf("%v: %w", bodyStr, ErrGoGetContentMismatch)
+		return fmt.Errorf("%v: %w", firstNLines(bodyStr, 2), ErrGoGetContentMismatch)
 	}
 	return nil
+}
+
+func firstNLines(s string, n int) string {
+	lines := strings.Split(s, "\n")
+	if len(lines) < n {
+		return s
+	}
+	return strings.Join(lines[:n], "\n")
 }

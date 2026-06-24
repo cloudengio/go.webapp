@@ -1,5 +1,4 @@
-cloudeng.io/algo v0.0.0-20260618005359-67c7fb3db35d h1:zaGb/Ngc15e6deWyxHPbTFgPlPmZxy0bhjSYa57Tbbc=
-cloudeng.io/algo v0.0.0-20260618005359-67c7fb3db35d/go.mod h1:4pi+ttpUgIAKHZMjAotDRJ6p2iX8HFuYse3N/MCrNBU=
+cloudeng.io/algo v0.0.0-20260622224828-d069000db737 h1:Cyh+MzZwI32tu9dA6A74itMZS7SgAuW38IrER25fb3U=
 cloudeng.io/cmdutil v0.0.0-20260618005359-67c7fb3db35d h1:WH4hOnYXoOnCsCNA6g02sVAKqsaIs9GU4kVHqA86+zQ=
 cloudeng.io/cmdutil v0.0.0-20260618005359-67c7fb3db35d/go.mod h1:3dx8rDccL2Nbwfo8jQkrY18tQV2xGnl9E3CxkJZYxmc=
 cloudeng.io/debug v0.0.0-20260527194618-4cb6d4558850 h1:gUar3YNqSdi+uvszdB44uBuutJnWWZX1lzAzlT/Y0IA=
@@ -14,12 +13,10 @@ cloudeng.io/logging v0.0.0-20260621005150-1f2f4ecc2626 h1:zY34A8uTGtmfBCEokWwA/G
 cloudeng.io/logging v0.0.0-20260621005150-1f2f4ecc2626/go.mod h1:1srNtLRpQsIoLck/p/JmvR/QfwfPbDO/65orqtdh1N0=
 cloudeng.io/net v0.0.0-20260621005150-1f2f4ecc2626 h1:k/uz/3xMT2EM43i/DYMoAPMlo/lWD446r93794r94nQ=
 cloudeng.io/net v0.0.0-20260621005150-1f2f4ecc2626/go.mod h1:cHnWBjO0uSGhoWFIU6y5SJShpcKDIDYNT9nOfkazMJQ=
-cloudeng.io/os v0.0.0-20260618005359-67c7fb3db35d h1:78Xpz88qIVkCgy7+bIFRwamN7D8Q9vOzvX+CBlVJReA=
-cloudeng.io/os v0.0.0-20260618005359-67c7fb3db35d/go.mod h1:EkxaDsb4zvt1A3u8yrZ12x/4sx8dsSYS0aDbgrk+T2o=
+cloudeng.io/os v0.0.0-20260622224828-d069000db737 h1:qCGDMmGCry+wf/i1c0JLOx+eHCL/bZE7BJQqlPP7V4s=
 cloudeng.io/sync v0.0.11 h1:w0KEssgwRzTwZ0ZVNaNmBExkvy+GBHK6rdokFSZE7H0=
 cloudeng.io/sync v0.0.11/go.mod h1:F9NpbM4iI6Rg74moXYpFdAU+ljdB9RKLWNuYvF0cFJE=
-cloudeng.io/sys v0.0.0-20260621005150-1f2f4ecc2626 h1:rO9xDcAILBQEzcVztcCywGXgTeL69RLvkWnRt8+hkTE=
-cloudeng.io/sys v0.0.0-20260621005150-1f2f4ecc2626/go.mod h1:wWVA1E7n+FIWnvtuGjegiPD7R0jLuEDDzGZCLp7Dldo=
+cloudeng.io/sys v0.0.0-20260622224828-d069000db737 h1:vrNKKALRRFlmPl2nh52AaWsyB814PhFJfa9/SCGhDyg=
 cloudeng.io/text v0.0.16-0.20260312171538-61fcde6ce278 h1:pGH7HR6EiZ7mceD00OY2vdKSqvIUYt+1F/b3G63O6uo=
 cloudeng.io/text v0.0.16-0.20260312171538-61fcde6ce278/go.mod h1:bZd+iMNGHuFhRwk30Ife7WW56IZAMnAqApeEt4KEc0c=
 cloudeng.io/webapi/operations v0.0.0-20260611201645-3409afb52c4c h1:GwzAvW/s1WXYNM9sd0kG33uZ7nGjaOBQwqAs/nHvrmE=

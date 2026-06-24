@@ -102,21 +102,33 @@ func WithCiphersuites(suites []uint16) Option {
 	}
 }
 
+// WithCustomDNSServer returns an option that configures the validator to use
+// the specified custom DNS server for resolving hostnames. The address may be
+// a bare IP address, in which case the standard DNS port (53) is used, or an
+// address that includes an explicit port.
+func WithCustomDNSServer(addr string) Option {
+	return func(o *options) {
+		o.customDNSServer = addr
+	}
+}
+
 type options struct {
-	ipv4Only     bool
-	validFor     time.Duration
-	issuerREs    []*regexp.Regexp
-	expand       bool
-	rootCAs      *x509.CertPool
-	pemFile      string
-	checkSerial  bool
-	tlsMinVer    uint16
-	ciphersuites []uint16
+	ipv4Only        bool
+	validFor        time.Duration
+	issuerREs       []*regexp.Regexp
+	expand          bool
+	rootCAs         *x509.CertPool
+	pemFile         string
+	checkSerial     bool
+	tlsMinVer       uint16
+	ciphersuites    []uint16
+	customDNSServer string
 }
 
 // Validator provides a way to validate TLS certificates.
 type Validator struct {
-	opts options
+	opts     options
+	resolver *net.Resolver
 }
 
 // NewValidator returns a new Validator configured with the supplied options.
@@ -124,6 +136,18 @@ func NewValidator(opts ...Option) *Validator {
 	v := &Validator{}
 	for _, opt := range opts {
 		opt(&v.opts)
+	}
+	if v.opts.customDNSServer != "" {
+		if _, _, err := net.SplitHostPort(v.opts.customDNSServer); err != nil {
+			v.opts.customDNSServer = net.JoinHostPort(v.opts.customDNSServer, "53")
+		}
+		v.resolver = &net.Resolver{
+			PreferGo: true,
+			Dial: func(ctx context.Context, network, _ string) (net.Conn, error) {
+				var d net.Dialer
+				return d.DialContext(ctx, network, v.opts.customDNSServer)
+			},
+		}
 	}
 	return v
 }
@@ -151,7 +175,7 @@ func (v *Validator) Validate(ctx context.Context, host, port string) error {
 		}
 		v.opts.rootCAs = rootCAs
 	}
-	addrs, err := v.expandHost(host)
+	addrs, err := v.expandHost(ctx, host)
 	if err != nil {
 		return err
 	}
@@ -239,8 +263,11 @@ func (v *Validator) ignoreIPv6(addrs []string) []string {
 	return ipv4
 }
 
-func (v *Validator) expandHost(host string) ([]string, error) {
+func (v *Validator) expandHost(ctx context.Context, host string) ([]string, error) {
 	if v.opts.expand {
+		if v.resolver != nil {
+			return v.resolver.LookupHost(ctx, host)
+		}
 		return net.LookupHost(host)
 	}
 	return []string{host}, nil
@@ -249,6 +276,9 @@ func (v *Validator) expandHost(host string) ([]string, error) {
 func (v *Validator) getTLSState(ctx context.Context, cfg *tls.Config, addr, port string) (tls.ConnectionState, error) {
 	cfg = cfg.Clone()
 	dialer := &net.Dialer{}
+	if v.resolver != nil {
+		dialer.Resolver = v.resolver
+	}
 	conn, err := dialer.DialContext(ctx, "tcp", net.JoinHostPort(addr, port))
 	if err != nil {
 		return tls.ConnectionState{}, err
