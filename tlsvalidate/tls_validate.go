@@ -227,6 +227,9 @@ func (v *Validator) Validate(ctx context.Context, host, port string) error {
 }
 
 func (v *Validator) validateConnectionState(state tls.ConnectionState) error {
+	if len(state.PeerCertificates) == 0 {
+		return fmt.Errorf("no peer certificates found")
+	}
 	leaf := state.PeerCertificates[0]
 	if len(v.opts.issuerREs) > 0 {
 		matched := false
