@@ -3,19 +3,20 @@ module cloudeng.io/webapp
 go 1.26.4
 
 require (
-	cloudeng.io/cmdutil v0.0.0-20260618005359-67c7fb3db35d
+	cloudeng.io/cmdutil v0.0.0-20260624171915-da98fe9dec2b
 	cloudeng.io/errors v0.0.14-0.20260312171538-61fcde6ce278
-	cloudeng.io/file v0.0.0-20260618005359-67c7fb3db35d
-	cloudeng.io/io v0.0.0-20260621005150-1f2f4ecc2626
-	cloudeng.io/logging v0.0.0-20260621005150-1f2f4ecc2626
-	cloudeng.io/net v0.0.0-20260621005150-1f2f4ecc2626
-	cloudeng.io/os v0.0.0-20260618005359-67c7fb3db35d
+	cloudeng.io/file v0.0.0-20260624171915-da98fe9dec2b
+	cloudeng.io/io v0.0.0-20260624171915-da98fe9dec2b
+	cloudeng.io/logging v0.0.0-20260624171915-da98fe9dec2b
+	cloudeng.io/net v0.0.0-20260624171915-da98fe9dec2b
+	cloudeng.io/os v0.0.0-20260624171915-da98fe9dec2b
 	cloudeng.io/sync v0.0.11
+	cloudeng.io/text v0.0.16-0.20260624171915-da98fe9dec2b
 	cloudeng.io/webapi/operations v0.0.0-20260611201645-3409afb52c4c
 	github.com/chromedp/cdproto v0.0.0-20260427013145-5737772c319b
 	github.com/cloudengio/chromedp v0.0.0-20260611181948-3cd91754d426
 	github.com/gaissmai/bart v0.28.0
-	github.com/go-json-experiment/json v0.0.0-20260601182631-00ed12fed2a6
+	github.com/go-json-experiment/json v0.0.0-20260623181947-01eb4420fa68
 	github.com/go-webauthn/webauthn v0.17.4
 	github.com/lestrrat-go/jwx/v3 v3.1.1
 	github.com/stretchr/testify v1.11.1
@@ -25,9 +26,8 @@ require (
 )
 
 require (
-	cloudeng.io/algo v0.0.0-20260618005359-67c7fb3db35d // indirect
-	cloudeng.io/sys v0.0.0-20260621005150-1f2f4ecc2626 // indirect
-	cloudeng.io/text v0.0.16-0.20260312171538-61fcde6ce278 // indirect
+	cloudeng.io/algo v0.0.0-20260624171915-da98fe9dec2b // indirect
+	cloudeng.io/sys v0.0.0-20260624171915-da98fe9dec2b // indirect
 	github.com/chromedp/sysutil v1.1.0 // indirect
 	github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc // indirect
 	github.com/decred/dcrd/dcrec/secp256k1/v4 v4.4.1 // indirect
