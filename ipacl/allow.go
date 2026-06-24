@@ -182,6 +182,63 @@ func (h *aclHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	h.handler.ServeHTTP(w, r)
 }
 
+type SkipHandler struct {
+	allowed Contains
+	denied  Contains
+	opts    options
+}
+
+// NewSkipHandler creates a new SkipHandler that determines whether a request
+// should be skipped based on the allowed and denied ACLs.
+// The deny ACL takes precedence over the allow ACL. If no ACLs are supplied then
+// the handler allows all requests. If the remote IP cannot be
+// determined or parsed then the request is not skipped.
+// A SkipHandler is often used to control/limit logging.
+func NewSkipHandler(allow, deny Contains, opts ...Option) *SkipHandler {
+	if allow == nil {
+		allow = func(netip.Addr) bool { return true }
+	}
+	if deny == nil {
+		deny = func(netip.Addr) bool { return false }
+	}
+	sh := &SkipHandler{
+		allowed: allow,
+		denied:  deny,
+		opts: options{
+			notAllowedCounter: noopCounter,
+			deniedCounter:     noopCounter,
+			errorCounter:      noopCounter,
+		},
+	}
+	for _, opt := range opts {
+		opt(&sh.opts)
+	}
+	if sh.opts.extractor == nil {
+		sh.opts.extractor = RemoteAddrExtractor
+	}
+	return sh
+}
+
+// Skip returns whether the request should be skipped based on the allowed
+// and denied ACLs. A request is skipped if it is denied or not allowed.
+func (h *SkipHandler) Skip(r *http.Request) bool {
+	clientIP, ip, err := h.opts.extractor(r)
+	if err != nil {
+		h.opts.errorCounter(r.Context())
+		ctxlog.Debug(r.Context(), "failed to parse remote address", "remote_addr", clientIP, "error", err)
+		return false
+	}
+	if h.denied(ip) {
+		h.opts.deniedCounter(r.Context())
+		return true
+	}
+	if !h.allowed(ip) {
+		h.opts.notAllowedCounter(r.Context())
+		return true
+	}
+	return false
+}
+
 // Config represents an IP address access control list configuration.
 type Config struct {
 	Addresses []string `yaml:"addresses" cmd:"list of ip addresses or cidr prefixes"`
