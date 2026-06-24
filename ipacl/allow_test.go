@@ -311,11 +311,11 @@ func TestSkipHandlerCounters(t *testing.T) {
 		wantNotAllowedCount int
 		wantErrorCount      int
 	}{
-		// Skip, unlike NewHandler's ServeHTTP, does not invoke the denied/
-		// notAllowed counters; only the error counter is wired up.
+		// Skip invokes the same denied/notAllowed/error counters as
+		// NewHandler's ServeHTTP.
 		{"10.0.0.1:1234", false, 0, 0, 0},
-		{"10.0.0.2:1234", true, 0, 0, 0},
-		{"10.0.0.3:1234", true, 0, 0, 0},
+		{"10.0.0.2:1234", true, 1, 0, 0},
+		{"10.0.0.3:1234", true, 0, 1, 0},
 		{"invalid", false, 0, 0, 1},
 	}
 
