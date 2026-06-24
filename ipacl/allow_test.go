@@ -187,6 +187,160 @@ func TestACLHandler(t *testing.T) {
 
 }
 
+func TestSkipHandler(t *testing.T) {
+	allow, err := NewACL("127.0.0.1", "192.168.1.0/24", "127.0.0.3")
+	if err != nil {
+		t.Fatal(err)
+	}
+	deny, err := NewACL("127.0.0.2", "192.168.2.0/24", "127.0.0.3")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	type testCase struct {
+		remoteAddr string
+		wantSkip   bool
+	}
+
+	runTests := func(handler *SkipHandler, cases []testCase) {
+		t.Helper()
+		for _, tc := range cases {
+			t.Run(tc.remoteAddr, func(t *testing.T) {
+				t.Helper()
+				req := httptest.NewRequest("GET", "/", nil)
+				req.RemoteAddr = tc.remoteAddr
+
+				if got, want := handler.Skip(req), tc.wantSkip; got != want {
+					t.Errorf("Skip(%v) = %v, want %v", tc.remoteAddr, got, want)
+				}
+			})
+		}
+	}
+
+	noACL := []testCase{
+		{"127.0.0.1:1234", false},
+		{"127.0.0.2:1234", false},
+		{"127.0.0.3:1234", false},
+		{"192.168.1.50:80", false},
+		{"192.168.2.50:80", false},
+		{"invalid:80", false},
+		{"1.2.3.4", false},
+	}
+	runTests(NewSkipHandler(nil, nil), noACL)
+
+	allowAndDeny := []testCase{
+		{"127.0.0.1:1234", false},
+		{"127.0.0.2:1234", true},
+		{"127.0.0.3:1234", true},
+		{"192.168.1.50:80", false},
+		{"192.168.2.50:80", true},
+		{"invalid:80", false},
+		{"1.2.3.4", true}}
+	runTests(NewSkipHandler(allow.Contains, deny.Contains), allowAndDeny)
+
+	allowOnly := []testCase{
+		{"127.0.0.1:1234", false},
+		{"192.168.1.50:80", false},
+		{"127.0.0.2:1234", true},
+		{"127.0.0.3:1234", false},
+		{"192.168.2.50:80", true},
+		{"invalid:80", false},
+		{"1.2.3.4", true}}
+	runTests(NewSkipHandler(allow.Contains, nil), allowOnly)
+
+	denyOnly := []testCase{
+		{"127.0.0.1:1234", false},
+		{"127.0.0.2:1234", true},
+		{"127.0.0.3:1234", true},
+		{"192.168.1.50:80", false},
+		{"192.168.2.50:80", true},
+		{"invalid:80", false},
+		{"1.2.3.4", false}}
+	runTests(NewSkipHandler(nil, deny.Contains), denyOnly)
+}
+
+func TestSkipHandlerWithExtractor(t *testing.T) {
+	acl, err := NewACL("10.0.0.1")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	handler := NewSkipHandler(acl.Contains, nil, WithAddressExtractor(XForwardedForExtractor))
+
+	tests := []struct {
+		header   string
+		wantSkip bool
+	}{
+		{"10.0.0.1", false},
+		{"10.0.0.2", true},
+		{"", false},
+	}
+
+	for _, tc := range tests {
+		req := httptest.NewRequest("GET", "/", nil)
+		if tc.header != "" {
+			req.Header.Set("X-Forwarded-For", tc.header)
+		}
+		if got, want := handler.Skip(req), tc.wantSkip; got != want {
+			t.Errorf("Skip(%q) = %v, want %v", tc.header, got, want)
+		}
+	}
+}
+
+func TestSkipHandlerCounters(t *testing.T) {
+	allow, err := NewACL("10.0.0.1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	deny, err := NewACL("10.0.0.2")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var deniedCount, notAllowedCount, errorCount int
+	deniedCounter := func(context.Context) { deniedCount++ }
+	notAllowedCounter := func(context.Context) { notAllowedCount++ }
+	errorCounter := func(context.Context) { errorCount++ }
+
+	handler := NewSkipHandler(allow.Contains, deny.Contains, WithCounters(deniedCounter, notAllowedCounter, errorCounter))
+
+	tests := []struct {
+		remoteAddr          string
+		wantSkip            bool
+		wantDeniedCount     int
+		wantNotAllowedCount int
+		wantErrorCount      int
+	}{
+		// Skip invokes the same denied/notAllowed/error counters as
+		// NewHandler's ServeHTTP.
+		{"10.0.0.1:1234", false, 0, 0, 0},
+		{"10.0.0.2:1234", true, 1, 0, 0},
+		{"10.0.0.3:1234", true, 0, 1, 0},
+		{"invalid", false, 0, 0, 1},
+	}
+
+	for i, tc := range tests {
+		deniedCount = 0
+		notAllowedCount = 0
+		errorCount = 0
+		req := httptest.NewRequest("GET", "/", nil)
+		req.RemoteAddr = tc.remoteAddr
+
+		if got, want := handler.Skip(req), tc.wantSkip; got != want {
+			t.Errorf("case %d: Skip(%v) = %v, want %v", i, tc.remoteAddr, got, want)
+		}
+		if deniedCount != tc.wantDeniedCount {
+			t.Errorf("case %d: deniedCount = %v, want %v", i, deniedCount, tc.wantDeniedCount)
+		}
+		if notAllowedCount != tc.wantNotAllowedCount {
+			t.Errorf("case %d: notAllowedCount = %v, want %v", i, notAllowedCount, tc.wantNotAllowedCount)
+		}
+		if errorCount != tc.wantErrorCount {
+			t.Errorf("case %d: errorCount = %v, want %v", i, errorCount, tc.wantErrorCount)
+		}
+	}
+}
+
 func TestXForwardedForExtractor(t *testing.T) {
 	tests := []struct {
 		name    string
