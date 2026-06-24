@@ -170,6 +170,38 @@ contained within the private subnet.
 
 
 
+### Type SkipHandler
+```go
+type SkipHandler struct {
+	// contains filtered or unexported fields
+}
+```
+
+### Functions
+
+```go
+func NewSkipHandler(allow, deny Contains, opts ...Option) *SkipHandler
+```
+NewSkipHandler creates a new SkipHandler that determines whether a request
+should be skipped based on the allowed and denied ACLs. The deny ACL takes
+precedence over the allow ACL. If no ACLs are supplied then the handler
+allows all requests. If the remote IP cannot be determined or parsed then
+the request is not skipped. A SkipHandler is often used to control/limit
+logging.
+
+
+
+### Methods
+
+```go
+func (h *SkipHandler) Skip(r *http.Request) bool
+```
+Skip returns whether the request should be skipped based on the allowed and
+denied ACLs. A request is skipped if it is denied or not allowed.
+
+
+
+
 
 
 
