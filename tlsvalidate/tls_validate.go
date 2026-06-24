@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"cloudeng.io/errors"
+	"cloudeng.io/net/netutil"
 	"cloudeng.io/sync/errgroup"
 )
 
@@ -138,9 +139,7 @@ func NewValidator(opts ...Option) *Validator {
 		opt(&v.opts)
 	}
 	if v.opts.customDNSServer != "" {
-		if _, _, err := net.SplitHostPort(v.opts.customDNSServer); err != nil {
-			v.opts.customDNSServer = net.JoinHostPort(v.opts.customDNSServer, "53")
-		}
+		v.opts.customDNSServer = netutil.EnsureHostPort(v.opts.customDNSServer, "53")
 		v.resolver = &net.Resolver{
 			PreferGo: true,
 			Dial: func(ctx context.Context, network, _ string) (net.Conn, error) {
