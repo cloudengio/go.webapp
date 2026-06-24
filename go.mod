@@ -11,7 +11,7 @@ require (
 	cloudeng.io/net v0.0.0-20260624171915-da98fe9dec2b
 	cloudeng.io/os v0.0.0-20260624171915-da98fe9dec2b
 	cloudeng.io/sync v0.0.11
-	cloudeng.io/text v0.0.16-0.20260312171538-61fcde6ce278
+	cloudeng.io/text v0.0.16-0.20260624171915-da98fe9dec2b
 	cloudeng.io/webapi/operations v0.0.0-20260611201645-3409afb52c4c
 	github.com/chromedp/cdproto v0.0.0-20260427013145-5737772c319b
 	github.com/cloudengio/chromedp v0.0.0-20260611181948-3cd91754d426

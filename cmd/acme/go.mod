@@ -18,7 +18,7 @@ require (
 	cloudeng.io/os v0.0.0-20260624171915-da98fe9dec2b // indirect
 	cloudeng.io/sync v0.0.11 // indirect
 	cloudeng.io/sys v0.0.0-20260624171915-da98fe9dec2b // indirect
-	cloudeng.io/text v0.0.16-0.20260312171538-61fcde6ce278 // indirect
+	cloudeng.io/text v0.0.16-0.20260624171915-da98fe9dec2b // indirect
 	github.com/aws/aws-sdk-go-v2 v1.42.0 // indirect
 	github.com/aws/aws-sdk-go-v2/config v1.32.25 // indirect
 	github.com/aws/aws-sdk-go-v2/credentials v1.19.24 // indirect

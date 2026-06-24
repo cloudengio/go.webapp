@@ -18,7 +18,7 @@ require (
 	cloudeng.io/os v0.0.0-20260624171915-da98fe9dec2b // indirect
 	cloudeng.io/sync v0.0.11 // indirect
 	cloudeng.io/sys v0.0.0-20260624171915-da98fe9dec2b // indirect
-	cloudeng.io/text v0.0.16-0.20260312171538-61fcde6ce278 // indirect
+	cloudeng.io/text v0.0.16-0.20260624171915-da98fe9dec2b // indirect
 	golang.org/x/net v0.56.0 // indirect
 	golang.org/x/sys v0.46.0 // indirect
 	golang.org/x/text v0.38.0 // indirect
