@@ -262,8 +262,8 @@ func TestErrValidator(t *testing.T) {
 		t.Fatal("expected an error but got none")
 	}
 
-	var errValidator tlsvalidate.ErrValidator
-	if !errors.As(err, &errValidator) {
+	errValidator, ok := errors.AsType[*tlsvalidate.ErrValidator](err)
+	if !ok {
 		t.Fatalf("expected error to be (or wrap) a tlsvalidate.ErrValidator, got %T: %v", err, err)
 	}
 	if errValidator.Certificate == nil {
