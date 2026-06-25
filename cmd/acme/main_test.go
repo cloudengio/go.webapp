@@ -15,6 +15,7 @@ import (
 
 	"cloudeng.io/logging"
 	"cloudeng.io/logging/ctxlog"
+	"cloudeng.io/webapp"
 	"cloudeng.io/webapp/webauth/acme"
 	"cloudeng.io/webapp/webauth/acme/pebble"
 	"cloudeng.io/webapp/webauth/acme/pebble/pebbletest"
@@ -120,7 +121,7 @@ func TestCertRenewal(t *testing.T) {
 		}
 
 		validFor := leaf.NotAfter.Sub(leaf.NotBefore)
-		serial := fmt.Sprintf("%0*x", len(leaf.SerialNumber.Bytes())*2, leaf.SerialNumber)
+		serial := webapp.SerialNumberHex(leaf.SerialNumber)
 		t.Logf("obtained certificate %v valid for %v (serial %v)", i, validFor, serial)
 		previousSerial = serial
 	}

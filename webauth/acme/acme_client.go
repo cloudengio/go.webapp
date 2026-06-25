@@ -160,9 +160,10 @@ func (s *Client) refreshHost(ctx context.Context, logger *slog.Logger, host stri
 		return err
 	}
 	leaf := cert.Leaf
-	logger.Info("refreshed certificate using tls hello", "host", host, "expiry", leaf.NotAfter, "serial", fmt.Sprintf("%0*x", len(leaf.SerialNumber.Bytes())*2, leaf.SerialNumber))
+	ossSerial := webapp.SerialNumberOpenSSL(leaf.SerialNumber)
+	logger.Info("refreshed certificate using tls hello", "host", host, "expiry", leaf.NotAfter, "serial", ossSerial)
 	if time.Now().After(leaf.NotAfter) {
-		logger.Warn("certificate has expired", "host", host, "expiry", leaf.NotAfter, "serial", fmt.Sprintf("%0*x", len(leaf.SerialNumber.Bytes())*2, leaf.SerialNumber))
+		logger.Warn("certificate has expired", "host", host, "expiry", leaf.NotAfter, "serial", ossSerial)
 		s.opts.refreshMetric(ctx, host, "expired")
 	} else {
 		s.opts.refreshMetric(ctx, host, "ok")

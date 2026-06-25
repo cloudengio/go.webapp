@@ -142,7 +142,6 @@ func (p *T) waitForRe(ctx context.Context, re *regexp.Regexp) (string, error) {
 		select {
 		case line := <-p.ch:
 			ctxlog.Logger(ctx).Debug("pebble WaitForIssuedCertificateSerial", "line", string(line))
-
 			matches := re.FindSubmatch(line)
 			if matches != nil {
 				return string(matches[1]), nil
