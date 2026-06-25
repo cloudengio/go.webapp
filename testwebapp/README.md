@@ -413,8 +413,11 @@ func (a *SelectorAction) UnmarshalYAML(value *yaml.Node) error
 ### Type TLSSpec
 ```go
 type TLSSpec struct {
-	Host               string        `yaml:"host"`
-	Port               string        `yaml:"port"`
+	Host string `yaml:"host"`
+	Port string `yaml:"port"`
+
+	CustomDNSServer string `yaml:"custom-dns-server" doc:"custom DNS server to use for resolving hostnames, if empty the system resolver is used"` // custom DNS server to use for resolving hostnames, if empty the system resolver is used
+
 	ExpandDNSNames     bool          `yaml:"expand-dns-names" doc:"see tlsvalidate.WithExpandDNSNames"`                                                              // see tlsvalidate.WithExpandDNSNames
 	CheckSerialNumbers bool          `yaml:"check-serial-numbers" doc:"see tlsvalidate.WithCheckSerialNumbers"`                                                      // see tlsvalidate.WithCheckSerialNumbers
 	ValidFor           time.Duration `yaml:"valid-for" doc:"see tlsvalidate.WithValidForAtLeast"`                                                                    // see tlsvalidate.WithValidForAtLeast

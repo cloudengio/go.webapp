@@ -8,6 +8,25 @@ Package tlsvalidate provides functions for validating TLS certificates
 across multiple hosts and addresses.
 
 ## Types
+### Type ErrValidator
+```go
+type ErrValidator struct {
+	Certificate *x509.Certificate
+	Err         error
+}
+```
+ErrValidator is an error type that wraps a certificate and an error.
+It is used to provide more context when a certificate validation fails.
+
+### Methods
+
+```go
+func (e ErrValidator) Error() string
+```
+
+
+
+
 ### Type Option
 ```go
 type Option func(o *options)
@@ -29,6 +48,15 @@ func WithCiphersuites(suites []uint16) Option
 ```
 WithCiphersuites returns an option that configures the validator to check
 that the ciphersuite used is one of the specified ciphersuites.
+
+
+```go
+func WithCustomDNSServer(addr string) Option
+```
+WithCustomDNSServer returns an option that configures the validator to use
+the specified custom DNS server for resolving hostnames. The address may
+be a bare IP address, in which case the standard DNS port (53) is used,
+or an address that includes an explicit port.
 
 
 ```go

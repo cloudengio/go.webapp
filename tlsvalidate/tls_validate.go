@@ -113,6 +113,24 @@ func WithCustomDNSServer(addr string) Option {
 	}
 }
 
+// ErrValidator is an error type that wraps a certificate and an error. It is used
+// to provide more context when a certificate validation fails.
+type ErrValidator struct {
+	Certificate *x509.Certificate
+	Err         error
+}
+
+func (e *ErrValidator) Error() string {
+	if e.Err != nil {
+		return e.Err.Error()
+	}
+	return "certificate validation failed"
+}
+
+func (e *ErrValidator) Unwrap() error {
+	return e.Err
+}
+
 type options struct {
 	ipv4Only        bool
 	validFor        time.Duration
@@ -228,7 +246,9 @@ func (v *Validator) Validate(ctx context.Context, host, port string) error {
 
 func (v *Validator) validateConnectionState(state tls.ConnectionState) error {
 	if len(state.PeerCertificates) == 0 {
-		return fmt.Errorf("no peer certificates found")
+		return &ErrValidator{
+			Err: fmt.Errorf("no peer certificates found"),
+		}
 	}
 	leaf := state.PeerCertificates[0]
 	if len(v.opts.issuerREs) > 0 {
@@ -241,12 +261,18 @@ func (v *Validator) validateConnectionState(state tls.ConnectionState) error {
 			}
 		}
 		if !matched {
-			return fmt.Errorf("certificate issuer %q does not match any of the specified patterns", issuer)
+			return &ErrValidator{
+				Certificate: leaf,
+				Err:         fmt.Errorf("certificate issuer %q does not match any of the specified patterns", issuer),
+			}
 		}
 	}
 	if v.opts.validFor > 0 {
 		if validFor := time.Until(leaf.NotAfter); validFor < v.opts.validFor {
-			return fmt.Errorf("certificate is valid for %v which is less than the required %v", validFor, v.opts.validFor)
+			return &ErrValidator{
+				Certificate: leaf,
+				Err:         fmt.Errorf("certificate is valid for %v which is less than the required %v", validFor, v.opts.validFor),
+			}
 		}
 	}
 	return nil
