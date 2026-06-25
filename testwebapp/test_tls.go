@@ -7,6 +7,7 @@ package testwebapp
 import (
 	"context"
 	"crypto/x509"
+	goerrors "errors"
 	"fmt"
 	"net/http"
 	"regexp"
@@ -109,7 +110,18 @@ func (t *TLSTest) Run(ctx context.Context) error {
 	for _, spec := range t.specs {
 		err := t.verify(ctx, spec)
 		if err != nil {
-			ctxlog.Error(ctx, "tls", "spec", spec, "success", false, "error", err)
+			logger := ctxlog.Logger(ctx).With(
+				"spec", spec, "success", false, "error", err)
+			if ev, ok := goerrors.AsType[*tlsvalidate.ErrValidator](err); ok {
+				logger = logger.With(
+					"cert.subject", ev.Certificate.Subject.CommonName,
+					"cert.issuer", ev.Certificate.Issuer.CommonName,
+					"cert.serial", webapp.SerialNumberOpenSSL(ev.Certificate.SerialNumber),
+					"cert.not_before", ev.Certificate.NotBefore,
+					"cert.not_after", ev.Certificate.NotAfter,
+				)
+			}
+			logger.Error("tls: verification failed")
 			errs.Append(fmt.Errorf("%v: %w", spec, err))
 			continue
 		}

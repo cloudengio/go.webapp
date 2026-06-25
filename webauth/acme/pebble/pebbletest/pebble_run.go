@@ -9,13 +9,13 @@ import (
 	"crypto/x509"
 	"encoding/pem"
 	"errors"
-	"fmt"
 	"net"
 	"os"
 	"path/filepath"
 	"sync"
 	"time"
 
+	"cloudeng.io/webapp"
 	"cloudeng.io/webapp/webauth/acme/pebble"
 )
 
@@ -126,7 +126,7 @@ func WaitForNewCert(ctx context.Context, t Testing, msg, certPath, previousSeria
 				t.Fatalf("%v: failed to stat cert file %v: %v", msg, certPath, err)
 			}
 			leafCert, intermediates := getCerts(t, certPath)
-			gotSerial := fmt.Sprintf("%0*x", len(leafCert.SerialNumber.Bytes())*2, leafCert.SerialNumber)
+			gotSerial := webapp.SerialNumberHex(leafCert.SerialNumber)
 			if gotSerial != previousSerial {
 				t.Logf("%v: found new cert %v with serial %v", msg, certPath, gotSerial)
 				return leafCert, intermediates

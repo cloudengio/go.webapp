@@ -10,9 +10,11 @@ import (
 	"crypto/ecdsa"
 	"crypto/rsa"
 	"crypto/x509"
+	"encoding/hex"
 	"encoding/pem"
 	"errors"
 	"fmt"
+	"math/big"
 	"strings"
 
 	"cloudeng.io/file"
@@ -182,4 +184,24 @@ func FindLeafPEM(certsPEM []*pem.Block) ([]byte, *x509.Certificate, error) {
 		}
 	}
 	return nil, nil, fmt.Errorf("no leaf certificate found")
+}
+
+// SerialNumberOpenSSL formats a serial number in the same way as OpenSSL does.
+func SerialNumberOpenSSL(serial *big.Int) string {
+	bytes := serial.Bytes()
+	hexStr := hex.EncodeToString(bytes)
+
+	var formatted strings.Builder
+	for i := 0; i < len(hexStr); i += 2 {
+		if i > 0 {
+			formatted.WriteString(":")
+		}
+		formatted.WriteString(strings.ToUpper(hexStr[i : i+2]))
+	}
+	return formatted.String()
+}
+
+// SerialNumberHex formats a serial number as a hex string with leading zeros.
+func SerialNumberHex(serial *big.Int) string {
+	return fmt.Sprintf("%0*x", len(serial.Bytes())*2, serial)
 }

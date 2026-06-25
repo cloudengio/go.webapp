@@ -157,3 +157,30 @@ func TestReadAndParsePrivateKeyPEM(t *testing.T) {
 		t.Errorf("expected rsa.PrivateKey, got %T", signer)
 	}
 }
+
+func TestSerialNumberOpenSSL(t *testing.T) {
+	tests := []struct {
+		serial *big.Int
+		want   string
+	}{
+		{big.NewInt(0), ""},
+		{big.NewInt(1), "01"},
+		{big.NewInt(255), "FF"},
+		{big.NewInt(256), "01:00"},
+		{big.NewInt(0x123456), "12:34:56"},
+		{
+			// 16 byte (128 bit) serial number with a leading zero byte
+			// preserved in the byte representation.
+			new(big.Int).SetBytes([]byte{
+				0x00, 0xAB, 0xCD, 0xEF, 0x01, 0x23, 0x45, 0x67,
+				0x89, 0xAB, 0xCD, 0xEF, 0x01, 0x23, 0x45, 0x67,
+			}),
+			"AB:CD:EF:01:23:45:67:89:AB:CD:EF:01:23:45:67",
+		},
+	}
+	for _, tc := range tests {
+		if got := SerialNumberOpenSSL(tc.serial); got != tc.want {
+			t.Errorf("SerialNumberOpenSSL(%v) = %q, want %q", tc.serial, got, tc.want)
+		}
+	}
+}
