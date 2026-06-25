@@ -188,6 +188,9 @@ func FindLeafPEM(certsPEM []*pem.Block) ([]byte, *x509.Certificate, error) {
 
 // SerialNumberOpenSSL formats a serial number in the same way as OpenSSL does.
 func SerialNumberOpenSSL(serial *big.Int) string {
+	if serial == nil {
+		return "nil"
+	}
 	bytes := serial.Bytes()
 	hexStr := hex.EncodeToString(bytes)
 
@@ -203,5 +206,8 @@ func SerialNumberOpenSSL(serial *big.Int) string {
 
 // SerialNumberHex formats a serial number as a hex string with leading zeros.
 func SerialNumberHex(serial *big.Int) string {
+	if serial == nil {
+		return ""
+	}
 	return fmt.Sprintf("%0*x", len(serial.Bytes())*2, serial)
 }
