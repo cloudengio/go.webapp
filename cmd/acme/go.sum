@@ -1,7 +1,7 @@
 cloudeng.io/algo v0.0.0-20260624171915-da98fe9dec2b h1:q8EO/0CQFktAtDGTVJwidhfXwh6kEFbaxjTkK2ic26k=
 cloudeng.io/algo v0.0.0-20260624171915-da98fe9dec2b/go.mod h1:4pi+ttpUgIAKHZMjAotDRJ6p2iX8HFuYse3N/MCrNBU=
-cloudeng.io/aws v0.0.0-20260624161553-a27e2ffff2e6 h1:O1C/JdZQamRpuvveN2wAli80Gmu9D6xvBu8HhfLlgSY=
-cloudeng.io/aws v0.0.0-20260624161553-a27e2ffff2e6/go.mod h1:Xfv/e1AMdeiUuxzF6gFJ5VvRKLGuCUKpUeN1XBDB3ZY=
+cloudeng.io/aws v0.0.0-20260624171915-da98fe9dec2b h1:jUntIhqOvG09sLgp7+oA3nS6BTEuT998HqAYwRO9SKk=
+cloudeng.io/aws v0.0.0-20260624171915-da98fe9dec2b/go.mod h1:QkOLLriWqeUJpcbAzULBV/q3gJLSXRX+nCvwvGxZ49c=
 cloudeng.io/cicd v0.0.0-20260527194618-4cb6d4558850 h1:owpTcpW3NwVZ94CFaeSdaMWgoTmVv8XUjCbfYEGpUcc=
 cloudeng.io/cicd v0.0.0-20260527194618-4cb6d4558850/go.mod h1:pI98u5ytMFakWkLK2yrVvHyRlzcyYArBYA4xKR1vPj8=
 cloudeng.io/cmdutil v0.0.0-20260624171915-da98fe9dec2b h1:6qPbFD4EkA0udnjMO/mu2Pr8l+cRGw6iD2EdV5DxYM4=

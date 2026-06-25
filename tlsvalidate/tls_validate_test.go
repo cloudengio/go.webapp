@@ -11,6 +11,7 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"crypto/x509/pkix"
+	"errors"
 	"math/big"
 	"net"
 	"net/http"
@@ -232,6 +233,50 @@ func TestValidator(t *testing.T) {
 				t.Fatalf("unexpected error: %v", err)
 			}
 		})
+	}
+}
+
+func TestErrValidator(t *testing.T) {
+	ctx := context.Background()
+
+	rootCert, rootKey := newCert(t, "root.com", true, nil, nil, nil, nil)
+	rootPool := x509.NewCertPool()
+	rootPool.AddCert(rootCert)
+
+	leafCert, leafKey := newCert(t, "leaf.com", false, []string{"localhost"}, []net.IP{net.ParseIP("127.0.0.1")}, rootCert, rootKey)
+
+	addr, cleanup := startTLSServer(t, leafCert, leafKey, "127.0.0.1:0")
+	defer cleanup()
+
+	host, port, err := net.SplitHostPort(addr)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	validator := tlsvalidate.NewValidator(
+		tlsvalidate.WithRootCAs(rootPool),
+		tlsvalidate.WithIssuerRegexps(regexp.MustCompile("CN=wrong.com")),
+	)
+	err = validator.Validate(ctx, host, port)
+	if err == nil {
+		t.Fatal("expected an error but got none")
+	}
+
+	var errValidator tlsvalidate.ErrValidator
+	if !errors.As(err, &errValidator) {
+		t.Fatalf("expected error to be (or wrap) a tlsvalidate.ErrValidator, got %T: %v", err, err)
+	}
+	if errValidator.Certificate == nil {
+		t.Fatal("expected ErrValidator.Certificate to be set")
+	}
+	if got, want := errValidator.Certificate.SerialNumber, leafCert.SerialNumber; got.Cmp(want) != 0 {
+		t.Errorf("ErrValidator.Certificate.SerialNumber = %v, want %v", got, want)
+	}
+	if errValidator.Err == nil {
+		t.Fatal("expected ErrValidator.Err to be set")
+	}
+	if !strings.Contains(errValidator.Error(), "does not match any of the specified patterns") {
+		t.Errorf("ErrValidator.Error() = %q, want it to contain %q", errValidator.Error(), "does not match any of the specified patterns")
 	}
 }
 
