@@ -8,10 +8,25 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"cloudeng.io/webapp/testwebapp"
 )
+
+func TestRedirectSpecString(t *testing.T) {
+	spec := testwebapp.RedirectSpec{
+		URL:    "http://example.com/old",
+		Target: "http://example.com/new",
+		Code:   http.StatusMovedPermanently,
+	}
+	got := spec.String()
+	for _, want := range []string{"url: http://example.com/old", "target: http://example.com/new", "code: 301"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("String() = %q, want it to contain %q", got, want)
+		}
+	}
+}
 
 func TestVerifyRedirect(t *testing.T) {
 	mux := http.NewServeMux()

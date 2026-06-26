@@ -9,7 +9,7 @@ require (
 	cloudeng.io/io v0.0.0-20260624171915-da98fe9dec2b
 	cloudeng.io/logging v0.0.0-20260624171915-da98fe9dec2b
 	cloudeng.io/net v0.0.0-20260624171915-da98fe9dec2b
-	cloudeng.io/os v0.0.0-20260624171915-da98fe9dec2b
+	cloudeng.io/os v0.0.0-20260625162517-2ebe08c2e5d9
 	cloudeng.io/sync v0.0.11
 	cloudeng.io/text v0.0.16-0.20260624171915-da98fe9dec2b
 	cloudeng.io/webapi/operations v0.0.0-20260611201645-3409afb52c4c
@@ -26,8 +26,8 @@ require (
 )
 
 require (
-	cloudeng.io/algo v0.0.0-20260624171915-da98fe9dec2b // indirect
-	cloudeng.io/sys v0.0.0-20260624171915-da98fe9dec2b // indirect
+	cloudeng.io/algo v0.0.0-20260625162517-2ebe08c2e5d9 // indirect
+	cloudeng.io/sys v0.0.0-20260625162517-2ebe08c2e5d9 // indirect
 	github.com/chromedp/sysutil v1.1.0 // indirect
 	github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc // indirect
 	github.com/decred/dcrd/dcrec/secp256k1/v4 v4.4.1 // indirect

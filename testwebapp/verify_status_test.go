@@ -8,10 +8,25 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"cloudeng.io/webapp/testwebapp"
 )
+
+func TestCheckStatusSpecString(t *testing.T) {
+	spec := testwebapp.CheckStatusSpec{
+		URL:       "http://example.com",
+		Code:      http.StatusOK,
+		Redirects: 2,
+	}
+	got := spec.String()
+	for _, want := range []string{"url: http://example.com", "code: 200", "redirects: 2"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("String() = %q, want it to contain %q", got, want)
+		}
+	}
+}
 
 func TestCheckStatus(t *testing.T) {
 	mux := http.NewServeMux()

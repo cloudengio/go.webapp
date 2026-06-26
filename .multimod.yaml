@@ -36,4 +36,4 @@ tidy: ["go", "mod", "tidy"]
 build: ["go", "build", "./..."]
 fix: ["go", "fix", "./..."]
 concurrent: ["build", "update", "tidy"]
-not-concurrent: ["lint"]
+not-concurrent: ["lint", "test"] # pebble tests can't be run in parallel due to port number conflicts

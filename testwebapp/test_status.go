@@ -13,6 +13,7 @@ import (
 
 	"cloudeng.io/logging/ctxlog"
 	"cloudeng.io/sync/errgroup"
+	"gopkg.in/yaml.v3"
 )
 
 var (
@@ -25,6 +26,15 @@ type CheckStatusSpec struct {
 	URL       string `yaml:"url" json:"url"`
 	Code      int    `yaml:"code" json:"code"`
 	Redirects int    `yaml:"redirects" json:"redirects"`
+}
+
+// String implements fmt.Stringer, returning the YAML representation of the spec.
+func (s CheckStatusSpec) String() string {
+	out, err := yaml.Marshal(s)
+	if err != nil {
+		return err.Error()
+	}
+	return string(out)
 }
 
 // CheckStatus validates that a set of URLs return a given status code after

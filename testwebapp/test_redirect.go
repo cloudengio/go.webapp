@@ -12,6 +12,7 @@ import (
 
 	"cloudeng.io/logging/ctxlog"
 	"cloudeng.io/sync/errgroup"
+	"gopkg.in/yaml.v3"
 )
 
 var (
@@ -26,6 +27,15 @@ type RedirectSpec struct {
 	URL    string `yaml:"url" json:"url"`
 	Target string `yaml:"target" json:"target"`
 	Code   int    `yaml:"code" json:"code"`
+}
+
+// String implements fmt.Stringer, returning the YAML representation of the spec.
+func (s RedirectSpec) String() string {
+	out, err := yaml.Marshal(s)
+	if err != nil {
+		return err.Error()
+	}
+	return string(out)
 }
 
 // RedirectTest can be used to validate redirects for a set of URLs.

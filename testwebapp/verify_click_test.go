@@ -17,6 +17,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -60,6 +61,21 @@ func tlsTestServer(t *testing.T) (srvURL string, cert *x509.Certificate) {
 	srv.StartTLS()
 	t.Cleanup(srv.Close)
 	return srv.URL, x509Cert
+}
+
+func TestNavigationSpecString(t *testing.T) {
+	spec := testwebapp.NavigationSpec{
+		URL:               "http://example.com",
+		Selectors:         []string{"#title", "#body"},
+		Action:            testwebapp.SelectorActionClick,
+		SequentialActions: true,
+	}
+	got := spec.String()
+	for _, want := range []string{"url: http://example.com", "#title", "#body", "action: click", "sequential_actions: true"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("String() = %q, want it to contain %q", got, want)
+		}
+	}
 }
 
 func TestWithSuppressedCertErrorsFor(t *testing.T) {

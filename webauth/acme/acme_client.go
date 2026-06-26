@@ -33,6 +33,20 @@ type clientOptions struct {
 	refreshOnFailure time.Duration
 }
 
+// RefreshMetricsColumns returns the list of columns that will be used
+// for the refresh metric. Host is populated with the host name
+// and status is populated with the outcome of the refresh operation
+// as per RefreshMetricStatusValues.
+func RefreshMetricsColumns() []string {
+	return []string{"host", "status"}
+}
+
+// RefreshMetricStatusValues returns the list of values that will be used
+// for the "status" label of the refresh metric.
+func RefreshMetricStatusValues() []string {
+	return []string{"failed", "expired", "ok"}
+}
+
 // WithRefreshInterval configures the client to refresh certificates
 // at the provided interval. The default is 1 hour.
 func WithRefreshInterval(interval time.Duration) ClientOption {
@@ -63,7 +77,6 @@ func WithRefreshOnFailure(interval time.Duration) ClientOption {
 // provided hosts using the autocert.Manager.
 func NewClient(mgr *autocert.Manager, opts ...ClientOption) *Client {
 	var o clientOptions
-	o.refreshMetric = func(context.Context, ...string) {}
 	for _, opt := range opts {
 		opt(&o)
 	}
@@ -72,6 +85,9 @@ func NewClient(mgr *autocert.Manager, opts ...ClientOption) *Client {
 	}
 	if o.refreshOnFailure <= 0 {
 		o.refreshOnFailure = time.Minute
+	}
+	if o.refreshMetric == nil {
+		o.refreshMetric = func(context.Context, ...string) {}
 	}
 	return &Client{
 		mgr:  mgr,
@@ -147,13 +163,53 @@ func (s *Client) refresh(ctx context.Context, logger *slog.Logger, errCh chan<- 
 	errCh <- grp.Wait()
 }
 
+// taken from acme/autocert/autocert.go to determine if the client supports ECDSA certs.
+func supportsECDSA(hello *tls.ClientHelloInfo) bool {
+	// The "signature_algorithms" extension, if present, limits the key exchange
+	// algorithms allowed by the cipher suites. See RFC 5246, section 7.4.1.4.1.
+	if hello.SignatureSchemes != nil {
+		ecdsaOK := false
+	schemeLoop:
+		for _, scheme := range hello.SignatureSchemes {
+			const tlsECDSAWithSHA1 tls.SignatureScheme = 0x0203 // constant added in Go 1.10
+			switch scheme {
+			case tlsECDSAWithSHA1, tls.ECDSAWithP256AndSHA256,
+				tls.ECDSAWithP384AndSHA384, tls.ECDSAWithP521AndSHA512:
+				ecdsaOK = true
+				break schemeLoop
+			}
+		}
+		if !ecdsaOK {
+			return false
+		}
+	}
+	if hello.SupportedCurves != nil {
+		if !slices.Contains(hello.SupportedCurves, tls.CurveP256) {
+			return false
+		}
+	}
+	for _, suite := range hello.CipherSuites {
+		switch suite {
+		case tls.TLS_ECDHE_ECDSA_WITH_RC4_128_SHA,
+			tls.TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA,
+			tls.TLS_ECDHE_ECDSA_WITH_AES_256_CBC_SHA,
+			tls.TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA256,
+			tls.TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,
+			tls.TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384,
+			tls.TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305:
+			return true
+		}
+	}
+	return false
+}
+
 func (s *Client) refreshHost(ctx context.Context, logger *slog.Logger, host string) error {
 	hello := tls.ClientHelloInfo{
 		ServerName:       host,
 		CipherSuites:     webapp.PreferredCipherSuites,
 		SignatureSchemes: webapp.PreferredSignatureSchemes,
 	}
-	logger.Info("refreshing certificate using tls hello", "host", host)
+	logger.Info("refreshing certificate using tls hello", "host", host, "supports-ecdsa", supportsECDSA(&hello))
 	cert, err := s.mgr.GetCertificate(&hello)
 	if err != nil {
 		s.opts.refreshMetric(ctx, host, "failed")
@@ -161,11 +217,19 @@ func (s *Client) refreshHost(ctx context.Context, logger *slog.Logger, host stri
 	}
 	leaf := cert.Leaf
 	ossSerial := webapp.SerialNumberOpenSSL(leaf.SerialNumber)
-	logger.Info("refreshed certificate using tls hello", "host", host, "expiry", leaf.NotAfter, "serial", ossSerial)
+
+	logger = logger.With(
+		"host", host,
+		"not-before", leaf.NotBefore,
+		"not-after", leaf.NotAfter,
+		"serial", ossSerial,
+		"public_key_algorithm", leaf.PublicKeyAlgorithm.String(),
+		"signature_algorithm", leaf.SignatureAlgorithm.String())
+
 	if time.Now().After(leaf.NotAfter) {
-		logger.Warn("certificate has expired", "host", host, "expiry", leaf.NotAfter, "serial", ossSerial)
-		s.opts.refreshMetric(ctx, host, "expired")
+		logger.Warn("certificate has expired")
 	} else {
+		logger.Info("certificate refreshed successfully")
 		s.opts.refreshMetric(ctx, host, "ok")
 	}
 	return nil
