@@ -124,6 +124,41 @@ URLs, status code and number of redirects.
 
 
 
+### Methods
+
+```go
+func (s CheckStatusSpec) String() string
+```
+String implements fmt.Stringer, returning the YAML representation of the
+spec.
+
+
+
+
+### Type CipherSuites
+```go
+type CipherSuites []uint16
+```
+CipherSuites is a list of TLS cipher suite names, e.g.
+"TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256" as returned by tls.CipherSuiteName.
+When unmarshaled from YAML it accepts a list of such names and converts them
+to the corresponding crypto/tls constants.
+
+### Methods
+
+```go
+func (c CipherSuites) MarshalYAML() (any, error)
+```
+MarshalYAML implements yaml.Marshaler.
+
+
+```go
+func (c *CipherSuites) UnmarshalYAML(node *yaml.Node) error
+```
+UnmarshalYAML implements yaml.Unmarshaler.
+
+
+
 
 ### Type GoGetTest
 ```go
@@ -160,6 +195,16 @@ type HealthzSpec struct {
 	NumHealthChecks int           `yaml:"num_health_checks" json:"num_health_checks"`
 }
 ```
+
+### Methods
+
+```go
+func (s HealthzSpec) String() string
+```
+String implements fmt.Stringer, returning the YAML representation of the
+spec.
+
+
 
 
 ### Type HealthzTest
@@ -200,6 +245,16 @@ type MetricsSpec struct {
 	MetricNames []string `yaml:"names,omitempty"`
 }
 ```
+
+### Methods
+
+```go
+func (s MetricsSpec) String() string
+```
+String implements fmt.Stringer, returning the YAML representation of the
+spec.
+
+
 
 
 ### Type MetricsTest
@@ -303,6 +358,16 @@ By default all selectors are waited on concurrently; set SequentialActions
 to true when the actions have ordering dependencies (e.g. clicking one
 element causes another to appear).
 
+### Methods
+
+```go
+func (s NavigationSpec) String() string
+```
+String implements fmt.Stringer, returning the YAML representation of the
+spec.
+
+
+
 
 ### Type NavigationTest
 ```go
@@ -343,6 +408,16 @@ type RedirectSpec struct {
 }
 ```
 RedirectSpec represents a specification for a redirect test.
+
+### Methods
+
+```go
+func (s RedirectSpec) String() string
+```
+String implements fmt.Stringer, returning the YAML representation of the
+spec.
+
+
 
 
 ### Type RedirectTest
@@ -410,6 +485,31 @@ func (a *SelectorAction) UnmarshalYAML(value *yaml.Node) error
 
 
 
+### Type SignatureAlgorithms
+```go
+type SignatureAlgorithms []x509.SignatureAlgorithm
+```
+SignatureAlgorithms is a list of x509 signature algorithm names, e.g.
+"SHA256-RSA" as returned by x509.SignatureAlgorithm.String(). When
+unmarshaled from YAML it accepts a list of such names and converts them to
+the corresponding crypto/x509 constants.
+
+### Methods
+
+```go
+func (s SignatureAlgorithms) MarshalYAML() (any, error)
+```
+MarshalYAML implements yaml.Marshaler.
+
+
+```go
+func (s *SignatureAlgorithms) UnmarshalYAML(node *yaml.Node) error
+```
+UnmarshalYAML implements yaml.Unmarshaler.
+
+
+
+
 ### Type TLSSpec
 ```go
 type TLSSpec struct {
@@ -418,13 +518,26 @@ type TLSSpec struct {
 
 	CustomDNSServer string `yaml:"custom-dns-server" doc:"custom DNS server to use for resolving hostnames, if empty the system resolver is used"` // custom DNS server to use for resolving hostnames, if empty the system resolver is used
 
-	ExpandDNSNames     bool          `yaml:"expand-dns-names" doc:"see tlsvalidate.WithExpandDNSNames"`                                                              // see tlsvalidate.WithExpandDNSNames
-	CheckSerialNumbers bool          `yaml:"check-serial-numbers" doc:"see tlsvalidate.WithCheckSerialNumbers"`                                                      // see tlsvalidate.WithCheckSerialNumbers
-	ValidFor           time.Duration `yaml:"valid-for" doc:"see tlsvalidate.WithValidForAtLeast"`                                                                    // see tlsvalidate.WithValidForAtLeast
-	TLSMinVersion      uint16        `yaml:"tls-min-version" doc:"see tlsvalidate.WithTLSMinVersion"`                                                                // see tlsvalidate.WithTLSMinVersion
-	IssuerREs          []string      `yaml:"issuer-res" doc:"see tlsvalidate.WithIssuerRegexps"`                                                                     // see tlsvalidate.WithIssuerRegexps
-	CustomCAPEM        string        `yaml:"custom-ca-pem" doc:"used tlsvalidate.WithCustomRootCAPEM"`                                                               // used tlsvalidate.WithCustomRootCAPEM
-	CustomCAPEMOnly    bool          `yaml:"custom-ca-pem-only" doc:"if true, only the custom CA PEM file is used, otherwise it's appended to the system cert pool"` // if true, only the custom CA PEM file is used, otherwise it's appended to the system cert pool
+	LogCertInfo bool `yaml:"log-cert-info" doc:"if true, log certificate information"` // if true, log certificate information
+
+	ExpandDNSNames     bool               `yaml:"expand-dns-names" doc:"see tlsvalidate.WithExpandDNSNames"`                                                              // see tlsvalidate.WithExpandDNSNames
+	CheckSerialNumbers bool               `yaml:"check-serial-numbers" doc:"see tlsvalidate.WithCheckSerialNumbers"`                                                      // see tlsvalidate.WithCheckSerialNumbers
+	ValidFor           time.Duration      `yaml:"valid-for" doc:"see tlsvalidate.WithValidForAtLeast"`                                                                    // see tlsvalidate.WithValidForAtLeast
+	TLSMinVersion      uint16             `yaml:"tls-min-version" doc:"see tlsvalidate.WithTLSMinVersion"`                                                                // see tlsvalidate.WithTLSMinVersion
+	IssuerREs          cmdyaml.RegexpList `yaml:"issuer-res" doc:"see tlsvalidate.WithIssuerRegexps"`                                                                     // see tlsvalidate.WithIssuerRegexps
+	CustomCAPEM        string             `yaml:"custom-ca-pem" doc:"used tlsvalidate.WithCustomRootCAPEM"`                                                               // used tlsvalidate.WithCustomRootCAPEM
+	CustomCAPEMOnly    bool               `yaml:"custom-ca-pem-only" doc:"if true, only the custom CA PEM file is used, otherwise it's appended to the system cert pool"` // if true, only the custom CA PEM file is used, otherwise it's appended to the system cert pool
+
+	// CipherSuites and SignatureAlgorithms specify the set of algorithms that
+	// the server must support/use; if either is non-empty the corresponding
+	// check is run. NotAllowedCipherSuites and NotAllowedSignatureAlgorithms
+	// specify algorithms that the server must not use; if either is
+	// non-empty and the server negotiates/uses one of them, validation
+	// fails.
+	CipherSuites                  CipherSuites        `yaml:"cipher-suites" doc:"names of the cipher suites that the server must support, e.g. TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256; see tls.CipherSuites for a list of supported cipher suites"`
+	NotAllowedCipherSuites        CipherSuites        `yaml:"not-allowed-cipher-suites" doc:"names of the cipher suites that the server must not negotiate; see tls.CipherSuites for a list of supported cipher suites. Use 'insecure' to refer to all insecure suites."`
+	SignatureAlgorithms           SignatureAlgorithms `yaml:"signature-algorithms" doc:"names of the signature algorithms that the certificate must use, e.g. SHA256-RSA; see tlsvalidate.WithAllowedSignatureAlgorithms. Use 'rsa', 'dsa', 'ecdsa', 'ed25519' or 'rsa-pss' to refer to all algorithms of that type."`
+	NotAllowedSignatureAlgorithms SignatureAlgorithms `yaml:"not-allowed-signature-algorithms" doc:"names of the signature algorithms that the certificate must not use; see tlsvalidate.WithDeniedSignatureAlgorithms"`
 	// contains filtered or unexported fields
 }
 ```
@@ -442,6 +555,16 @@ func WithCustomCAPEMFile(s []TLSSpec, pemFile string) []TLSSpec
 ```
 WithCustomCAPEMFile sets the custom CA PEM file for all specs if not already
 set in each/any spec.
+
+
+
+### Methods
+
+```go
+func (s TLSSpec) String() string
+```
+String implements fmt.Stringer, returning the YAML representation of the
+spec.
 
 
 
@@ -482,6 +605,16 @@ WebhookRoundTripSpec defines a single webhook round-trip test: a signed
 payload is delivered to DeliveryURL and the relayed result is read back from
 RelayURL and compared to the original payload. The signer for each delivery
 URL is looked up from the map passed to NewWebhookRoundTripTest.
+
+### Methods
+
+```go
+func (s WebhookRoundTripSpec) String() string
+```
+String implements fmt.Stringer, returning the YAML representation of the
+spec.
+
+
 
 
 ### Type WebhookRoundTripTest

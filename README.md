@@ -204,6 +204,18 @@ SafePath checks if the given path is safe for use as a filename screening
 for control characters, windows device names, relative paths, paths (eg.
 a/b is not allowed) etc.
 
+### Func SerialNumberHex
+```go
+func SerialNumberHex(serial *big.Int) string
+```
+SerialNumberHex formats a serial number as a hex string with leading zeros.
+
+### Func SerialNumberOpenSSL
+```go
+func SerialNumberOpenSSL(serial *big.Int) string
+```
+SerialNumberOpenSSL formats a serial number in the same way as OpenSSL does.
+
 ### Func ServeTLSWithShutdown
 ```go
 func ServeTLSWithShutdown(ctx context.Context, ln net.Listener, srv *http.Server, grace time.Duration) error
@@ -287,12 +299,12 @@ in-memory cache will reload certificates from the store on a periodic basis
 ### Functions
 
 ```go
-func NewCertServingCache(ctx context.Context, certStore file.ReadFileFS, opts ...CertServingCacheOption) *CertServingCache
+func NewCertServingCache(_ context.Context, certStore file.ReadFileFS, opts ...CertServingCacheOption) *CertServingCache
 ```
-NewCertServingCache returns a new instance of CertServingCache that uses
-the supplied file.ReadFileFS. The supplied context is cached and used by the
-GetCertificate method, this allows for credentials etc to be passed to the
-ReadFileCtx method called by GetCertificate via the context.
+NewCertServingCache returns a new instance of CertServingCache that uses the
+supplied file.ReadFileFS. The supplied context is a placeholder for future
+use and is not currently used. The GetCertificate method uses the context in
+the tls.ClientHelloInfo to read the certificate from the store.
 
 
 
