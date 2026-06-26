@@ -43,10 +43,27 @@ private key.
 
 ### Func IsLocalName
 ```go
-func IsLocalName(name string) bool
+func IsLocalName(name string, allowRSAKeys bool) bool
 ```
 IsLocalName returns true if the specified name is for local-only data such
-as ACME client private keys or http-01 challenge tokens.
+as ACME client private keys or http-01 challenge tokens. If allowRSAKeys is
+false, RSA keys are considered local-only and are never written to backing
+stores since they are intended for legacy clients only.
+
+### Func MetricsColumns
+```go
+func MetricsColumns() []string
+```
+MetricsColumns returns the list of columns that will be used for metric.
+Name represents the cache key name and operation represents the operation
+performed
+
+### Func MetricsOperationValues
+```go
+func MetricsOperationValues() []string
+```
+MetricsOperationValues returns the list of values that will be used for the
+"operation" label of the metric.
 
 ### Func ParseRevocationReason
 ```go
@@ -165,12 +182,26 @@ type Option func(o *options)
 ### Functions
 
 ```go
+func WithAllowRSAKeys(allow bool) Option
+```
+WithAllowRSAKeys sets whether RSA keys are allowed to be used for ACME
+account keys. By default, RSA keys are not allowed since they are not
+intended for legacy clients only.
+
+
+```go
 func WithLogger(logger *slog.Logger) Option
 ```
 WithLogger sets the logger to use for logging cache operations. This is
 the only way to set a logger since the context passed used when invoking
 autocert.Cache methods is derived from context.Background() and cannot be
 otherwise specified.
+
+
+```go
+func WithMetrics(metrics webapp.CounterVecInc) Option
+```
+WithMetrics sets the metrics to use for logging cache operations.
 
 
 ```go

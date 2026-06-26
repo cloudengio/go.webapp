@@ -199,7 +199,7 @@ func SerialNumberOpenSSL(serial *big.Int) string {
 		if i > 0 {
 			formatted.WriteString(":")
 		}
-		formatted.WriteString(strings.ToUpper(hexStr[i : i+2]))
+		formatted.WriteString(hexStr[i : i+2])
 	}
 	return formatted.String()
 }

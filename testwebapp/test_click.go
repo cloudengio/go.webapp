@@ -82,6 +82,15 @@ type NavigationSpec struct {
 	SequentialActions bool           `yaml:"sequential_actions"`
 }
 
+// String implements fmt.Stringer, returning the YAML representation of the spec.
+func (s NavigationSpec) String() string {
+	out, err := yaml.Marshal(s)
+	if err != nil {
+		return err.Error()
+	}
+	return string(out)
+}
+
 // NavigationTest can be used to validate pages by navigating to a URL,
 // waiting for DOM elements to exist/be visible, and optionally acting on them.
 type NavigationTest struct {

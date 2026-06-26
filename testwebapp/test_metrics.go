@@ -11,6 +11,7 @@ import (
 
 	"cloudeng.io/logging/ctxlog"
 	"cloudeng.io/sync/errgroup"
+	"gopkg.in/yaml.v3"
 )
 
 // MetricsTest can be used to validate /metrics endpoints.
@@ -22,6 +23,15 @@ type MetricsTest struct {
 type MetricsSpec struct {
 	URL         string   `yaml:"url,omitempty"`
 	MetricNames []string `yaml:"names,omitempty"`
+}
+
+// String implements fmt.Stringer, returning the YAML representation of the spec.
+func (s MetricsSpec) String() string {
+	out, err := yaml.Marshal(s)
+	if err != nil {
+		return err.Error()
+	}
+	return string(out)
 }
 
 type MetricsReporter func(ctx context.Context, client *http.Client, url string, expectedMetrics []string) (found, missing []string, err error)

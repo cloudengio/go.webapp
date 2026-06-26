@@ -105,6 +105,19 @@ func TestMetricsTest_ServerError(t *testing.T) {
 	}
 }
 
+func TestMetricsSpecString(t *testing.T) {
+	spec := testwebapp.MetricsSpec{
+		URL:         "http://example.com/metrics",
+		MetricNames: []string{"requests_total", "errors_total"},
+	}
+	got := spec.String()
+	for _, want := range []string{"url: http://example.com/metrics", "requests_total", "errors_total"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("String() = %q, want it to contain %q", got, want)
+		}
+	}
+}
+
 func TestMetricsTest_NilReporter(t *testing.T) {
 	mt := testwebapp.NewMetricsTest(nil,
 		testwebapp.MetricsSpec{URL: "http://localhost/metrics", MetricNames: []string{"x"}},

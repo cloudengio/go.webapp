@@ -14,6 +14,7 @@ import (
 	"cloudeng.io/logging/ctxlog"
 	"cloudeng.io/sync/errgroup"
 	"cloudeng.io/webapi/operations"
+	"gopkg.in/yaml.v3"
 )
 
 // WebhookRoundTripSpec defines a single webhook round-trip test: a signed
@@ -23,6 +24,15 @@ import (
 type WebhookRoundTripSpec struct {
 	DeliveryURL string `yaml:"delivery_url" doc:"URL that the webhook payload is delivered to"`
 	RelayURL    string `yaml:"relay_url" doc:"URL that the relayed result is read from"`
+}
+
+// String implements fmt.Stringer, returning the YAML representation of the spec.
+func (s WebhookRoundTripSpec) String() string {
+	out, err := yaml.Marshal(s)
+	if err != nil {
+		return err.Error()
+	}
+	return string(out)
 }
 
 // WebhookRoundTripTest validates webhook relay round-trips for a set of specs.

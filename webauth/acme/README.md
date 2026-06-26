@@ -29,6 +29,21 @@ NewAutocertManager creates a new autocert.Manager from the supplied config.
 Any supplied hosts specify the allowed hosts for the manager, ie. those for
 which it will obtain/renew certificates.
 
+### Func RefreshMetricStatusValues
+```go
+func RefreshMetricStatusValues() []string
+```
+RefreshMetricStatusValues returns the list of values that will be used for
+the "status" label of the refresh metric.
+
+### Func RefreshMetricsColumns
+```go
+func RefreshMetricsColumns() []string
+```
+RefreshMetricsColumns returns the list of columns that will be used for the
+refresh metric. Host is populated with the host name and status is populated
+with the outcome of the refresh operation as per RefreshMetricStatusValues.
+
 
 
 ## Types

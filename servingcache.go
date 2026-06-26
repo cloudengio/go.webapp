@@ -32,7 +32,6 @@ type entry struct {
 // reload certificates from the store on a periodic basis (with some jitter)
 // to allow for certificates to be refreshed.
 type CertServingCache struct {
-	ctx          context.Context
 	certStore    file.ReadFileFS
 	ttl          time.Duration
 	rootCAs      *x509.CertPool
@@ -78,12 +77,11 @@ func WithCertCacheAllowedHosts(hosts ...string) CertServingCacheOption {
 }
 
 // NewCertServingCache returns a new instance of CertServingCache that
-// uses the supplied file.ReadFileFS. The supplied context is cached and used by
-// the GetCertificate method, this allows for credentials etc to be passed
-// to the ReadFileCtx method called by GetCertificate via the context.
-func NewCertServingCache(ctx context.Context, certStore file.ReadFileFS, opts ...CertServingCacheOption) *CertServingCache {
+// uses the supplied file.ReadFileFS. The supplied context is a placeholder
+// for future use and is not currently used. The GetCertificate method uses
+// the context in the tls.ClientHelloInfo to read the certificate from the store.
+func NewCertServingCache(_ context.Context, certStore file.ReadFileFS, opts ...CertServingCacheOption) *CertServingCache {
 	sc := &CertServingCache{
-		ctx:       ctx,
 		cache:     map[string]entry{},
 		certStore: certStore,
 		nowFunc:   time.Now,
@@ -117,6 +115,7 @@ func (m *CertServingCache) put(name string, cert *tls.Certificate, expiration ti
 
 // GetCertificate can be assigned to tls.Config.GetCertificate.
 func (m *CertServingCache) GetCertificate(hello *tls.ClientHelloInfo) (*tls.Certificate, error) {
+
 	name := hello.ServerName
 	if name == "" {
 		return nil, fmt.Errorf("missing server name")
@@ -138,7 +137,7 @@ func (m *CertServingCache) GetCertificate(hello *tls.ClientHelloInfo) (*tls.Cert
 		return cert, nil
 	}
 
-	data, err := m.certStore.ReadFileCtx(m.ctx, name)
+	data, err := m.certStore.ReadFileCtx(hello.Context(), name)
 	if err != nil {
 		return nil, err
 	}
@@ -173,6 +172,7 @@ func (m *CertServingCache) GetCertificate(hello *tls.ClientHelloInfo) (*tls.Cert
 
 	// Prepare tls.Certificate
 	cert := pem.EncodeToMemory(certsPEM[0])
+
 	priv := pem.EncodeToMemory(privPEM[0])
 	// Load tls.Certificate
 	tlscert, err := tls.X509KeyPair(cert, priv)

@@ -14,6 +14,7 @@ import (
 
 	"cloudeng.io/logging/ctxlog"
 	"cloudeng.io/sync/errgroup"
+	"gopkg.in/yaml.v3"
 )
 
 // HealthzTest can be used to validate /healthz endpoints.
@@ -26,6 +27,15 @@ type HealthzSpec struct {
 	Interval        time.Duration `yaml:"interval" json:"interval"`
 	Timeout         time.Duration `yaml:"timeout" json:"timeout"`
 	NumHealthChecks int           `yaml:"num_health_checks" json:"num_health_checks"`
+}
+
+// String implements fmt.Stringer, returning the YAML representation of the spec.
+func (s HealthzSpec) String() string {
+	out, err := yaml.Marshal(s)
+	if err != nil {
+		return err.Error()
+	}
+	return string(out)
 }
 
 func NewHealthzTest(specs ...HealthzSpec) *HealthzTest {

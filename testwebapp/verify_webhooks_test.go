@@ -8,6 +8,7 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"cloudeng.io/cmdutil/keys"
@@ -15,6 +16,19 @@ import (
 	"cloudeng.io/webapp/testwebapp"
 	"cloudeng.io/webapp/webhooks"
 )
+
+func TestWebhookRoundTripSpecString(t *testing.T) {
+	spec := testwebapp.WebhookRoundTripSpec{
+		DeliveryURL: "http://example.com/deliver",
+		RelayURL:    "http://example.com/relay",
+	}
+	got := spec.String()
+	for _, want := range []string{"delivery_url: http://example.com/deliver", "relay_url: http://example.com/relay"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("String() = %q, want it to contain %q", got, want)
+		}
+	}
+}
 
 // newWebhookRelay creates a relay server backed by an HMAC-SHA256 validator,
 // registers cleanup, and returns the test server.

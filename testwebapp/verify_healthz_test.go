@@ -37,6 +37,21 @@ func TestVerifyHealthz(t *testing.T) {
 	}
 }
 
+func TestHealthzSpecString(t *testing.T) {
+	spec := testwebapp.HealthzSpec{
+		URL:             "http://example.com/healthz",
+		Interval:        time.Second,
+		Timeout:         time.Second * 10,
+		NumHealthChecks: 3,
+	}
+	got := spec.String()
+	for _, want := range []string{"url: http://example.com/healthz", "num_health_checks: 3"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("String() = %q, want it to contain %q", got, want)
+		}
+	}
+}
+
 func TestVerifyHealthz_Failures(t *testing.T) {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/healthz-error", func(w http.ResponseWriter, _ *http.Request) {

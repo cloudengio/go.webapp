@@ -7,10 +7,34 @@ import cloudeng.io/webapp/tlsvalidate
 Package tlsvalidate provides functions for validating TLS certificates
 across multiple hosts and addresses.
 
+## Functions
+### Func ParseCipherSuite
+```go
+func ParseCipherSuite(name string) (uint16, error)
+```
+ParseCipherSuite returns the cipher suite ID for the given name, as returned
+by tls.CipherSuiteName, e.g. "TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256".
+It returns an error if name does not match any cipher suite known to the
+crypto/tls package, including its insecure ones.
+
+### Func ParseSignatureAlgorithm
+```go
+func ParseSignatureAlgorithm(name string) (x509.SignatureAlgorithm, error)
+```
+ParseSignatureAlgorithm returns the x509.SignatureAlgorithm for the given
+name, as returned by x509.SignatureAlgorithm.String(), e.g. "SHA256-RSA" or
+"Ed25519". It returns an error if name does not match any known signature
+algorithm.
+
+
+
 ## Types
 ### Type ErrValidator
 ```go
 type ErrValidator struct {
+	Host        string
+	Addr        string
+	Port        string
 	Certificate *x509.Certificate
 	Err         error
 }
@@ -21,7 +45,12 @@ It is used to provide more context when a certificate validation fails.
 ### Methods
 
 ```go
-func (e ErrValidator) Error() string
+func (e *ErrValidator) Error() string
+```
+
+
+```go
+func (e *ErrValidator) Unwrap() error
 ```
 
 
@@ -36,6 +65,22 @@ Option represents an option for configuring a Validator.
 ### Functions
 
 ```go
+func WithAllowedSignatureAlgorithms(algs ...x509.SignatureAlgorithm) Option
+```
+WithAllowedSignatureAlgorithms returns an option that configures the
+validator to check that the leaf certificate's signature algorithm is one of
+the specified algorithms.
+
+
+```go
+func WithCheckCipherSuites(check bool) Option
+```
+WithCheckCipherSuites returns an option that configures the validator to
+check that the same cipher suite is negotiated for all IP addresses for a
+given host.
+
+
+```go
 func WithCheckSerialNumbers(check bool) Option
 ```
 WithCheckSerialNumbers returns an option that configures the validator to
@@ -44,10 +89,20 @@ same serial number.
 
 
 ```go
+func WithCheckSignatureAlgorithm(check bool) Option
+```
+WithCheckSignatureAlgorithm returns an option that configures the validator
+to check that the certificates for all IP addresses for a given host use the
+same signature algorithm.
+
+
+```go
 func WithCiphersuites(suites []uint16) Option
 ```
 WithCiphersuites returns an option that configures the validator to check
-that the ciphersuite used is one of the specified ciphersuites.
+that the ciphersuite used is one of the specified ciphersuites. It does
+so by restricting the TLS handshake to the specified ciphersuites, so the
+handshake will fail if the server does not support at least one of them.
 
 
 ```go
@@ -65,6 +120,21 @@ func WithCustomRootCAPEM(pemFile string) Option
 WithCustomRootCAPEM returns an option that configures the validator to
 use the root CAs specified in the PEM file for verification. Note that
 WithRootCAs takes precedence over WithCustomRootCAPEM.
+
+
+```go
+func WithDeniedCipherSuites(suites ...uint16) Option
+```
+WithDeniedCipherSuites returns an option that configures the validator to
+fail if the negotiated ciphersuite is one of the specified ciphersuites.
+
+
+```go
+func WithDeniedSignatureAlgorithms(algs ...x509.SignatureAlgorithm) Option
+```
+WithDeniedSignatureAlgorithms returns an option that configures the
+validator to fail if the leaf certificate's signature algorithm is one of
+the specified algorithms.
 
 
 ```go
@@ -88,6 +158,13 @@ func WithIssuerRegexps(exprs ...*regexp.Regexp) Option
 WithIssuerRegexps returns an option that configures the validator to check
 that the certificate's issuer matches at least one of the provided regular
 expressions.
+
+
+```go
+func WithLogCertificateInfo(log bool) Option
+```
+WithLogCertificateInfo returns an option that configures the validator to
+log certificate information to using ctxlog.Info.
 
 
 ```go

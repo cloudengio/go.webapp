@@ -19,6 +19,7 @@ import (
 	"cloudeng.io/errors"
 	"cloudeng.io/logging/ctxlog"
 	"cloudeng.io/os/lockedfile"
+	"cloudeng.io/webapp"
 	"golang.org/x/crypto/acme/autocert"
 )
 
@@ -55,6 +56,8 @@ type options struct {
 	readonly           bool
 	saveAccountKeyName string
 	logger             *slog.Logger
+	allowRSAKeys       bool
+	metrics            webapp.CounterVecInc
 }
 
 // WithReadonly sets whether the caching store is readonly.
@@ -92,6 +95,35 @@ func WithLogger(logger *slog.Logger) Option {
 	}
 }
 
+// WithAllowRSAKeys sets whether RSA keys are allowed to be used for ACME
+// account keys. By default, RSA keys are not allowed since they are not
+// intended for legacy clients only.
+func WithAllowRSAKeys(allow bool) Option {
+	return func(o *options) {
+		o.allowRSAKeys = allow
+	}
+}
+
+// WithMetrics sets the metrics to use for logging cache operations.
+func WithMetrics(metrics webapp.CounterVecInc) Option {
+	return func(o *options) {
+		o.metrics = metrics
+	}
+}
+
+// MetricsColumns returns the list of columns that will be used
+// for metric. Name represents the cache key name and operation represents the
+// operation performed
+func MetricsColumns() []string {
+	return []string{"name", "operation"}
+}
+
+// MetricsOperationValues returns the list of values that will be used
+// for the "operation" label of the metric.
+func MetricsOperationValues() []string {
+	return []string{"get", "put", "delete", "get-backing", "put-backing", "delete-backing"}
+}
+
 // NewCachingStore returns an instance of autocert.Cache that will store
 // certificates in 'backing' store, but use the local file system for
 // temporary/private data such as the ACME client's private key. This
@@ -106,6 +138,9 @@ func NewCachingStore(localDir string, backingStore StoreFS, opts ...Option) (*Ca
 	}
 	if o.logger == nil {
 		o.logger = slog.New(slog.DiscardHandler)
+	}
+	if o.metrics == nil {
+		o.metrics = func(context.Context, ...string) {}
 	}
 	if err := os.MkdirAll(localDir, 0700); err != nil {
 		return nil, err
@@ -136,9 +171,11 @@ func IsAcmeAccountKey(name string) bool {
 
 // IsLocalName returns true if the specified name is for local-only
 // data such as ACME client private keys or http-01 challenge tokens.
-func IsLocalName(name string) bool {
+// If allowRSAKeys is false, RSA keys are considered local-only and are never
+// written to backing stores since they are intended for legacy clients only.
+func IsLocalName(name string, allowRSAKeys bool) bool {
 	return strings.HasSuffix(name, "+token") ||
-		strings.HasSuffix(name, "+rsa") ||
+		(strings.HasSuffix(name, "+rsa") && !allowRSAKeys) ||
 		strings.Contains(name, "http-01") ||
 		IsAcmeAccountKey(name)
 }
@@ -150,13 +187,22 @@ var (
 	ErrLockFailed       = errors.New("lock acquisition failed")
 )
 
+func (dc *CachingStore) isRSAKeyAllowed(name string) bool {
+	if !strings.HasSuffix(name, "+rsa") {
+		return true
+	}
+	return dc.opts.allowRSAKeys
+}
+
 // Delete implements autocert.Cache.
 func (dc *CachingStore) Delete(ctx context.Context, name string) error {
 	if dc.opts.readonly {
 		return fmt.Errorf("webauth/acme/certcache: delete %q: %w", name, ErrReadonlyCache)
 	}
+	dc.opts.metrics(ctx, name, "delete")
 	ctxlog.Warn(ctx, "webauth/acme/certcache: delete", "key", name)
-	if !IsLocalName(name) {
+	if !IsLocalName(name, dc.opts.allowRSAKeys) {
+		dc.opts.metrics(ctx, name, "delete-backing")
 		if err := dc.backingStore.Delete(ctx, name); err != nil {
 			return fmt.Errorf("webauth/acme/certcache: delete %q: %w", name, errors.NewM(err, ErrBackingOperation))
 		}
@@ -183,7 +229,10 @@ func (dc *CachingStore) translateCacheMiss(err error) error {
 
 // Get implements autocert.Cache.
 func (dc *CachingStore) Get(ctx context.Context, name string) ([]byte, error) {
+	dc.opts.metrics(ctx, name, "get")
 	if bname, backingStore := dc.useBackingStore(name); backingStore {
+		dc.opts.metrics(ctx, bname, "get-backing")
+		dc.opts.logger.Info("webauth/acme/certcache: get using backing store", "key", name, "backing store name", bname)
 		data, err := dc.backingStore.ReadFileCtx(ctx, bname)
 		if err != nil {
 			if err = dc.translateCacheMiss(err); err == ErrCacheMiss {
@@ -215,7 +264,7 @@ func (dc *CachingStore) Get(ctx context.Context, name string) ([]byte, error) {
 }
 
 func (dc *CachingStore) useBackingStore(name string) (string, bool) {
-	if !IsLocalName(name) {
+	if !IsLocalName(name, dc.opts.allowRSAKeys) {
 		return name, true
 	}
 	if len(dc.opts.saveAccountKeyName) > 0 && IsAcmeAccountKey(name) {
@@ -226,11 +275,16 @@ func (dc *CachingStore) useBackingStore(name string) (string, bool) {
 
 // Put implements autocert.Cache.
 func (dc *CachingStore) Put(ctx context.Context, name string, data []byte) error {
+	dc.opts.metrics(ctx, name, "put")
+	if !dc.isRSAKeyAllowed(name) {
+		return fmt.Errorf("put %q: %w", name, errors.NewM(fmt.Errorf("RSA keys are not enabled"), ErrBackingOperation))
+	}
 	if dc.opts.readonly {
 		dc.opts.logger.Error("webauth/acme/certcache: put readonly cache", "key", name)
 		return fmt.Errorf("put %q: %w", name, ErrReadonlyCache)
 	}
 	if bname, backingStore := dc.useBackingStore(name); backingStore {
+		dc.opts.metrics(ctx, bname, "put-backing")
 		if err := dc.backingStore.WriteFileCtx(ctx, bname, data, 0600); err != nil {
 			dc.opts.logger.Error("webauth/acme/certcache: put backing store failed", "key", name, "backing store name", bname, "error", err)
 			return fmt.Errorf("put %q, backing store name: %q: %w", name, bname, errors.NewM(err, ErrBackingOperation))

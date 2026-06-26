@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"sync"
 	"testing"
 	"time"
@@ -19,6 +20,31 @@ import (
 	"cloudeng.io/webapp/webauth/acme/certcache"
 	"github.com/stretchr/testify/require"
 )
+
+// metricsCall records a single invocation of a webapp.CounterVecInc, in
+// terms of the (name, operation) labels passed to it by CachingStore.
+type metricsCall struct {
+	name, op string
+}
+
+// fakeMetrics is a webapp.CounterVecInc that records every call it
+// receives for later inspection.
+type fakeMetrics struct {
+	mu    sync.Mutex
+	calls []metricsCall
+}
+
+func (f *fakeMetrics) Inc(_ context.Context, labels ...string) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.calls = append(f.calls, metricsCall{name: labels[0], op: labels[1]})
+}
+
+func (f *fakeMetrics) Calls() []metricsCall {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return slices.Clone(f.calls)
+}
 
 type mockCacheFS struct {
 	mu    sync.Mutex
@@ -72,21 +98,26 @@ func (m *mockCacheFS) Delete(_ context.Context, name string) error {
 func TestIsLocalName(t *testing.T) {
 	t.Parallel()
 	testCases := []struct {
-		name  string
-		local bool
+		name         string
+		allowRSAKeys bool
+		local        bool
 	}{
-		{"example.com", false},
-		{"foo.bar.org", false},
-		{"example.com+token", true},
-		{"example.com+rsa", true},
-		{"acme_account.key+token", true},
-		{"acme_account+key", true},
-		{"acme_account.key", true},
-		{"something/http-01/foo", true},
+		{"example.com", false, false},
+		{"example.com", true, false},
+		{"foo.bar.org", false, false},
+		{"example.com+token", false, true},
+		{"example.com+token", true, true},
+		// +rsa names are local-only unless allowRSAKeys is true.
+		{"example.com+rsa", false, true},
+		{"example.com+rsa", true, false},
+		{"acme_account.key+token", false, true},
+		{"acme_account+key", false, true},
+		{"acme_account.key", false, true},
+		{"something/http-01/foo", false, true},
 	}
 	for _, tc := range testCases {
-		if got, want := certcache.IsLocalName(tc.name), tc.local; got != want {
-			t.Errorf("IsLocalName(%q): got %v, want %v", tc.name, got, want)
+		if got, want := certcache.IsLocalName(tc.name, tc.allowRSAKeys), tc.local; got != want {
+			t.Errorf("IsLocalName(%q, allowRSAKeys=%v): got %v, want %v", tc.name, tc.allowRSAKeys, got, want)
 		}
 	}
 }
@@ -341,6 +372,153 @@ func TestCacheACMEKeyInBackingStore(t *testing.T) {
 		t.Errorf("got %q, want %q", got, want)
 	}
 
+}
+
+func TestMetricsColumnsAndOperationValues(t *testing.T) {
+	t.Parallel()
+	if got, want := certcache.MetricsColumns(), []string{"name", "operation"}; !slices.Equal(got, want) {
+		t.Errorf("got %v, want %v", got, want)
+	}
+	if got, want := certcache.MetricsOperationValues(), []string{"get", "put", "delete", "get-backing", "put-backing", "delete-backing"}; !slices.Equal(got, want) {
+		t.Errorf("got %v, want %v", got, want)
+	}
+}
+
+func TestCacheMetricsBackingStore(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	tmpDir := t.TempDir()
+	mockFS := newMockCacheFS()
+	metrics := &fakeMetrics{}
+	cache, err := certcache.NewCachingStore(tmpDir, mockFS, certcache.WithMetrics(metrics.Inc))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	name := "remote.com"
+	if err := cache.Put(ctx, name, []byte("cert-data")); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := cache.Get(ctx, name); err != nil {
+		t.Fatal(err)
+	}
+	if err := cache.Delete(ctx, name); err != nil {
+		t.Fatal(err)
+	}
+
+	want := []metricsCall{
+		{name, "put"},
+		{name, "put-backing"},
+		{name, "get"},
+		{name, "get-backing"},
+		{name, "delete"},
+		{name, "delete-backing"},
+	}
+	if got := metrics.Calls(); !slices.Equal(got, want) {
+		t.Errorf("got %v, want %v", got, want)
+	}
+}
+
+func TestCacheMetricsLocal(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	tmpDir := t.TempDir()
+	mockFS := newMockCacheFS()
+	metrics := &fakeMetrics{}
+	cache, err := certcache.NewCachingStore(tmpDir, mockFS, certcache.WithMetrics(metrics.Inc))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	name := "local.key+token"
+	if err := cache.Put(ctx, name, []byte("key-data")); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := cache.Get(ctx, name); err != nil {
+		t.Fatal(err)
+	}
+	if err := cache.Delete(ctx, name); err != nil {
+		t.Fatal(err)
+	}
+
+	// Local-only names never hit the backing store, so only the
+	// non-"-backing" operations are recorded.
+	want := []metricsCall{
+		{name, "put"},
+		{name, "get"},
+		{name, "delete"},
+	}
+	if got := metrics.Calls(); !slices.Equal(got, want) {
+		t.Errorf("got %v, want %v", got, want)
+	}
+}
+
+func TestCacheMetricsACMEKeyRenamedInBackingStore(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	tmpDir := t.TempDir()
+	mockFS := newMockCacheFS()
+	metrics := &fakeMetrics{}
+	const backingName = "another-name-in-backing-store"
+	cache, err := certcache.NewCachingStore(tmpDir, mockFS,
+		certcache.WithSaveAccountKey(backingName),
+		certcache.WithMetrics(metrics.Inc),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	keyName := "acme_account+key"
+	if err := cache.Put(ctx, keyName, []byte("acme-key-data")); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := cache.Get(ctx, keyName); err != nil {
+		t.Fatal(err)
+	}
+
+	// The "-backing" labelled calls use the renamed backing store key, not
+	// the original cache name.
+	want := []metricsCall{
+		{keyName, "put"},
+		{backingName, "put-backing"},
+		{keyName, "get"},
+		{backingName, "get-backing"},
+	}
+	if got := metrics.Calls(); !slices.Equal(got, want) {
+		t.Errorf("got %v, want %v", got, want)
+	}
+}
+
+func TestCacheMetricsReadonly(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	tmpDir := t.TempDir()
+	mockFS := newMockCacheFS()
+	metrics := &fakeMetrics{}
+	cache, err := certcache.NewCachingStore(tmpDir, mockFS,
+		certcache.WithReadonly(true),
+		certcache.WithMetrics(metrics.Inc),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	name := "remote.com"
+	// Put records its "put" metric before checking readonly, so it is
+	// recorded even though the operation itself fails.
+	if err := cache.Put(ctx, name, []byte("cert-data")); !errors.Is(err, certcache.ErrReadonlyCache) {
+		t.Fatalf("got %v, want %v", err, certcache.ErrReadonlyCache)
+	}
+	// Delete checks readonly before recording any metric, so nothing is
+	// recorded for it.
+	if err := cache.Delete(ctx, name); !errors.Is(err, certcache.ErrReadonlyCache) {
+		t.Fatalf("got %v, want %v", err, certcache.ErrReadonlyCache)
+	}
+
+	want := []metricsCall{{name, "put"}}
+	if got := metrics.Calls(); !slices.Equal(got, want) {
+		t.Errorf("got %v, want %v", got, want)
+	}
 }
 
 func TestLocalStore(t *testing.T) {
