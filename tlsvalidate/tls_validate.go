@@ -279,31 +279,36 @@ func (v *Validator) getStates(ctx context.Context, addrs []string, host, port st
 	return states.states, nil
 }
 
-func (v *Validator) verifyAcrossHosts(ctx context.Context, errs *errors.M, host string, states []tlsState) {
-	if len(states) > 1 {
-		serial := states[0].state.PeerCertificates[0].SerialNumber
-		alg := states[0].state.PeerCertificates[0].SignatureAlgorithm
-		suite := states[0].state.CipherSuite
+func (v *Validator) verifyAcrossHosts(errs *errors.M, host string, states []tlsState) {
+	if len(states) == 0 {
+		return
+	}
+	if len(states[0].state.PeerCertificates) == 0 {
+		return
+	}
+	serial := states[0].state.PeerCertificates[0].SerialNumber
+	alg := states[0].state.PeerCertificates[0].SignatureAlgorithm
+	suite := states[0].state.CipherSuite
 
-		for _, cs := range states[1:] {
-			if v.opts.checkSerial && serial.Cmp(cs.state.PeerCertificates[0].SerialNumber) != 0 {
-				err := cs.error(cs.state.PeerCertificates[0],
-					fmt.Errorf("%v: %v mismatched serial numbers: (%v) != (%v)", host, cs.addr, serial, cs.state.PeerCertificates[0].SerialNumber))
-				errs.Append(err)
+	for _, cs := range states[1:] {
+		if v.opts.checkSerial && serial.Cmp(cs.state.PeerCertificates[0].SerialNumber) != 0 {
+			err := cs.error(cs.state.PeerCertificates[0],
+				fmt.Errorf("%v: %v mismatched serial numbers: (%v) != (%v)", host, cs.addr, serial, cs.state.PeerCertificates[0].SerialNumber))
+			errs.Append(err)
 
-			}
-			if v.opts.checkSignature && alg != cs.state.PeerCertificates[0].SignatureAlgorithm {
-				err := cs.error(cs.state.PeerCertificates[0],
-					fmt.Errorf("%v: %v mismatched signature algorithms: (%v) != (%v)", host, cs.addr, alg, cs.state.PeerCertificates[0].SignatureAlgorithm))
-				errs.Append(err)
-			}
-			if v.opts.checkCipherSuite && suite != cs.state.CipherSuite {
-				err := cs.error(cs.state.PeerCertificates[0],
-					fmt.Errorf("%v: %v mismatched cipher suites: (%v) != (%v)", host, cs.addr, tls.CipherSuiteName(suite), tls.CipherSuiteName(cs.state.CipherSuite)))
-				errs.Append(err)
-			}
+		}
+		if v.opts.checkSignature && alg != cs.state.PeerCertificates[0].SignatureAlgorithm {
+			err := cs.error(cs.state.PeerCertificates[0],
+				fmt.Errorf("%v: %v mismatched signature algorithms: (%v) != (%v)", host, cs.addr, alg, cs.state.PeerCertificates[0].SignatureAlgorithm))
+			errs.Append(err)
+		}
+		if v.opts.checkCipherSuite && suite != cs.state.CipherSuite {
+			err := cs.error(cs.state.PeerCertificates[0],
+				fmt.Errorf("%v: %v mismatched cipher suites: (%v) != (%v)", host, cs.addr, tls.CipherSuiteName(suite), tls.CipherSuiteName(cs.state.CipherSuite)))
+			errs.Append(err)
 		}
 	}
+
 }
 
 // Validate performs TLS validation for the given host and port. It may expand
@@ -332,7 +337,7 @@ func (v *Validator) Validate(ctx context.Context, host, port string) error {
 			errs.Append(err)
 		}
 	}
-	v.verifyAcrossHosts(ctx, &errs, host, states)
+	v.verifyAcrossHosts(&errs, host, states)
 	return errs.Err()
 }
 

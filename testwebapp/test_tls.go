@@ -179,23 +179,6 @@ func NewTLSTest(specs ...TLSSpec) *TLSTest {
 	return &TLSTest{specs: specs}
 }
 
-/*
-func (t *TLSTest) compileREs() error {
-	for i, spec := range t.specs {
-		var res []*regexp.Regexp
-		for _, issuer := range spec.IssuerREs {
-			re, err := regexp.Compile(issuer)
-			if err != nil {
-				return err
-			}
-			res = append(res, re)
-		}
-		t.specs[i].issuerREs = res
-	}
-	return nil
-}
-*/
-
 func (t *TLSTest) configureHTTPClients(ctx context.Context) error {
 	for i, spec := range t.specs {
 		t.specs[i].client = http.DefaultClient
@@ -212,9 +195,6 @@ func (t *TLSTest) configureHTTPClients(ctx context.Context) error {
 
 func (t *TLSTest) Run(ctx context.Context) error {
 	ctxlog.Info(ctx, "tls: starting", "num_specs", len(t.specs))
-	//if err := t.compileREs(); err != nil {
-	//	return err
-	//}
 	if err := t.configureHTTPClients(ctx); err != nil {
 		return err
 	}
@@ -285,14 +265,15 @@ func (t TLSTest) verify(ctx context.Context, spec TLSSpec) error {
 	return validator.Validate(ctx, spec.Host, port)
 }
 
+var letsEncryptRE = regexp.MustCompile("Let'?s Encrypt")
+
 func LetsEncryptTLSSpec() TLSSpec {
-	re := regexp.MustCompile(`Let'?s Encrypt`)
 	const tlsVersionTLS13 uint16 = 0x0304 // TLS 1.3
 	return TLSSpec{
 		ExpandDNSNames:     true,
 		CheckSerialNumbers: true,
 		ValidFor:           240 * time.Hour, // cert should be valid for at least 10 days
 		TLSMinVersion:      tlsVersionTLS13, // TLS 1.3
-		IssuerREs:          cmdyaml.RegexpList{cmdyaml.Regexp{Regexp: re}},
+		IssuerREs:          cmdyaml.RegexpList{cmdyaml.Regexp{Regexp: letsEncryptRE}},
 	}
 }

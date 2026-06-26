@@ -1,11 +1,11 @@
 cloudeng.io/algo v0.0.0-20260626220212-1639cc9226d4 h1:beqAdPwFs9Rg0LOo4FVHjcHRVStHGWCvl05qIR93P50=
 cloudeng.io/algo v0.0.0-20260626220212-1639cc9226d4/go.mod h1:4pi+ttpUgIAKHZMjAotDRJ6p2iX8HFuYse3N/MCrNBU=
-cloudeng.io/aws v0.0.0-20260625162517-2ebe08c2e5d9 h1:WIY4cJo8HFSu4FusO4+kQv1T5gQMvKP/6UqmuoG4ov8=
-cloudeng.io/aws v0.0.0-20260625162517-2ebe08c2e5d9/go.mod h1:c63efk9XBdv1DvyY37AisvHVupE8akWG6eWFZKo+w/k=
+cloudeng.io/aws v0.0.0-20260626220212-1639cc9226d4 h1:QrH7Tcbixeata2bEblEAinZ2DCTOh8zUxLM3HM+eNSU=
+cloudeng.io/aws v0.0.0-20260626220212-1639cc9226d4/go.mod h1:NtbrEKDaJkLatK5EhxDJljhFs2cuxwZ6dZseQtAzheQ=
 cloudeng.io/cicd v0.0.0-20260527194618-4cb6d4558850 h1:owpTcpW3NwVZ94CFaeSdaMWgoTmVv8XUjCbfYEGpUcc=
 cloudeng.io/cicd v0.0.0-20260527194618-4cb6d4558850/go.mod h1:pI98u5ytMFakWkLK2yrVvHyRlzcyYArBYA4xKR1vPj8=
-cloudeng.io/cmdutil v0.0.0-20260625162517-2ebe08c2e5d9 h1:HZAydaO9pMiC6i8NvgjILUbBmdV3BUoJnqQgDSO13h0=
-cloudeng.io/cmdutil v0.0.0-20260625162517-2ebe08c2e5d9/go.mod h1:LBEKOgHRcohWsDJDmXeAPgvabGCDfMG0t2u/wQK/zyQ=
+cloudeng.io/cmdutil v0.0.0-20260626220212-1639cc9226d4 h1:BQ6Ig1ZGkXiD8cYh+WFqTqNVDIURXJmRPNJMS953DVQ=
+cloudeng.io/cmdutil v0.0.0-20260626220212-1639cc9226d4/go.mod h1:LBEKOgHRcohWsDJDmXeAPgvabGCDfMG0t2u/wQK/zyQ=
 cloudeng.io/debug v0.0.0-20260527194618-4cb6d4558850 h1:gUar3YNqSdi+uvszdB44uBuutJnWWZX1lzAzlT/Y0IA=
 cloudeng.io/debug v0.0.0-20260527194618-4cb6d4558850/go.mod h1:MECwal0eFhXI3wixLVjNGnXohW4qGQRg+J68yQWmi9k=
 cloudeng.io/errors v0.0.14-0.20260312171538-61fcde6ce278 h1:zvkZ9WBpBjerUAhl+SLCcQLar2mNdsA0kFc0Ku5NKVQ=

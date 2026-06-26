@@ -32,7 +32,6 @@ type entry struct {
 // reload certificates from the store on a periodic basis (with some jitter)
 // to allow for certificates to be refreshed.
 type CertServingCache struct {
-	ctx          context.Context
 	certStore    file.ReadFileFS
 	ttl          time.Duration
 	rootCAs      *x509.CertPool

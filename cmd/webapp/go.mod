@@ -3,7 +3,7 @@ module cloudeng.io/webapp/cmd/webapp
 go 1.26.4
 
 require (
-	cloudeng.io/cmdutil v0.0.0-20260625162517-2ebe08c2e5d9
+	cloudeng.io/cmdutil v0.0.0-20260626220212-1639cc9226d4
 	cloudeng.io/webapp v0.0.0-20251211202122-3206a59d8279
 	github.com/go-chi/chi/v5 v5.3.0
 )
