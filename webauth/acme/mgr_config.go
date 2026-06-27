@@ -92,7 +92,13 @@ func (m *Manager) GetCertificate(hello *tls.ClientHelloInfo) (*tls.Certificate, 
 		return m.Manager.GetCertificate(hello)
 	}
 	if hello != nil && !SupportsECDSA(hello) {
-		return nil, fmt.Errorf("hello from %s for %s does not support ECDSA certificates", hello.ServerName, hello.Conn.RemoteAddr())
+		var remoteAddr string
+		if hello.Conn != nil {
+			remoteAddr = hello.Conn.RemoteAddr().String()
+		} else {
+			remoteAddr = "<unknown>"
+		}
+		return nil, fmt.Errorf("hello from %s for %s does not support ECDSA certificates", hello.ServerName, remoteAddr)
 	}
 	return m.Manager.GetCertificate(hello)
 }
