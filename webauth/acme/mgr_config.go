@@ -7,8 +7,10 @@
 package acme
 
 import (
+	"crypto/tls"
 	"fmt"
 	"net/url"
+	"slices"
 	"time"
 
 	"golang.org/x/crypto/acme"
@@ -60,6 +62,8 @@ type AutocertConfig struct {
 	UserAgent   string        `yaml:"user_agent"`    // User agent to use when connecting to the ACME service.
 	Provider    string        `yaml:"acme_provider"` // ACME service provider URL or 'letsencrypt' or 'letsencrypt-staging'.
 	RenewBefore time.Duration `yaml:"renew_before"`  // How early certificates should be renewed before they expire.
+
+	AllowRSACertificates bool `yaml:"allow_rsa_certificates" doc:"if true, allow RSA certificates to be issued, otherwise only ECDSA certificates will be issued"`
 }
 
 func (ac AutocertConfig) DirectoryURL() string {
@@ -76,10 +80,36 @@ func (ac AutocertConfig) DirectoryURL() string {
 	}
 }
 
+// Manager embeds an autocert.Manager but overrides the GetCertificate function
+// to enforce the AllowRSACertificates setting.
+type Manager struct {
+	*autocert.Manager
+	allowRSA bool
+}
+
+func (m *Manager) GetCertificate(hello *tls.ClientHelloInfo) (*tls.Certificate, error) {
+	if m.allowRSA {
+		return m.Manager.GetCertificate(hello)
+	}
+	if hello != nil && !SupportsECDSA(hello) {
+		return nil, fmt.Errorf("hello from %s for %s does not support ECDSA certificates", hello.ServerName, hello.Conn.RemoteAddr())
+	}
+	return m.Manager.GetCertificate(hello)
+}
+
+// TLSConfig returns a tls.Config obtained using from the underlying autocert.Manager,
+// but with the GetCertificate function replaced with the Manager's GetCertificate
+// function, which enforces the AllowRSACertificates setting.
+func (m *Manager) TLSConfig() *tls.Config {
+	cfg := m.Manager.TLSConfig()
+	cfg.GetCertificate = m.GetCertificate
+	return cfg
+}
+
 // NewAutocertManager creates a new autocert.Manager from the supplied config.
 // Any supplied hosts specify the allowed hosts for the manager, ie. those
 // for which it will obtain/renew certificates.
-func NewAutocertManager(cache autocert.Cache, cl AutocertConfig, allowedHosts ...string) (*autocert.Manager, error) {
+func NewAutocertManager(cache autocert.Cache, cl AutocertConfig, allowedHosts ...string) (*Manager, error) {
 	if cache == nil {
 		return nil, fmt.Errorf("no cache provided")
 	}
@@ -110,5 +140,56 @@ func NewAutocertManager(cache autocert.Cache, cl AutocertConfig, allowedHosts ..
 		HostPolicy:  hostPolicy,
 		RenewBefore: cl.RenewBefore,
 	}
-	return mgr, nil
+	return &Manager{Manager: mgr, allowRSA: cl.AllowRSACertificates}, nil
+}
+
+// GetCertificateECDSAOnly returns a GetCertificate function that wraps the
+// provided autocert.Manager's GetCertificate function with a check that the client
+// supports ECDSA certificates, returning an error if not.
+func GetCertificateECDSAOnly(getCert func(*tls.ClientHelloInfo) (*tls.Certificate, error)) func(*tls.ClientHelloInfo) (*tls.Certificate, error) {
+	return func(hello *tls.ClientHelloInfo) (*tls.Certificate, error) {
+		if hello != nil && !SupportsECDSA(hello) {
+			return nil, fmt.Errorf("hello from %s for %s does not support ECDSA certificates", hello.ServerName, hello.Conn.RemoteAddr())
+		}
+		return getCert(hello)
+	}
+}
+
+// SupportsECDSA returns true if the client requests supports ECDSA certificates
+// Taken from acme/autocert.go
+func SupportsECDSA(hello *tls.ClientHelloInfo) bool {
+	if hello.SignatureSchemes != nil {
+		ecdsaOK := false
+	schemeLoop:
+		for _, scheme := range hello.SignatureSchemes {
+			const tlsECDSAWithSHA1 tls.SignatureScheme = 0x0203 // constant added in Go 1.10
+			switch scheme {
+			case tlsECDSAWithSHA1, tls.ECDSAWithP256AndSHA256,
+				tls.ECDSAWithP384AndSHA384, tls.ECDSAWithP521AndSHA512:
+				ecdsaOK = true
+				break schemeLoop
+			}
+		}
+		if !ecdsaOK {
+			return false
+		}
+	}
+	if hello.SupportedCurves != nil {
+		if !slices.Contains(hello.SupportedCurves, tls.CurveP256) {
+			return false
+		}
+	}
+	for _, suite := range hello.CipherSuites {
+		switch suite {
+		case tls.TLS_ECDHE_ECDSA_WITH_RC4_128_SHA,
+			tls.TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA,
+			tls.TLS_ECDHE_ECDSA_WITH_AES_256_CBC_SHA,
+			tls.TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA256,
+			tls.TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,
+			tls.TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384,
+			tls.TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305:
+			return true
+		}
+	}
+	return false
 }

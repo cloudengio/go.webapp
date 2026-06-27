@@ -15,13 +15,12 @@ import (
 	"cloudeng.io/logging/ctxlog"
 	"cloudeng.io/sync/errgroup"
 	"cloudeng.io/webapp"
-	"golang.org/x/crypto/acme/autocert"
 )
 
 // Client implements an ACME client that periodically refreshes
 // certificates for a set of hosts using the provided autocert.Manager.
 type Client struct {
-	mgr  *autocert.Manager
+	mgr  *Manager
 	opts clientOptions
 }
 
@@ -75,7 +74,7 @@ func WithRefreshOnFailure(interval time.Duration) ClientOption {
 
 // NewClient creates a new client that refreshes certificates for the
 // provided hosts using the autocert.Manager.
-func NewClient(mgr *autocert.Manager, opts ...ClientOption) *Client {
+func NewClient(mgr *Manager, opts ...ClientOption) *Client {
 	var o clientOptions
 	for _, opt := range opts {
 		opt(&o)
