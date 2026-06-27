@@ -57,14 +57,14 @@ func TestSupportsECDSA(t *testing.T) {
 		{
 			name: "ecdsa cipher suite present",
 			hello: &tls.ClientHelloInfo{
-				CipherSuites: []uint16{uint16(rsaCipherSuite), uint16(ecdsaCipherSuite)},
+				CipherSuites: []uint16{rsaCipherSuite, ecdsaCipherSuite},
 			},
 			want: true,
 		},
 		{
 			name: "only rsa cipher suites",
 			hello: &tls.ClientHelloInfo{
-				CipherSuites: []uint16{uint16(rsaCipherSuite)},
+				CipherSuites: []uint16{rsaCipherSuite},
 			},
 			want: false,
 		},
@@ -72,7 +72,7 @@ func TestSupportsECDSA(t *testing.T) {
 			name: "rsa-only signature schemes short-circuits despite ecdsa cipher suite",
 			hello: &tls.ClientHelloInfo{
 				SignatureSchemes: []tls.SignatureScheme{tls.PSSWithSHA256, tls.PKCS1WithSHA256},
-				CipherSuites:     []uint16{uint16(ecdsaCipherSuite)},
+				CipherSuites:     []uint16{ecdsaCipherSuite},
 			},
 			want: false,
 		},
@@ -80,7 +80,7 @@ func TestSupportsECDSA(t *testing.T) {
 			name: "ecdsa signature scheme and matching cipher suite",
 			hello: &tls.ClientHelloInfo{
 				SignatureSchemes: []tls.SignatureScheme{tls.ECDSAWithP256AndSHA256},
-				CipherSuites:     []uint16{uint16(ecdsaCipherSuite)},
+				CipherSuites:     []uint16{ecdsaCipherSuite},
 			},
 			want: true,
 		},
@@ -88,7 +88,7 @@ func TestSupportsECDSA(t *testing.T) {
 			name: "unsupported curve despite ecdsa cipher suite",
 			hello: &tls.ClientHelloInfo{
 				SupportedCurves: []tls.CurveID{tls.CurveP384},
-				CipherSuites:    []uint16{uint16(ecdsaCipherSuite)},
+				CipherSuites:    []uint16{ecdsaCipherSuite},
 			},
 			want: false,
 		},
@@ -96,7 +96,7 @@ func TestSupportsECDSA(t *testing.T) {
 			name: "supported curve and matching cipher suite",
 			hello: &tls.ClientHelloInfo{
 				SupportedCurves: []tls.CurveID{tls.CurveP256},
-				CipherSuites:    []uint16{uint16(ecdsaCipherSuite)},
+				CipherSuites:    []uint16{ecdsaCipherSuite},
 			},
 			want: true,
 		},
@@ -120,7 +120,7 @@ func TestGetCertificateECDSAOnly(t *testing.T) {
 	t.Run("ecdsa supported", func(t *testing.T) {
 		calledWith = nil
 		hello := helloWithConn(t, "example.com", func(h *tls.ClientHelloInfo) {
-			h.CipherSuites = []uint16{uint16(ecdsaCipherSuite)}
+			h.CipherSuites = []uint16{ecdsaCipherSuite}
 		})
 		cert, err := getCert(hello)
 		if err != nil {
@@ -137,7 +137,7 @@ func TestGetCertificateECDSAOnly(t *testing.T) {
 	t.Run("ecdsa not supported", func(t *testing.T) {
 		calledWith = nil
 		hello := helloWithConn(t, "example.com", func(h *tls.ClientHelloInfo) {
-			h.CipherSuites = []uint16{uint16(rsaCipherSuite)}
+			h.CipherSuites = []uint16{rsaCipherSuite}
 		})
 		_, err := getCert(hello)
 		if err == nil || !strings.Contains(err.Error(), "does not support ECDSA certificates") {
@@ -211,7 +211,7 @@ func TestManagerGetCertificateRefusesRSAWhenNotAllowed(t *testing.T) {
 	mgr := newTestManager(t, false)
 
 	hello := helloWithConn(t, "test.example.com", func(h *tls.ClientHelloInfo) {
-		h.CipherSuites = []uint16{uint16(rsaCipherSuite)}
+		h.CipherSuites = []uint16{rsaCipherSuite}
 	})
 	_, err := mgr.GetCertificate(hello)
 	if err == nil || !strings.Contains(err.Error(), "does not support ECDSA certificates") {
@@ -226,7 +226,7 @@ func TestManagerGetCertificateAllowsECDSAWhenNotAllowingRSA(t *testing.T) {
 	// request should fall through to the underlying autocert.Manager, which
 	// fails fast on HostPolicy since no hosts are configured.
 	hello := helloWithConn(t, "test.example.com", func(h *tls.ClientHelloInfo) {
-		h.CipherSuites = []uint16{uint16(ecdsaCipherSuite)}
+		h.CipherSuites = []uint16{ecdsaCipherSuite}
 	})
 	_, err := mgr.GetCertificate(hello)
 	if err == nil || strings.Contains(err.Error(), "does not support ECDSA certificates") {
@@ -244,7 +244,7 @@ func TestManagerGetCertificateAllowsRSAWhenAllowed(t *testing.T) {
 	// through to the underlying autocert.Manager without being rejected for
 	// lacking ECDSA support, and fail fast on HostPolicy instead.
 	hello := helloWithConn(t, "test.example.com", func(h *tls.ClientHelloInfo) {
-		h.CipherSuites = []uint16{uint16(rsaCipherSuite)}
+		h.CipherSuites = []uint16{rsaCipherSuite}
 	})
 	_, err := mgr.GetCertificate(hello)
 	if err == nil || strings.Contains(err.Error(), "does not support ECDSA certificates") {
@@ -264,7 +264,7 @@ func TestManagerTLSConfigWiresGetCertificate(t *testing.T) {
 	}
 
 	hello := helloWithConn(t, "test.example.com", func(h *tls.ClientHelloInfo) {
-		h.CipherSuites = []uint16{uint16(rsaCipherSuite)}
+		h.CipherSuites = []uint16{rsaCipherSuite}
 	})
 	_, err := cfg.GetCertificate(hello)
 	if err == nil || !strings.Contains(err.Error(), "does not support ECDSA certificates") {
