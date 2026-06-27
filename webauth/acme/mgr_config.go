@@ -87,18 +87,19 @@ type Manager struct {
 	allowRSA bool
 }
 
+func remoteAddr(hello *tls.ClientHelloInfo) string {
+	if hello.Conn != nil {
+		return hello.Conn.RemoteAddr().String()
+	}
+	return "<unknown>"
+}
+
 func (m *Manager) GetCertificate(hello *tls.ClientHelloInfo) (*tls.Certificate, error) {
 	if m.allowRSA {
 		return m.Manager.GetCertificate(hello)
 	}
 	if hello != nil && !SupportsECDSA(hello) {
-		var remoteAddr string
-		if hello.Conn != nil {
-			remoteAddr = hello.Conn.RemoteAddr().String()
-		} else {
-			remoteAddr = "<unknown>"
-		}
-		return nil, fmt.Errorf("hello from %s for %s does not support ECDSA certificates", hello.ServerName, remoteAddr)
+		return nil, fmt.Errorf("hello from %s for %s does not support ECDSA certificates", hello.ServerName, remoteAddr(hello))
 	}
 	return m.Manager.GetCertificate(hello)
 }
@@ -155,7 +156,7 @@ func NewAutocertManager(cache autocert.Cache, cl AutocertConfig, allowedHosts ..
 func GetCertificateECDSAOnly(getCert func(*tls.ClientHelloInfo) (*tls.Certificate, error)) func(*tls.ClientHelloInfo) (*tls.Certificate, error) {
 	return func(hello *tls.ClientHelloInfo) (*tls.Certificate, error) {
 		if hello != nil && !SupportsECDSA(hello) {
-			return nil, fmt.Errorf("hello from %s for %s does not support ECDSA certificates", hello.ServerName, hello.Conn.RemoteAddr())
+			return nil, fmt.Errorf("hello from %s for %s does not support ECDSA certificates", hello.ServerName, remoteAddr(hello))
 		}
 		return getCert(hello)
 	}
@@ -164,6 +165,9 @@ func GetCertificateECDSAOnly(getCert func(*tls.ClientHelloInfo) (*tls.Certificat
 // SupportsECDSA returns true if the client requests supports ECDSA certificates
 // Taken from acme/autocert.go
 func SupportsECDSA(hello *tls.ClientHelloInfo) bool {
+	if hello == nil {
+		return false
+	}
 	if hello.SignatureSchemes != nil {
 		ecdsaOK := false
 	schemeLoop:
