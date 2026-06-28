@@ -6,6 +6,7 @@ package testwebapp
 
 import (
 	"context"
+	"crypto/tls"
 	"crypto/x509"
 	goerrors "errors"
 	"fmt"
@@ -182,12 +183,11 @@ func (t TLSTest) verify(ctx context.Context, spec TLSSpec) error {
 var letsEncryptRE = regexp.MustCompile("Let'?s Encrypt")
 
 func LetsEncryptTLSSpec() TLSSpec {
-	const tlsVersionTLS13 webapp.TLSVersion = 0x0304 // TLS 1.3
 	return TLSSpec{
 		ExpandDNSNames:     true,
 		CheckSerialNumbers: true,
 		ValidFor:           240 * time.Hour, // cert should be valid for at least 10 days
-		TLSMinVersion:      tlsVersionTLS13, // TLS 1.3
+		TLSMinVersion:      webapp.TLSVersion(tls.VersionTLS12),
 		IssuerREs:          cmdyaml.RegexpList{cmdyaml.Regexp{Regexp: letsEncryptRE}},
 	}
 }
