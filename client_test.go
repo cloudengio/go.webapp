@@ -27,6 +27,7 @@ import (
 
 	"cloudeng.io/net/http/httptracing"
 	"cloudeng.io/webapp"
+	"cloudeng.io/webapp/webauth/acme"
 )
 
 func noCertError() string {
@@ -95,6 +96,7 @@ func TestNewHTTPClient(t *testing.T) {
 	t.Run("with-custom-ca", func(t *testing.T) { testNewHTTPClientWithCustomCA(ctx, t) })
 	t.Run("with-dns-resolver-addr", func(t *testing.T) { testNewHTTPClientWithDNSServer(ctx, t) })
 	t.Run("with-tracing", func(t *testing.T) { testNewHTTPClientWithTracing(ctx, t) })
+	t.Run("client-hello-supports-ecdsa", func(t *testing.T) { testNewHTTPClientHelloSupportsECDSA(ctx, t) })
 }
 
 func testNewHTTPClientDefault(ctx context.Context, t *testing.T) {
@@ -202,6 +204,75 @@ func testNewHTTPClientWithDNSServer(ctx context.Context, t *testing.T) {
 	case <-received:
 	case <-time.After(2 * time.Second):
 		t.Fatal("expected a DNS query to be sent to the custom resolver address")
+	}
+}
+
+// testNewHTTPClientHelloSupportsECDSA is a regression test for a bug where
+// NewHTTPClient's transport forced MinVersion to TLS 1.3, which causes Go's
+// TLS client to omit the configured CipherSuites from the wire ClientHello
+// entirely (TLS 1.3 ignores that field and only ever offers its fixed AEAD
+// suite list). That, in turn, made acme.SupportsECDSA(hello) - which looks
+// for legacy TLS_ECDHE_ECDSA_* suite IDs in hello.CipherSuites - report that
+// the client did not support ECDSA certificates, even though it does.
+func testNewHTTPClientHelloSupportsECDSA(ctx context.Context, t *testing.T) {
+	rootCert, rootKey := newCert(t, "test-ca", true, nil, nil)
+	serverCert, serverKey := newCert(t, "localhost", false, rootCert, rootKey)
+
+	var capturedHello *tls.ClientHelloInfo
+	var capturedVersion uint16
+	server := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		capturedVersion = r.TLS.Version
+		w.WriteHeader(http.StatusOK)
+	}))
+	// Set Certificates explicitly (rather than relying on GetCertificate) so
+	// that httptest.Server.StartTLS does not inject its own default cert
+	// (it only does so when Certificates is empty, regardless of
+	// GetCertificate), and use GetConfigForClient - which fires for every
+	// connection irrespective of how the certificate is selected - to
+	// capture the ClientHelloInfo.
+	server.TLS = &tls.Config{
+		Certificates: []tls.Certificate{{
+			Certificate: [][]byte{serverCert.Raw},
+			PrivateKey:  serverKey,
+		}},
+		GetConfigForClient: func(hello *tls.ClientHelloInfo) (*tls.Config, error) {
+			capturedHello = hello
+			return nil, nil
+		},
+	}
+	server.StartTLS()
+	defer server.Close()
+
+	_, port, err := net.SplitHostPort(strings.TrimPrefix(server.URL, "https://"))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	rootPool := x509.NewCertPool()
+	rootPool.AddCert(rootCert)
+
+	client, err := webapp.NewHTTPClient(ctx, webapp.WithCustomCAPool(rootPool))
+	if err != nil {
+		t.Fatalf("NewHTTPClient failed: %v", err)
+	}
+
+	// Use "localhost" rather than the server's 127.0.0.1 URL so that the
+	// client sends an SNI ServerName (Go's TLS client omits SNI for IP
+	// literals), matching real-world usage against a named host.
+	resp, err := client.Get("https://localhost:" + port)
+	if err != nil {
+		t.Fatalf("request failed: %v", err)
+	}
+	resp.Body.Close()
+
+	if capturedHello == nil {
+		t.Fatal("server did not observe a ClientHelloInfo")
+	}
+	if !acme.SupportsECDSA(capturedHello) {
+		t.Errorf("acme.SupportsECDSA(hello) = false, want true; CipherSuites: %v", capturedHello.CipherSuites)
+	}
+	if capturedVersion != tls.VersionTLS13 {
+		t.Errorf("negotiated TLS version = %#x, want TLS 1.3 (%#x)", capturedVersion, tls.VersionTLS13)
 	}
 }
 
