@@ -20,7 +20,7 @@ func TestParseCipherSuite(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got, want := id, uint16(tls.TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256); got != want {
+	if got, want := id, tls.TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256; got != want {
 		t.Errorf("got %v, want %v", got, want)
 	}
 
@@ -29,7 +29,7 @@ func TestParseCipherSuite(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got, want := id, uint16(tls.TLS_RSA_WITH_AES_128_CBC_SHA); got != want {
+	if got, want := id, tls.TLS_RSA_WITH_AES_128_CBC_SHA; got != want {
 		t.Errorf("got %v, want %v", got, want)
 	}
 
@@ -149,7 +149,7 @@ func TestCipherSuitesYAMLInsecureKeyword(t *testing.T) {
 	if got, want := len(c), len(want)+1; got != want {
 		t.Fatalf("got %v suites, want %v suites: %v", got, want, c)
 	}
-	if got, want := c[len(c)-1], uint16(tls.TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256); got != want {
+	if got, want := c[len(c)-1], tls.TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256; got != want {
 		t.Errorf("got %v, want %v", got, want)
 	}
 }
