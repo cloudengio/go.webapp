@@ -630,51 +630,6 @@ func TestDeniedCipherSuites(t *testing.T) {
 	}
 }
 
-func TestParseCipherSuite(t *testing.T) {
-	id, err := tlsvalidate.ParseCipherSuite("TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got, want := id, tls.TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256; got != want {
-		t.Errorf("got %v, want %v", got, want)
-	}
-
-	// Insecure ciphersuites are also recognized.
-	id, err = tlsvalidate.ParseCipherSuite("TLS_RSA_WITH_AES_128_CBC_SHA")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got, want := id, tls.TLS_RSA_WITH_AES_128_CBC_SHA; got != want {
-		t.Errorf("got %v, want %v", got, want)
-	}
-
-	if _, err := tlsvalidate.ParseCipherSuite("not-a-real-ciphersuite"); err == nil {
-		t.Error("expected an error for an unknown ciphersuite name")
-	}
-}
-
-func TestParseSignatureAlgorithm(t *testing.T) {
-	alg, err := tlsvalidate.ParseSignatureAlgorithm("SHA256-RSA")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got, want := alg, x509.SHA256WithRSA; got != want {
-		t.Errorf("got %v, want %v", got, want)
-	}
-
-	alg, err = tlsvalidate.ParseSignatureAlgorithm("Ed25519")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got, want := alg, x509.PureEd25519; got != want {
-		t.Errorf("got %v, want %v", got, want)
-	}
-
-	if _, err := tlsvalidate.ParseSignatureAlgorithm("not-a-real-algorithm"); err == nil {
-		t.Error("expected an error for an unknown signature algorithm name")
-	}
-}
-
 func TestCheckCipherSuites(t *testing.T) {
 	ctx := context.Background()
 

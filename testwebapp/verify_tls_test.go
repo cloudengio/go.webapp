@@ -18,6 +18,7 @@ import (
 	"strings"
 	"testing"
 
+	"cloudeng.io/webapp"
 	"cloudeng.io/webapp/testwebapp"
 	"gopkg.in/yaml.v3"
 )
@@ -28,7 +29,7 @@ func TestTLSSpecString(t *testing.T) {
 		Port:               "443",
 		ExpandDNSNames:     true,
 		CheckSerialNumbers: true,
-		CipherSuites:       testwebapp.CipherSuites{tls.TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256},
+		CipherSuites:       webapp.CipherSuites{tls.TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256},
 	}
 	got := spec.String()
 	for _, want := range []string{"host: example.com", "port: \"443\"", "expand-dns-names: true", "TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256"} {
@@ -215,7 +216,7 @@ func TestTLSTestNotAllowedSignatureAlgorithms(t *testing.T) {
 			Host:                          host,
 			Port:                          port,
 			CustomCAPEM:                   caFile,
-			NotAllowedSignatureAlgorithms: testwebapp.SignatureAlgorithms{x509.ECDSAWithSHA256},
+			NotAllowedSignatureAlgorithms: webapp.SignatureAlgorithms{x509.ECDSAWithSHA256},
 		},
 	}
 	tlsTest := testwebapp.NewTLSTest(specs...)
@@ -225,7 +226,7 @@ func TestTLSTestNotAllowedSignatureAlgorithms(t *testing.T) {
 
 	// The server's cert signature algorithm is in the denied set, so the
 	// test should fail.
-	specs[0].NotAllowedSignatureAlgorithms = testwebapp.SignatureAlgorithms{x509.SHA256WithRSA}
+	specs[0].NotAllowedSignatureAlgorithms = webapp.SignatureAlgorithms{x509.SHA256WithRSA}
 	tlsTest = testwebapp.NewTLSTest(specs...)
 	err = tlsTest.Run(ctx)
 	if err == nil {
@@ -246,7 +247,7 @@ func TestCipherSuitesYAML(t *testing.T) {
 		t.Fatal(err)
 	}
 	c := spec.CipherSuites
-	want := testwebapp.CipherSuites{
+	want := webapp.CipherSuites{
 		tls.TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,
 		tls.TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,
 		tls.TLS_RSA_WITH_AES_128_CBC_SHA,
@@ -282,7 +283,7 @@ func TestCipherSuitesYAMLInsecureKeyword(t *testing.T) {
 	}
 	c := spec.CipherSuites
 
-	want := make(testwebapp.CipherSuites, 0, len(tls.InsecureCipherSuites()))
+	want := make(webapp.CipherSuites, 0, len(tls.InsecureCipherSuites()))
 	for _, cs := range tls.InsecureCipherSuites() {
 		want = append(want, cs.ID)
 	}
@@ -368,7 +369,7 @@ func TestSignatureAlgorithmsYAML(t *testing.T) {
 		t.Fatal(err)
 	}
 	s := spec.SignatureAlgorithms
-	want := testwebapp.SignatureAlgorithms{x509.SHA256WithRSA, x509.ECDSAWithSHA256}
+	want := webapp.SignatureAlgorithms{x509.SHA256WithRSA, x509.ECDSAWithSHA256}
 	if len(s) != len(want) {
 		t.Fatalf("got %v, want %v", s, want)
 	}
@@ -394,27 +395,27 @@ func TestSignatureAlgorithmsYAML(t *testing.T) {
 func TestSignatureAlgorithmsYAMLShortNames(t *testing.T) {
 	testCases := []struct {
 		name string
-		want testwebapp.SignatureAlgorithms
+		want webapp.SignatureAlgorithms
 	}{
 		{
 			name: "rsa",
-			want: testwebapp.SignatureAlgorithms{x509.SHA256WithRSA, x509.SHA384WithRSA, x509.SHA512WithRSA},
+			want: webapp.SignatureAlgorithms{x509.SHA256WithRSA, x509.SHA384WithRSA, x509.SHA512WithRSA},
 		},
 		{
 			name: "dsa",
-			want: testwebapp.SignatureAlgorithms{x509.DSAWithSHA1, x509.DSAWithSHA256},
+			want: webapp.SignatureAlgorithms{x509.DSAWithSHA1, x509.DSAWithSHA256},
 		},
 		{
 			name: "ecdsa",
-			want: testwebapp.SignatureAlgorithms{x509.ECDSAWithSHA1, x509.ECDSAWithSHA256, x509.ECDSAWithSHA384, x509.ECDSAWithSHA512},
+			want: webapp.SignatureAlgorithms{x509.ECDSAWithSHA1, x509.ECDSAWithSHA256, x509.ECDSAWithSHA384, x509.ECDSAWithSHA512},
 		},
 		{
 			name: "ed25519",
-			want: testwebapp.SignatureAlgorithms{x509.PureEd25519},
+			want: webapp.SignatureAlgorithms{x509.PureEd25519},
 		},
 		{
 			name: "rsa-pss",
-			want: testwebapp.SignatureAlgorithms{x509.SHA256WithRSAPSS, x509.SHA384WithRSAPSS, x509.SHA512WithRSAPSS},
+			want: webapp.SignatureAlgorithms{x509.SHA256WithRSAPSS, x509.SHA384WithRSAPSS, x509.SHA512WithRSAPSS},
 		},
 	}
 
@@ -442,7 +443,7 @@ func TestSignatureAlgorithmsYAMLShortNames(t *testing.T) {
 		t.Fatal(err)
 	}
 	s := spec.SignatureAlgorithms
-	want := testwebapp.SignatureAlgorithms{x509.PureEd25519, x509.SHA256WithRSA}
+	want := webapp.SignatureAlgorithms{x509.PureEd25519, x509.SHA256WithRSA}
 	if len(s) != len(want) {
 		t.Fatalf("got %v, want %v", s, want)
 	}
