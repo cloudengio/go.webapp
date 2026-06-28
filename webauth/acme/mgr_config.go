@@ -13,6 +13,7 @@ import (
 	"slices"
 	"time"
 
+	"cloudeng.io/webapp"
 	"golang.org/x/crypto/acme"
 	"golang.org/x/crypto/acme/autocert"
 )
@@ -87,19 +88,12 @@ type Manager struct {
 	allowRSA bool
 }
 
-func remoteAddr(hello *tls.ClientHelloInfo) string {
-	if hello.Conn != nil {
-		return hello.Conn.RemoteAddr().String()
-	}
-	return "<unknown>"
-}
-
 func (m *Manager) GetCertificate(hello *tls.ClientHelloInfo) (*tls.Certificate, error) {
 	if m.allowRSA {
 		return m.Manager.GetCertificate(hello)
 	}
 	if hello != nil && !SupportsECDSA(hello) {
-		return nil, fmt.Errorf("hello from %s for %s does not support ECDSA certificates", hello.ServerName, remoteAddr(hello))
+		return nil, fmt.Errorf("hello for %s from %s does not support ECDSA certificates", hello.ServerName, webapp.RemoteAddrFromClientHello(hello))
 	}
 	return m.Manager.GetCertificate(hello)
 }
@@ -156,7 +150,7 @@ func NewAutocertManager(cache autocert.Cache, cl AutocertConfig, allowedHosts ..
 func GetCertificateECDSAOnly(getCert func(*tls.ClientHelloInfo) (*tls.Certificate, error)) func(*tls.ClientHelloInfo) (*tls.Certificate, error) {
 	return func(hello *tls.ClientHelloInfo) (*tls.Certificate, error) {
 		if hello != nil && !SupportsECDSA(hello) {
-			return nil, fmt.Errorf("hello from %s for %s does not support ECDSA certificates", hello.ServerName, remoteAddr(hello))
+			return nil, fmt.Errorf("hello for %s from %s does not support ECDSA certificates", hello.ServerName, webapp.RemoteAddrFromClientHello(hello))
 		}
 		return getCert(hello)
 	}
