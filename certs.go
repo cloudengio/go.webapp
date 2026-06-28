@@ -9,6 +9,7 @@ import (
 	"crypto"
 	"crypto/ecdsa"
 	"crypto/rsa"
+	"crypto/tls"
 	"crypto/x509"
 	"encoding/hex"
 	"encoding/pem"
@@ -210,4 +211,14 @@ func SerialNumberHex(serial *big.Int) string {
 		return ""
 	}
 	return fmt.Sprintf("%0*x", len(serial.Bytes())*2, serial)
+}
+
+// RemoteAddrFromClientHello returns the remote address of the connection
+// from the provided ClientHelloInfo. If the ClientHelloInfo or its Conn
+// field is nil, it returns an empty string.
+func RemoteAddrFromClientHello(hello *tls.ClientHelloInfo) string {
+	if hello == nil || hello.Conn == nil {
+		return ""
+	}
+	return hello.Conn.RemoteAddr().String()
 }

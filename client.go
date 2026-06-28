@@ -72,7 +72,16 @@ func NewHTTPClient(ctx context.Context, opts ...HTTPClientOption) (*http.Client,
 	}
 	transport := &http.Transport{
 		TLSClientConfig: &tls.Config{
-			MinVersion:   tls.VersionTLS13,
+			// MinVersion is intentionally TLS12, not TLS13: with MinVersion
+			// TLS13, Go's TLS client ignores CipherSuites entirely and only
+			// offers its fixed TLS 1.3 suite list on the wire, so a server
+			// using acme.SupportsECDSA (which inspects the legacy
+			// TLS_ECDHE_ECDSA_* suite IDs in the ClientHello) would
+			// incorrectly conclude this client doesn't support ECDSA
+			// certificates. TLS 1.3 is still negotiated whenever the server
+			// supports it, since
+			//  MaxVersion is left unset.
+			MinVersion:   tls.VersionTLS12,
 			CipherSuites: PreferredCipherSuites,
 		}}
 	if options.caPool != nil {

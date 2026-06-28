@@ -482,58 +482,6 @@ type tlsStates struct {
 	states []tlsState
 }
 
-// ParseCipherSuite returns the cipher suite ID for the given name, as
-// returned by tls.CipherSuiteName, e.g. "TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256".
-// It returns an error if name does not match any cipher suite known to the
-// crypto/tls package, including its insecure ones.
-func ParseCipherSuite(name string) (uint16, error) {
-	for _, cs := range tls.CipherSuites() {
-		if cs.Name == name {
-			return cs.ID, nil
-		}
-	}
-	for _, cs := range tls.InsecureCipherSuites() {
-		if cs.Name == name {
-			return cs.ID, nil
-		}
-	}
-	return 0, fmt.Errorf("unknown cipher suite %q", name)
-}
-
-// signatureAlgorithms lists every x509.SignatureAlgorithm that has a non-empty
-// human readable name, i.e. excluding x509.UnknownSignatureAlgorithm and
-// x509.MD2WithRSA (which crypto/x509 never assigns a name to).
-var signatureAlgorithms = []x509.SignatureAlgorithm{
-	x509.MD5WithRSA,
-	x509.SHA1WithRSA,
-	x509.SHA256WithRSA,
-	x509.SHA384WithRSA,
-	x509.SHA512WithRSA,
-	x509.DSAWithSHA1,
-	x509.DSAWithSHA256,
-	x509.ECDSAWithSHA1,
-	x509.ECDSAWithSHA256,
-	x509.ECDSAWithSHA384,
-	x509.ECDSAWithSHA512,
-	x509.SHA256WithRSAPSS,
-	x509.SHA384WithRSAPSS,
-	x509.SHA512WithRSAPSS,
-	x509.PureEd25519,
-}
-
-// ParseSignatureAlgorithm returns the x509.SignatureAlgorithm for the given
-// name, as returned by x509.SignatureAlgorithm.String(), e.g. "SHA256-RSA" or
-// "Ed25519". It returns an error if name does not match any known signature
-// algorithm.
-func ParseSignatureAlgorithm(name string) (x509.SignatureAlgorithm, error) {
-	for _, alg := range signatureAlgorithms {
-		if alg.String() == name {
-			return alg, nil
-		}
-	}
-	return x509.UnknownSignatureAlgorithm, fmt.Errorf("unknown signature algorithm %q", name)
-}
-
 func (ts *tlsStates) add(state tlsState) {
 	ts.mu.Lock()
 	defer ts.mu.Unlock()
