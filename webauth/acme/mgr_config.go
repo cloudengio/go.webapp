@@ -9,10 +9,12 @@ package acme
 import (
 	"crypto/tls"
 	"fmt"
+	"log/slog"
 	"net/url"
 	"slices"
 	"time"
 
+	"cloudeng.io/logging/ctxlog"
 	"cloudeng.io/webapp"
 	"golang.org/x/crypto/acme"
 	"golang.org/x/crypto/acme/autocert"
@@ -150,6 +152,19 @@ func NewAutocertManager(cache autocert.Cache, cl AutocertConfig, allowedHosts ..
 func GetCertificateECDSAOnly(getCert func(*tls.ClientHelloInfo) (*tls.Certificate, error)) func(*tls.ClientHelloInfo) (*tls.Certificate, error) {
 	return func(hello *tls.ClientHelloInfo) (*tls.Certificate, error) {
 		if hello != nil && !SupportsECDSA(hello) {
+			logger := slog.New(slog.DiscardHandler)
+			if ctx := hello.Context(); ctx != nil {
+				if l := ctxlog.Logger(ctx); l != nil {
+					logger = l
+				}
+			}
+			logger.Info("GetCertificateECDSAOnly client does not support ECDSA certificates",
+				"server_name", hello.ServerName,
+				"remote_addr", webapp.RemoteAddrFromClientHello(hello),
+				"tls_versions", webapp.TLSVersions(hello.SupportedVersions).String(),
+				"ciphersuites", webapp.CipherSuites(hello.CipherSuites).String(),
+				"signature_schemes", webapp.TLSSignatureSchemes(hello.SignatureSchemes).String(),
+				"supported_curves", webapp.TLSCurves(hello.SupportedCurves).String())
 			return nil, fmt.Errorf("hello for %s from %s does not support ECDSA certificates", hello.ServerName, webapp.RemoteAddrFromClientHello(hello))
 		}
 		return getCert(hello)
