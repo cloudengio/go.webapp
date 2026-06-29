@@ -87,17 +87,11 @@ func (ac AutocertConfig) DirectoryURL() string {
 // to enforce the AllowRSACertificates setting.
 type Manager struct {
 	*autocert.Manager
-	allowRSA bool
+	getCertificate func(*tls.ClientHelloInfo) (*tls.Certificate, error)
 }
 
 func (m *Manager) GetCertificate(hello *tls.ClientHelloInfo) (*tls.Certificate, error) {
-	if m.allowRSA {
-		return m.Manager.GetCertificate(hello)
-	}
-	if hello != nil && !SupportsECDSA(hello) {
-		return nil, fmt.Errorf("hello for %s from %s does not support ECDSA certificates", hello.ServerName, webapp.RemoteAddrFromClientHello(hello))
-	}
-	return m.Manager.GetCertificate(hello)
+	return m.getCertificate(hello)
 }
 
 // TLSConfig returns a tls.Config obtained using from the underlying autocert.Manager,
@@ -143,7 +137,15 @@ func NewAutocertManager(cache autocert.Cache, cl AutocertConfig, allowedHosts ..
 		HostPolicy:  hostPolicy,
 		RenewBefore: cl.RenewBefore,
 	}
-	return &Manager{Manager: mgr, allowRSA: cl.AllowRSACertificates}, nil
+	lmgr := &Manager{
+		Manager: mgr,
+	}
+	if cl.AllowRSACertificates {
+		lmgr.getCertificate = mgr.GetCertificate
+	} else {
+		lmgr.getCertificate = GetCertificateECDSAOnly(mgr.GetCertificate)
+	}
+	return lmgr, nil
 }
 
 // GetCertificateECDSAOnly returns a GetCertificate function that wraps the
