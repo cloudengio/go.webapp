@@ -9,10 +9,12 @@ package acme
 import (
 	"crypto/tls"
 	"fmt"
+	"log/slog"
 	"net/url"
 	"slices"
 	"time"
 
+	"cloudeng.io/logging/ctxlog"
 	"cloudeng.io/webapp"
 	"golang.org/x/crypto/acme"
 	"golang.org/x/crypto/acme/autocert"
@@ -85,17 +87,11 @@ func (ac AutocertConfig) DirectoryURL() string {
 // to enforce the AllowRSACertificates setting.
 type Manager struct {
 	*autocert.Manager
-	allowRSA bool
+	getCertificate func(*tls.ClientHelloInfo) (*tls.Certificate, error)
 }
 
 func (m *Manager) GetCertificate(hello *tls.ClientHelloInfo) (*tls.Certificate, error) {
-	if m.allowRSA {
-		return m.Manager.GetCertificate(hello)
-	}
-	if hello != nil && !SupportsECDSA(hello) {
-		return nil, fmt.Errorf("hello for %s from %s does not support ECDSA certificates", hello.ServerName, webapp.RemoteAddrFromClientHello(hello))
-	}
-	return m.Manager.GetCertificate(hello)
+	return m.getCertificate(hello)
 }
 
 // TLSConfig returns a tls.Config obtained using from the underlying autocert.Manager,
@@ -141,7 +137,15 @@ func NewAutocertManager(cache autocert.Cache, cl AutocertConfig, allowedHosts ..
 		HostPolicy:  hostPolicy,
 		RenewBefore: cl.RenewBefore,
 	}
-	return &Manager{Manager: mgr, allowRSA: cl.AllowRSACertificates}, nil
+	lmgr := &Manager{
+		Manager: mgr,
+	}
+	if cl.AllowRSACertificates {
+		lmgr.getCertificate = mgr.GetCertificate
+	} else {
+		lmgr.getCertificate = GetCertificateECDSAOnly(mgr.GetCertificate)
+	}
+	return lmgr, nil
 }
 
 // GetCertificateECDSAOnly returns a GetCertificate function that wraps the
@@ -150,6 +154,19 @@ func NewAutocertManager(cache autocert.Cache, cl AutocertConfig, allowedHosts ..
 func GetCertificateECDSAOnly(getCert func(*tls.ClientHelloInfo) (*tls.Certificate, error)) func(*tls.ClientHelloInfo) (*tls.Certificate, error) {
 	return func(hello *tls.ClientHelloInfo) (*tls.Certificate, error) {
 		if hello != nil && !SupportsECDSA(hello) {
+			logger := slog.New(slog.DiscardHandler)
+			if ctx := hello.Context(); ctx != nil {
+				if l := ctxlog.Logger(ctx); l != nil {
+					logger = l
+				}
+			}
+			logger.Info("GetCertificateECDSAOnly client does not support ECDSA certificates",
+				"server_name", hello.ServerName,
+				"remote_addr", webapp.RemoteAddrFromClientHello(hello),
+				"tls_versions", webapp.TLSVersions(hello.SupportedVersions).String(),
+				"ciphersuites", webapp.CipherSuites(hello.CipherSuites).String(),
+				"signature_schemes", webapp.TLSSignatureSchemes(hello.SignatureSchemes).String(),
+				"supported_curves", webapp.TLSCurves(hello.SupportedCurves).String())
 			return nil, fmt.Errorf("hello for %s from %s does not support ECDSA certificates", hello.ServerName, webapp.RemoteAddrFromClientHello(hello))
 		}
 		return getCert(hello)
