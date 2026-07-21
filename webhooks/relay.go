@@ -165,7 +165,7 @@ func (r *Relay) ServeWebhook(w http.ResponseWriter, req *http.Request) {
 	req.Body = http.MaxBytesReader(w, req.Body, r.opts.payloadLimit)
 	payload, status := r.validator(req)
 	if status != http.StatusOK {
-		http.Error(w, "Invalid payload", status)
+		http.Error(w, "invalid payload", status)
 		if status >= http.StatusBadRequest && status < http.StatusInternalServerError {
 			r.opts.deniedCounter(req.Context())
 		}
