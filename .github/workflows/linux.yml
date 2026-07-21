@@ -25,4 +25,4 @@ jobs:
     with:
       runner: |
         [ "ubuntu-latest" ]
-      go-version: "1.25.x"
+      go-version: "1.26.x"
