@@ -16,7 +16,7 @@ jobs:
       #runner: | # use for self-hosted runners
       #  [ "self-hosted", "mm1-vm1" ]
       runner: |
-        #[ "macos-latest" ]
+        # [ "macos-latest" ]
         [ "self-hosted", "macos", "arm64" ]
       go-versions: |
         [ "1.26.x" ]
