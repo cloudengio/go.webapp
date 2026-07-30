@@ -26,6 +26,8 @@ import (
 )
 
 func setupTestEnvironment(t *testing.T) (context.Context, context.CancelFunc, string) {
+	chromedputil.SkipTestsIfNoChromeForTesting(t)
+
 	// Setup a test server that will trigger various browser events
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/api-endpoint" {
