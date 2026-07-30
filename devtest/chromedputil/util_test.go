@@ -62,6 +62,8 @@ func setupBrowser(t *testing.T, serverURL string) (context.Context, context.Canc
 }
 
 func TestListGlobalFunctions(t *testing.T) {
+	chromedputil.SkipTestsIfNoChromeForTesting(t)
+
 	srv := setupTestServer()
 	defer srv.Close()
 
@@ -97,6 +99,8 @@ func TestListGlobalFunctions(t *testing.T) {
 }
 
 func TestWaitForPromise(t *testing.T) {
+	chromedputil.SkipTestsIfNoChromeForTesting(t)
+
 	srv := setupTestServer()
 	defer srv.Close()
 
@@ -121,6 +125,8 @@ func TestWaitForPromise(t *testing.T) {
 }
 
 func TestSourceScript(t *testing.T) {
+	chromedputil.SkipTestsIfNoChromeForTesting(t)
+
 	srv := setupTestServer()
 	defer srv.Close()
 
@@ -187,6 +193,8 @@ func TestSourceScript(t *testing.T) {
 }
 
 func TestGetRemoteObject(t *testing.T) {
+	chromedputil.SkipTestsIfNoChromeForTesting(t)
+
 	srv := setupTestServer()
 	defer srv.Close()
 
@@ -232,6 +240,8 @@ func TestGetRemoteObject(t *testing.T) {
 }
 
 func TestGetRemoteObjectValue(t *testing.T) {
+	chromedputil.SkipTestsIfNoChromeForTesting(t)
+
 	srv := setupTestServer()
 	defer srv.Close()
 
@@ -301,6 +311,8 @@ func TestGetRemoteObjectValue(t *testing.T) {
 }
 
 func TestPlatformObjects(t *testing.T) {
+	chromedputil.SkipTestsIfNoChromeForTesting(t)
+
 	srv := setupTestServer()
 	defer srv.Close()
 
