@@ -256,6 +256,8 @@ func consoleArgsChecks() []func(t *testing.T, data []byte) {
 }
 
 func TestConsoleArgsAsJSONGemini(t *testing.T) {
+	chromedputil.SkipTestsIfNoChromeForTesting(t)
+
 	srv := setupTestServer()
 	defer srv.Close()
 
