@@ -623,6 +623,8 @@ func TestNetworkEvents(t *testing.T) {
 }
 
 func TestRunLoggingListenerEvaluate(t *testing.T) {
+	chromedputil.SkipTestsIfNoChromeForTesting(t)
+
 	// Generate events using chromdp.Evaluate rather than page load
 	// of html that contains a js script.
 	srv := setupTestServer()
