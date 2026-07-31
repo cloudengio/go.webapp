@@ -362,7 +362,7 @@ func (v *Validator) Validate(ctx context.Context, host, port string) error {
 			errs.Append(err)
 		}
 	}
-	if err := v.ensureNonZeroSerialNumbers(ctx, &states[0]); err != nil {
+	if err := v.ensureNonZeroSerialNumbers(&states[0]); err != nil {
 		errs.Append(err)
 	}
 	v.verifyAcrossHosts(&errs, host, states)
@@ -401,7 +401,7 @@ func (v *Validator) logCertificateInfo(ctx context.Context, cs *tlsState) {
 	}
 }
 
-func (v *Validator) ensureNonZeroSerialNumbers(ctx context.Context, cs *tlsState) error {
+func (v *Validator) ensureNonZeroSerialNumbers(cs *tlsState) error {
 	if !v.opts.checkZeroSerialNumbers {
 		return nil
 	}
