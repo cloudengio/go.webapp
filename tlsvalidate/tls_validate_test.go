@@ -302,6 +302,7 @@ func TestValidator(t *testing.T) {
 			opts: []tlsvalidate.Option{
 				tlsvalidate.WithRootCAs(rootPool),
 				tlsvalidate.WithExpandDNSNames(true),
+				tlsvalidate.WithCheckSerialNumbers(true),
 			},
 			host: "localhost",
 			port: port,
