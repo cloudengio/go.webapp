@@ -81,6 +81,8 @@ func runServer(ctx context.Context, t *testing.T, tmpDir string, w *passkeys.Han
 }
 
 func TestPasskeysServer(t *testing.T) {
+	chromedputil.SkipTestsIfNoChromeForTesting(t)
+
 	ctx, serverCancel := context.WithCancel(t.Context())
 	defer serverCancel()
 

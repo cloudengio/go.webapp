@@ -16,10 +16,12 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	goruntime "runtime"
 	"slices"
 	"strings"
 	"text/template"
 
+	"cloudeng.io/cicd"
 	"cloudeng.io/logging/ctxlog"
 	"github.com/chromedp/cdproto/runtime"
 	"github.com/cloudengio/chromedp"
@@ -278,6 +280,13 @@ func UserDataDirOnCI() string {
 // ChromeBinPathOnCI returns the Chrome binary path for CI.
 func ChromeBinPathOnCI() string {
 	return os.Getenv("CHROME_BIN_PATH")
+}
+
+// SkipTestsIfNoChromeForTesting skips the test if chrome-for-testing is not
+// available on the system, currently this is only implemented for linux/arm64.
+func SkipTestsIfNoChromeForTesting(t cicd.TestingTSkip) {
+	cicd.SkipIf(t, "skipping tests if no chrome-for-testing available on CI",
+		goruntime.GOOS == "linux" && goruntime.GOARCH == "arm64")
 }
 
 var (

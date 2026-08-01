@@ -11,6 +11,7 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"fmt"
+	"math/big"
 	"net"
 	"os"
 	"regexp"
@@ -169,6 +170,16 @@ func WithLogCertificateInfo(log bool) Option {
 	}
 }
 
+// WithCheckZeroSerialNumbers returns an option that configures the validator to
+// check that the certificates for all IP addresses for a given host have non-zero
+// serial numbers. The default is for this check to be enabled, but it can be
+// disabled for testing purposes.
+func WithCheckZeroSerialNumbers(check bool) Option {
+	return func(o *options) {
+		o.checkZeroSerialNumbers = check
+	}
+}
+
 // ErrValidator is an error type that wraps a certificate and an error. It is used
 // to provide more context when a certificate validation fails.
 type ErrValidator struct {
@@ -207,6 +218,7 @@ type options struct {
 	deniedCipherSuites         []uint16
 	customDNSServer            string
 	logCertificateInfo         bool
+	checkZeroSerialNumbers     bool
 }
 
 // Validator provides a way to validate TLS certificates.
@@ -218,6 +230,7 @@ type Validator struct {
 // NewValidator returns a new Validator configured with the supplied options.
 func NewValidator(opts ...Option) *Validator {
 	v := &Validator{}
+	v.opts.checkZeroSerialNumbers = true // default to checking for zero serial numbers
 	for _, opt := range opts {
 		opt(&v.opts)
 	}
@@ -281,9 +294,11 @@ func (v *Validator) getStates(ctx context.Context, addrs []string, host, port st
 
 func (v *Validator) verifyAcrossHosts(errs *errors.M, host string, states []tlsState) {
 	if len(states) == 0 {
+		fmt.Printf("no TLS states to verify for host %s\n", host)
 		return
 	}
 	if len(states[0].state.PeerCertificates) == 0 {
+		fmt.Printf("no peer certificates found for host %s\n", host)
 		return
 	}
 	serial := states[0].state.PeerCertificates[0].SerialNumber
@@ -291,6 +306,16 @@ func (v *Validator) verifyAcrossHosts(errs *errors.M, host string, states []tlsS
 	suite := states[0].state.CipherSuite
 
 	for _, cs := range states[1:] {
+		if len(cs.state.PeerCertificates) == 0 {
+			err := cs.error(nil, fmt.Errorf("%v: %v no peer certificates found", host, cs.addr))
+			errs.Append(err)
+			continue
+		}
+		if cs.state.PeerCertificates[0].SerialNumber == nil {
+			err := cs.error(cs.state.PeerCertificates[0], fmt.Errorf("%v: %v no serial number found", host, cs.addr))
+			errs.Append(err)
+			continue
+		}
 		if v.opts.checkSerial && serial.Cmp(cs.state.PeerCertificates[0].SerialNumber) != 0 {
 			err := cs.error(cs.state.PeerCertificates[0],
 				fmt.Errorf("%v: %v mismatched serial numbers: (%v) != (%v)", host, cs.addr, serial, cs.state.PeerCertificates[0].SerialNumber))
@@ -337,6 +362,9 @@ func (v *Validator) Validate(ctx context.Context, host, port string) error {
 			errs.Append(err)
 		}
 	}
+	if err := v.ensureNonZeroSerialNumbers(&states[0]); err != nil {
+		errs.Append(err)
+	}
 	v.verifyAcrossHosts(&errs, host, states)
 	return errs.Err()
 }
@@ -373,6 +401,19 @@ func (v *Validator) logCertificateInfo(ctx context.Context, cs *tlsState) {
 	}
 }
 
+func (v *Validator) ensureNonZeroSerialNumbers(cs *tlsState) error {
+	if !v.opts.checkZeroSerialNumbers {
+		return nil
+	}
+	var zero big.Int
+	for _, cert := range cs.state.PeerCertificates {
+		if cert.SerialNumber == nil || zero.Cmp(cert.SerialNumber) == 0 {
+			return cs.error(cert, fmt.Errorf("%v: %v zero serial number", cs.host, cs.addr))
+		}
+	}
+	return nil
+}
+
 func (v *Validator) validateConnectionState(ctx context.Context, cs *tlsState) error {
 	state := cs.state
 	if len(state.PeerCertificates) == 0 {
@@ -380,6 +421,7 @@ func (v *Validator) validateConnectionState(ctx context.Context, cs *tlsState) e
 			Err: fmt.Errorf("no peer certificates found"),
 		}
 	}
+
 	v.logCertificateInfo(ctx, cs)
 	leaf := state.PeerCertificates[0]
 	if len(v.opts.issuerREs) > 0 {

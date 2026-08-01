@@ -15,10 +15,11 @@ jobs:
     with:
       #runner: | # use for self-hosted runners
       #  [ "self-hosted", "mm1-vm1" ]
+      #  [ "macos-latest" ] for github hosted runner
       runner: |
-        [ "macos-latest" ]
+        [ "self-hosted", "macos", "arm64" ]
       go-versions: |
-        [ "1.25.x" ]
+        [ "1.26.x" ]
       with-webapp: true
       pebble-version: "v2.8.0"
 

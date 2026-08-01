@@ -129,7 +129,7 @@ func (m *CertServingCache) GetCertificate(hello *tls.ClientHelloInfo) (*tls.Cert
 	}
 
 	if len(m.allowedHosts) > 0 && !slices.Contains(m.allowedHosts, name) {
-		return nil, fmt.Errorf("server name %q is not in the list of allowed hosts", name)
+		return nil, fmt.Errorf("server name %v is not in the list of allowed hosts: %v", name, m.allowedHosts)
 	}
 
 	now := m.nowFunc()
@@ -170,12 +170,16 @@ func (m *CertServingCache) GetCertificate(hello *tls.ClientHelloInfo) (*tls.Cert
 		return nil, fmt.Errorf("certServingCache: leaf certificate is a CA cert for %v", name)
 	}
 
-	// Prepare tls.Certificate
-	cert := pem.EncodeToMemory(certsPEM[0])
-
+	// Encode the full chain (leaf first, then intermediates) so that
+	// tls.X509KeyPair populates tls.Certificate.Certificate with all of them.
+	// Passing only certsPEM[0] would serve the leaf alone and break clients
+	// that don't already hold the intermediate CA.
+	var chainPEM []byte
+	for _, block := range certsPEM {
+		chainPEM = append(chainPEM, pem.EncodeToMemory(block)...)
+	}
 	priv := pem.EncodeToMemory(privPEM[0])
-	// Load tls.Certificate
-	tlscert, err := tls.X509KeyPair(cert, priv)
+	tlscert, err := tls.X509KeyPair(chainPEM, priv)
 	if err != nil {
 		return nil, fmt.Errorf("certServingCache: failed to load x509 key pair for %v: %w", name, err)
 	}

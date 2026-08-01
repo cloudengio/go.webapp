@@ -22,6 +22,7 @@ import (
 	"time"
 
 	"cloudeng.io/webapp/devtest"
+	"cloudeng.io/webapp/devtest/chromedputil"
 	"cloudeng.io/webapp/testwebapp"
 )
 
@@ -64,6 +65,8 @@ func tlsTestServer(t *testing.T) (srvURL string, cert *x509.Certificate) {
 }
 
 func TestNavigationSpecString(t *testing.T) {
+	chromedputil.SkipTestsIfNoChromeForTesting(t)
+
 	spec := testwebapp.NavigationSpec{
 		URL:               "http://example.com",
 		Selectors:         []string{"#title", "#body"},
@@ -79,6 +82,8 @@ func TestNavigationSpecString(t *testing.T) {
 }
 
 func TestWithSuppressedCertErrorsFor(t *testing.T) {
+	chromedputil.SkipTestsIfNoChromeForTesting(t)
+
 	srvURL, cert := tlsTestServer(t)
 
 	t.Run("NavigationSucceeds", func(t *testing.T) {
@@ -111,6 +116,8 @@ func TestWithSuppressedCertErrorsFor(t *testing.T) {
 }
 
 func TestClick(t *testing.T) {
+	chromedputil.SkipTestsIfNoChromeForTesting(t)
+
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "text/html")

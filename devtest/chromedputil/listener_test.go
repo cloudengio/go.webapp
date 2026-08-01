@@ -26,6 +26,8 @@ import (
 )
 
 func setupTestEnvironment(t *testing.T) (context.Context, context.CancelFunc, string) {
+	chromedputil.SkipTestsIfNoChromeForTesting(t)
+
 	// Setup a test server that will trigger various browser events
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/api-endpoint" {
@@ -254,6 +256,8 @@ func consoleArgsChecks() []func(t *testing.T, data []byte) {
 }
 
 func TestConsoleArgsAsJSONGemini(t *testing.T) {
+	chromedputil.SkipTestsIfNoChromeForTesting(t)
+
 	srv := setupTestServer()
 	defer srv.Close()
 
@@ -619,6 +623,8 @@ func TestNetworkEvents(t *testing.T) {
 }
 
 func TestRunLoggingListenerEvaluate(t *testing.T) {
+	chromedputil.SkipTestsIfNoChromeForTesting(t)
+
 	// Generate events using chromdp.Evaluate rather than page load
 	// of html that contains a js script.
 	srv := setupTestServer()
