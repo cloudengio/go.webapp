@@ -9,6 +9,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"slices"
 	"time"
 
 	"cloudeng.io/sync/patterns"
@@ -166,7 +167,7 @@ func NewRelay(ctx context.Context, validator Validator, opts ...Option) *Relay {
 		options.payloadLimit = DefaultPayloadLimit
 	}
 	if options.forwardedHeaders == nil {
-		options.forwardedHeaders = DefaultForwardedHeaders
+		options.forwardedHeaders = slices.Clone(DefaultForwardedHeaders)
 	}
 	if options.deniedCounter == nil {
 		options.deniedCounter = noopCounter

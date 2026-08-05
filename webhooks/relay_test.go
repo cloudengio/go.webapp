@@ -422,11 +422,11 @@ func (h *signalHandler) WithGroup(name string) slog.Handler {
 	return h.clone(h.Handler.WithGroup(name))
 }
 
-func (h *signalHandler) Handle(_ context.Context, r slog.Record) error {
+func (h *signalHandler) Handle(ctx context.Context, r slog.Record) error {
 	if r.Message == h.msg {
 		h.once.Do(func() { close(h.ch) })
 	}
-	return nil
+	return h.Handler.Handle(ctx, r)
 }
 
 // TestRelayExpiry verifies that a queued delivery which is not read within the
