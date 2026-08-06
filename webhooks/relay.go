@@ -9,6 +9,8 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"slices"
+	"time"
 
 	"cloudeng.io/sync/patterns"
 	"cloudeng.io/webapp"
@@ -24,24 +26,46 @@ import (
 // When the internal buffer is full the oldest webhook is dropped to make
 // room for the new one.
 type Relay struct {
-	fifo      *patterns.FIFO[[]byte]
+	fifo      *patterns.FIFO[delivery]
 	validator Validator
 	opts      options
 }
 
+// delivery is a validated webhook payload together with the subset of the
+// incoming request headers that the relay forwards to long-polling clients.
+type delivery struct {
+	header     http.Header
+	body       []byte
+	expiration time.Time // when the webhook expires
+}
+
 type options struct {
-	size           int64
-	payloadLimit   int64
-	logger         *slog.Logger
-	deniedCounter  webapp.CounterInc // validation failed, e.g. due to invalid signature
-	relayedCounter webapp.CounterInc // successfully relayed to FIFO
-	readCounter    webapp.CounterInc // successfully read from FIFO and sent to client
+	size             int64
+	payloadLimit     int64
+	forwardedHeaders []string
+	expiry           time.Duration
+	expiryScan       time.Duration
+	logger           *slog.Logger
+	deniedCounter    webapp.CounterInc // validation failed, e.g. due to invalid signature
+	relayedCounter   webapp.CounterInc // successfully relayed to FIFO
+	readCounter      webapp.CounterInc // successfully read from FIFO and sent to client
 }
 
 const (
 	DefaultQueueSize    = 100
 	DefaultPayloadLimit = 1024 * 1024 // 1MB
 )
+
+// DefaultForwardedHeaders are the request headers copied from an incoming
+// webhook delivery onto the long-poll response when WithForwardedHeaders is not
+// used. They carry the GitHub event type and delivery metadata a client needs
+// to dispatch events. The X-Hub-Signature-256 header is deliberately omitted:
+// the relay has already verified it, and the client has no secret to re-check.
+var DefaultForwardedHeaders = []string{
+	"X-GitHub-Event",
+	"X-GitHub-Delivery",
+	"X-GitHub-Hook-ID",
+}
 
 // Option is a function that configures the Relay.
 type Option func(*options)
@@ -59,6 +83,31 @@ func WithQueueSize(size int64) Option {
 func WithMaxPayloadSize(size int64) Option {
 	return func(opts *options) {
 		opts.payloadLimit = size
+	}
+}
+
+// WithForwardedHeaders sets the request header names that are copied from an
+// incoming webhook delivery onto the long-poll response sent to clients. It
+// replaces DefaultForwardedHeaders; pass no names to forward none. Header
+// matching is case-insensitive and absent headers are skipped.
+func WithForwardedHeaders(names ...string) Option {
+	return func(opts *options) {
+		// Use a non-nil, possibly empty slice so callers can opt out of all
+		// header forwarding without falling back to the default set.
+		opts.forwardedHeaders = append([]string{}, names...)
+	}
+}
+
+// WithExpiry configures the relay to drop queued deliveries that have waited
+// longer than ttl without being read by a client, guarding against unbounded
+// staleness when no client is polling. The queue is scanned every scanInterval;
+// if scanInterval is <= 0 it defaults to ttl. Expiry is disabled (the default)
+// when ttl is <= 0, in which case deliveries are only dropped by the queue's
+// drop-oldest behaviour when it is full.
+func WithExpiry(ttl, scanInterval time.Duration) Option {
+	return func(opts *options) {
+		opts.expiry = ttl
+		opts.expiryScan = scanInterval
 	}
 }
 
@@ -117,6 +166,9 @@ func NewRelay(ctx context.Context, validator Validator, opts ...Option) *Relay {
 	if options.payloadLimit == 0 {
 		options.payloadLimit = DefaultPayloadLimit
 	}
+	if options.forwardedHeaders == nil {
+		options.forwardedHeaders = slices.Clone(DefaultForwardedHeaders)
+	}
 	if options.deniedCounter == nil {
 		options.deniedCounter = noopCounter
 	}
@@ -128,10 +180,31 @@ func NewRelay(ctx context.Context, validator Validator, opts ...Option) *Relay {
 	}
 	options.logger = options.logger.With("component", "webhooks.Relay")
 	return &Relay{
-		fifo:      patterns.NewFIFO[[]byte](ctx, int(options.size)),
+		fifo:      patterns.NewFIFO(ctx, int(options.size), expiryScan(options)...),
 		validator: validator,
 		opts:      options,
 	}
+}
+
+// expiryScan returns the FIFO options that implement delivery expiry, or nil
+// when expiry is disabled.
+func expiryScan(opts options) []patterns.Option[delivery] {
+	if opts.expiry <= 0 {
+		return nil
+	}
+	interval := opts.expiryScan
+	if interval <= 0 {
+		interval = opts.expiry
+	}
+	ttl, logger := opts.expiry, opts.logger
+	remove := func(d delivery) bool {
+		if time.Now().After(d.expiration) {
+			logger.Info("dropping expired webhook delivery", "expiration", d.expiration, "ttl", ttl, "size", len(d.body))
+			return true
+		}
+		return false
+	}
+	return []patterns.Option[delivery]{patterns.WithPeriodicScan(interval, remove)}
 }
 
 // Stop shuts down the internal FIFO goroutine. It blocks until the goroutine
@@ -176,7 +249,7 @@ func (r *Relay) ServeWebhook(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 	select {
-	case r.fifo.In() <- payload:
+	case r.fifo.In() <- delivery{header: r.forwardedHeaders(req.Header), body: payload, expiration: time.Now().Add(r.opts.expiry)}:
 		r.opts.logger.Info("ServeWebhook: received payload and sent to FIFO", "size", len(payload))
 		r.opts.relayedCounter(req.Context())
 	case <-req.Context().Done():
@@ -202,14 +275,35 @@ func (r *Relay) WaitForWebhook(w http.ResponseWriter, req *http.Request) {
 		if !ok {
 			return
 		}
+		for name, values := range job.header {
+			for _, v := range values {
+				w.Header().Add(name, v)
+			}
+		}
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write(job)
-		r.opts.logger.Info("WaitForWebhook: sent payload to client", "size", len(job))
+		_, _ = w.Write(job.body)
+		r.opts.logger.Info("WaitForWebhook: sent payload to client", "size", len(job.body))
 		r.opts.readCounter(req.Context())
 	case <-req.Context().Done():
 		err := req.Context().Err()
 		r.opts.logger.Info("WaitForWebhook: request context cancelled while waiting for payload from FIFO", "err", err)
 	}
+}
+
+// forwardedHeaders returns a copy of the configured subset of src, or nil if no
+// configured header is present. The returned values are copied so they are not
+// aliased with the request headers once it has been recycled.
+func (r *Relay) forwardedHeaders(src http.Header) http.Header {
+	out := make(http.Header, len(r.opts.forwardedHeaders))
+	for _, name := range r.opts.forwardedHeaders {
+		if values := src.Values(name); len(values) > 0 {
+			out[http.CanonicalHeaderKey(name)] = append([]string(nil), values...)
+		}
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
 }
 
 // DeliveryHandler returns an http.Handler that serves the webhook endpoint

@@ -17,6 +17,22 @@ DefaultPayloadLimit = 1024 * 1024 // 1MB
 
 
 ## Variables
+### DefaultForwardedHeaders
+```go
+DefaultForwardedHeaders = []string{
+	"X-GitHub-Event",
+	"X-GitHub-Delivery",
+	"X-GitHub-Hook-ID",
+}
+
+```
+DefaultForwardedHeaders are the request headers copied from an incoming
+webhook delivery onto the long-poll response when WithForwardedHeaders is
+not used. They carry the GitHub event type and delivery metadata a client
+needs to dispatch events. The X-Hub-Signature-256 header is deliberately
+omitted: the relay has already verified it, and the client has no secret to
+re-check.
+
 ### ErrWrongServiceSpecificConfig
 ```go
 ErrWrongServiceSpecificConfig = fmt.Errorf("missing service specific config")
@@ -103,6 +119,26 @@ fails validation, e.g. due to an invalid signature. relayedCounter is
 incremented when a payload is successfully relayed to the FIFO. readCounter
 is incremented when a payload is successfully read from the FIFO and sent to
 a client.
+
+
+```go
+func WithExpiry(ttl, scanInterval time.Duration) Option
+```
+WithExpiry configures the relay to drop queued deliveries that have
+waited longer than ttl without being read by a client, guarding against
+unbounded staleness when no client is polling. The queue is scanned every
+scanInterval; if scanInterval is <= 0 it defaults to ttl. Expiry is disabled
+(the default) when ttl is <= 0, in which case deliveries are only dropped by
+the queue's drop-oldest behaviour when it is full.
+
+
+```go
+func WithForwardedHeaders(names ...string) Option
+```
+WithForwardedHeaders sets the request header names that are copied from
+an incoming webhook delivery onto the long-poll response sent to clients.
+It replaces DefaultForwardedHeaders; pass no names to forward none. Header
+matching is case-insensitive and absent headers are skipped.
 
 
 ```go

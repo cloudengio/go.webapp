@@ -8,12 +8,15 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"io"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"cloudeng.io/webapp"
 	"cloudeng.io/webapp/webhooks"
@@ -56,6 +59,45 @@ func pollWebhook(t *testing.T, handler func(http.ResponseWriter, *http.Request))
 	w := httptest.NewRecorder()
 	handler(w, req)
 	return w.Body.Bytes()
+}
+
+func TestRelayForwardsHeaders(t *testing.T) {
+	handler, _ := newTestRelay(t)
+	payload := []byte(`{"event":"test"}`)
+
+	// Post carrying the default forwarded headers plus one that must be dropped.
+	postReq := httptest.NewRequest(http.MethodPost, "/api/webhook", bytes.NewReader(payload))
+	postReq.ContentLength = int64(len(payload))
+	postReq.Header.Set("Content-Type", "application/json")
+	postReq.Header.Set("X-GitHub-Event", "workflow_run")
+	postReq.Header.Set("X-GitHub-Delivery", "12345")
+	postReq.Header.Set("X-Hub-Signature-256", "sha256=deadbeef")
+	if got := func() int {
+		w := httptest.NewRecorder()
+		handler(w, postReq)
+		return w.Code
+	}(); got != http.StatusAccepted {
+		t.Fatalf("post: got status %d, want %d", got, http.StatusAccepted)
+	}
+
+	waitReq := httptest.NewRequest(http.MethodGet, "/api/wait", nil)
+	w := httptest.NewRecorder()
+	handler(w, waitReq)
+
+	if got := w.Header().Get("X-GitHub-Event"); got != "workflow_run" {
+		t.Errorf("X-GitHub-Event: got %q, want %q", got, "workflow_run")
+	}
+	if got := w.Header().Get("X-GitHub-Delivery"); got != "12345" {
+		t.Errorf("X-GitHub-Delivery: got %q, want %q", got, "12345")
+	}
+	// Non-forwarded headers, including the already-verified signature, must not
+	// be leaked to the client.
+	if got := w.Header().Get("X-Hub-Signature-256"); got != "" {
+		t.Errorf("X-Hub-Signature-256: got %q, want it dropped", got)
+	}
+	if !bytes.Equal(w.Body.Bytes(), payload) {
+		t.Errorf("body: got %s, want %s", w.Body.Bytes(), payload)
+	}
 }
 
 func TestRelayHappyPath(t *testing.T) {
@@ -345,5 +387,77 @@ func TestRelayCounterNoIncrementOnContextCancel(t *testing.T) {
 	}
 	if got := readN(); got != 0 {
 		t.Errorf("read: got %d, want 0", got)
+	}
+}
+
+// signalHandler is a slog.Handler that closes ch the first time it records a
+// message equal to msg, letting a test observe a specific log event. ch and
+// once are shared with any derived handler so WithAttrs/WithGroup (used by
+// slog.Logger.With) preserve the override and still fire exactly once.
+type signalHandler struct {
+	slog.Handler
+	msg  string
+	ch   chan struct{}
+	once *sync.Once
+}
+
+func newSignalHandler(msg string, ch chan struct{}) *signalHandler {
+	return &signalHandler{
+		Handler: slog.NewTextHandler(io.Discard, nil),
+		msg:     msg,
+		ch:      ch,
+		once:    &sync.Once{},
+	}
+}
+
+func (h *signalHandler) clone(base slog.Handler) *signalHandler {
+	return &signalHandler{Handler: base, msg: h.msg, ch: h.ch, once: h.once}
+}
+
+func (h *signalHandler) WithAttrs(attrs []slog.Attr) slog.Handler {
+	return h.clone(h.Handler.WithAttrs(attrs))
+}
+
+func (h *signalHandler) WithGroup(name string) slog.Handler {
+	return h.clone(h.Handler.WithGroup(name))
+}
+
+func (h *signalHandler) Handle(ctx context.Context, r slog.Record) error {
+	if r.Message == h.msg {
+		h.once.Do(func() { close(h.ch) })
+	}
+	return h.Handler.Handle(ctx, r)
+}
+
+// TestRelayExpiry verifies that a queued delivery which is not read within the
+// configured TTL is dropped by the periodic expiry scan.
+func TestRelayExpiry(t *testing.T) {
+	expired := make(chan struct{})
+	logger := slog.New(newSignalHandler("dropping expired webhook delivery", expired))
+	handler, _ := newTestRelay(t,
+		webhooks.WithLogger(logger),
+		webhooks.WithExpiry(20*time.Millisecond, 5*time.Millisecond),
+	)
+
+	if got := postWebhook(t, handler, []byte(`"stale"`)); got != http.StatusAccepted {
+		t.Fatalf("post: got status %d, want %d", got, http.StatusAccepted)
+	}
+
+	// Nothing polls, so the delivery ages past the TTL and the scan drops it.
+	select {
+	case <-expired:
+	case <-time.After(2 * time.Second):
+		t.Fatal("delivery was not expired within the timeout")
+	}
+
+	// The queue must now be empty: a poll whose context is already cancelled
+	// returns without a body only if there is nothing to deliver.
+	cancelledCtx, cancel := context.WithCancel(context.Background())
+	cancel()
+	req := httptest.NewRequest(http.MethodGet, "/api/wait", nil).WithContext(cancelledCtx)
+	w := httptest.NewRecorder()
+	handler(w, req)
+	if w.Body.Len() > 0 {
+		t.Errorf("queue not empty after expiry: got %q", w.Body.String())
 	}
 }
