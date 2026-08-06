@@ -3,13 +3,13 @@ module cloudeng.io/webapp
 go 1.26.4
 
 require (
-	cloudeng.io/cicd v0.0.0-20260804222138-e9281ed260ba
-	cloudeng.io/cmdutil v0.0.0-20260804222138-e9281ed260ba
+	cloudeng.io/cicd v0.0.0-20260806150854-f21c21e021b8
+	cloudeng.io/cmdutil v0.0.0-20260806150854-f21c21e021b8
 	cloudeng.io/errors v0.0.14-0.20260312171538-61fcde6ce278
-	cloudeng.io/file v0.0.0-20260804222138-e9281ed260ba
-	cloudeng.io/io v0.0.0-20260804222138-e9281ed260ba
-	cloudeng.io/logging v0.0.0-20260804222138-e9281ed260ba
-	cloudeng.io/net v0.0.0-20260804222138-e9281ed260ba
+	cloudeng.io/file v0.0.0-20260806150854-f21c21e021b8
+	cloudeng.io/io v0.0.0-20260806150854-f21c21e021b8
+	cloudeng.io/logging v0.0.0-20260806150854-f21c21e021b8
+	cloudeng.io/net v0.0.0-20260806150854-f21c21e021b8
 	cloudeng.io/os v0.0.0-20260804222138-e9281ed260ba
 	cloudeng.io/sync v0.0.12-0.20260804222138-e9281ed260ba
 	cloudeng.io/text v0.0.16-0.20260624171915-da98fe9dec2b
@@ -27,8 +27,8 @@ require (
 )
 
 require (
-	cloudeng.io/algo v0.0.0-20260804222138-e9281ed260ba // indirect
-	cloudeng.io/sys v0.0.0-20260804222138-e9281ed260ba // indirect
+	cloudeng.io/algo v0.0.0-20260806150854-f21c21e021b8 // indirect
+	cloudeng.io/sys v0.0.0-20260806150854-f21c21e021b8 // indirect
 	github.com/chromedp/sysutil v1.1.0 // indirect
 	github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc // indirect
 	github.com/decred/dcrd/dcrec/secp256k1/v4 v4.4.1 // indirect
