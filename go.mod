@@ -6,11 +6,11 @@ require (
 	cloudeng.io/cicd v0.0.0-20260806150854-f21c21e021b8
 	cloudeng.io/cmdutil v0.0.0-20260806150854-f21c21e021b8
 	cloudeng.io/errors v0.0.14-0.20260312171538-61fcde6ce278
-	cloudeng.io/file v0.0.0-20260806150854-f21c21e021b8
+	cloudeng.io/file v0.0.0-20260817221234-f34e7b6f24cd
 	cloudeng.io/io v0.0.0-20260806150854-f21c21e021b8
-	cloudeng.io/logging v0.0.0-20260806150854-f21c21e021b8
+	cloudeng.io/logging v0.0.0-20260817221234-f34e7b6f24cd
 	cloudeng.io/net v0.0.0-20260806150854-f21c21e021b8
-	cloudeng.io/os v0.0.0-20260804222138-e9281ed260ba
+	cloudeng.io/os v0.0.0-20260807191443-11b7f4ecaaa0
 	cloudeng.io/sync v0.0.12-0.20260804222138-e9281ed260ba
 	cloudeng.io/text v0.0.16-0.20260624171915-da98fe9dec2b
 	cloudeng.io/webapi/operations v0.0.0-20260723015342-5c2777c54ca5
@@ -21,20 +21,20 @@ require (
 	github.com/go-webauthn/webauthn v0.17.4
 	github.com/lestrrat-go/jwx/v3 v3.2.0
 	github.com/stretchr/testify v1.11.1
-	golang.org/x/crypto v0.54.0
-	golang.org/x/net v0.57.0
+	golang.org/x/crypto v0.55.0
+	golang.org/x/net v0.58.0
 	gopkg.in/yaml.v3 v3.0.1
 )
 
 require (
-	cloudeng.io/algo v0.0.0-20260806150854-f21c21e021b8 // indirect
-	cloudeng.io/sys v0.0.0-20260806150854-f21c21e021b8 // indirect
+	cloudeng.io/algo v0.0.0-20260817221234-f34e7b6f24cd // indirect
+	cloudeng.io/sys v0.0.0-20260817221234-f34e7b6f24cd // indirect
 	github.com/chromedp/sysutil v1.1.0 // indirect
 	github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc // indirect
 	github.com/decred/dcrd/dcrec/secp256k1/v4 v4.4.1 // indirect
 	github.com/fxamacker/cbor/v2 v2.9.2 // indirect
 	github.com/go-viper/mapstructure/v2 v2.5.0 // indirect
-	github.com/go-webauthn/x v0.2.6 // indirect
+	github.com/go-webauthn/x v0.2.7 // indirect
 	github.com/gobwas/httphead v0.1.0 // indirect
 	github.com/gobwas/pool v0.2.1 // indirect
 	github.com/gobwas/ws v1.4.0 // indirect
@@ -56,5 +56,5 @@ require (
 	github.com/x448/float16 v0.8.4 // indirect
 	golang.org/x/sync v0.22.0 // indirect
 	golang.org/x/sys v0.47.0 // indirect
-	golang.org/x/text v0.40.0 // indirect
+	golang.org/x/text v0.41.0 // indirect
 )

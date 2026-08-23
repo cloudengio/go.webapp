@@ -29,6 +29,9 @@ type Relay struct {
 	fifo      *patterns.FIFO[delivery]
 	validator Validator
 	opts      options
+	// readSlot serialises long-poll readers when exclusive reads are
+	// configured; it is a single-entry semaphore, nil when disabled.
+	readSlot chan struct{}
 }
 
 // delivery is a validated webhook payload together with the subset of the
@@ -45,6 +48,7 @@ type options struct {
 	forwardedHeaders []string
 	expiry           time.Duration
 	expiryScan       time.Duration
+	exclusiveReads   bool
 	logger           *slog.Logger
 	deniedCounter    webapp.CounterInc // validation failed, e.g. due to invalid signature
 	relayedCounter   webapp.CounterInc // successfully relayed to FIFO
@@ -108,6 +112,18 @@ func WithExpiry(ttl, scanInterval time.Duration) Option {
 	return func(opts *options) {
 		opts.expiry = ttl
 		opts.expiryScan = scanInterval
+	}
+}
+
+// WithExclusiveReads configures the long-poll endpoint to admit at most one
+// reader at a time. While a reader is waiting for, or receiving, a delivery
+// any additional long-poll request is rejected immediately with
+// 409 Conflict rather than competing for deliveries. The default is to allow
+// any number of concurrent readers, with each delivery going to exactly one
+// of them.
+func WithExclusiveReads(exclusive bool) Option {
+	return func(opts *options) {
+		opts.exclusiveReads = exclusive
 	}
 }
 
@@ -179,10 +195,15 @@ func NewRelay(ctx context.Context, validator Validator, opts ...Option) *Relay {
 		options.readCounter = noopCounter
 	}
 	options.logger = options.logger.With("component", "webhooks.Relay")
+	var readSlot chan struct{}
+	if options.exclusiveReads {
+		readSlot = make(chan struct{}, 1)
+	}
 	return &Relay{
 		fifo:      patterns.NewFIFO(ctx, int(options.size), expiryScan(options)...),
 		validator: validator,
 		opts:      options,
+		readSlot:  readSlot,
 	}
 }
 
@@ -265,10 +286,22 @@ func (r *Relay) ServeWebhook(w http.ResponseWriter, req *http.Request) {
 // blocking until a webhook payload is available.
 // If the request context is cancelled while waiting, it logs the cancellation
 // and returns without responding.
+// When exclusive reads are configured (see WithExclusiveReads) and another
+// reader is already waiting, it responds immediately with 409 Conflict.
 func (r *Relay) WaitForWebhook(w http.ResponseWriter, req *http.Request) {
 	if req.Method != http.MethodGet {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
+	}
+	if r.readSlot != nil {
+		select {
+		case r.readSlot <- struct{}{}:
+			defer func() { <-r.readSlot }()
+		default:
+			r.opts.logger.Info("WaitForWebhook: rejecting long poll request, another reader is active")
+			http.Error(w, "another long poll reader is active", http.StatusConflict)
+			return
+		}
 	}
 	select {
 	case job, ok := <-r.fifo.Out():

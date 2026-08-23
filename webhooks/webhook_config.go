@@ -20,6 +20,7 @@ type Config struct {
 	RelayPath       string            `yaml:"relay_path" doc:"path to read relay payloads from"`
 	MaxPayloadSize  cmdyaml.ByteSize  `yaml:"max_payload_size" doc:"maximum allowed payload size for incoming webhook requests in bytes, e.g. 1048576 for 1MB"`
 	MaxQueueSize    int               `yaml:"max_queue_size" doc:"maximum number of payloads to hold in the queue for processing, leave empty for default"`
+	ExclusiveReads  bool              `yaml:"exclusive_reads" doc:"if true, at most one long poll reader is admitted at a time and concurrent readers are rejected with 409 Conflict"`
 	Service         string            `yaml:"service" doc:"type of webhook to serve, e.g. github, etc."`
 	ServiceSpecific *cmdyaml.Deferred `yaml:"service_specific" doc:"additional details specific to the type of webhook being served, leave empty for default"`
 }
@@ -64,6 +65,7 @@ func (c Config) Options() []Option {
 	opts := []Option{
 		WithQueueSize(int64(c.MaxQueueSize)),
 		WithMaxPayloadSize(int64(c.MaxPayloadSize)),
+		WithExclusiveReads(c.ExclusiveReads),
 	}
 	return opts
 }
