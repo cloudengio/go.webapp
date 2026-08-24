@@ -200,10 +200,14 @@ relay_path: "/relay"
 service: "github"
 max_queue_size: 5
 max_payload_size: 512
+exclusive_reads: true
 `
 	var cfg webhooks.Config
 	if err := yaml.Unmarshal([]byte(input), &cfg); err != nil {
 		t.Fatalf("Unmarshal: %v", err)
+	}
+	if !cfg.ExclusiveReads {
+		t.Errorf("ExclusiveReads: got false, want true")
 	}
 	if cfg.DeliveryPath != "/hook" {
 		t.Errorf("DeliveryPath: got %q, want %q", cfg.DeliveryPath, "/hook")
@@ -345,6 +349,7 @@ func TestConfigMarshalYAML_ExplicitValues(t *testing.T) {
 		Service:        "gitlab",
 		MaxQueueSize:   42,
 		MaxPayloadSize: 512,
+		ExclusiveReads: true,
 	}
 	data, err := yaml.Marshal(cfg)
 	if err != nil {
@@ -359,6 +364,9 @@ func TestConfigMarshalYAML_ExplicitValues(t *testing.T) {
 	}
 	if got.MaxPayloadSize != 512 {
 		t.Errorf("MaxPayloadSize: got %d, want 512", got.MaxPayloadSize)
+	}
+	if !got.ExclusiveReads {
+		t.Errorf("ExclusiveReads: got false, want true")
 	}
 }
 

@@ -76,6 +76,7 @@ type Config struct {
 	RelayPath       string            `yaml:"relay_path" doc:"path to read relay payloads from"`
 	MaxPayloadSize  cmdyaml.ByteSize  `yaml:"max_payload_size" doc:"maximum allowed payload size for incoming webhook requests in bytes, e.g. 1048576 for 1MB"`
 	MaxQueueSize    int               `yaml:"max_queue_size" doc:"maximum number of payloads to hold in the queue for processing, leave empty for default"`
+	ExclusiveReads  bool              `yaml:"exclusive_reads" doc:"if true, at most one long poll reader is admitted at a time and concurrent readers are rejected with 409 Conflict"`
 	Service         string            `yaml:"service" doc:"type of webhook to serve, e.g. github, etc."`
 	ServiceSpecific *cmdyaml.Deferred `yaml:"service_specific" doc:"additional details specific to the type of webhook being served, leave empty for default"`
 }
@@ -119,6 +120,16 @@ fails validation, e.g. due to an invalid signature. relayedCounter is
 incremented when a payload is successfully relayed to the FIFO. readCounter
 is incremented when a payload is successfully read from the FIFO and sent to
 a client.
+
+
+```go
+func WithExclusiveReads(exclusive bool) Option
+```
+WithExclusiveReads configures the long-poll endpoint to admit at most one
+reader at a time. While a reader is waiting for, or receiving, a delivery
+any additional long-poll request is rejected immediately with 409 Conflict
+rather than competing for deliveries. The default is to allow any number of
+concurrent readers, with each delivery going to exactly one of them.
 
 
 ```go
@@ -238,6 +249,8 @@ WaitForWebhook waits for a payload to be received on the FIFO and responds
 with the payload as JSON. It is intended to support long polling by blocking
 until a webhook payload is available. If the request context is cancelled
 while waiting, it logs the cancellation and returns without responding.
+When exclusive reads are configured (see WithExclusiveReads) and another
+reader is already waiting, it responds immediately with 409 Conflict.
 
 
 

@@ -234,6 +234,103 @@ func TestRelayWaitContextCancelled(t *testing.T) {
 	}
 }
 
+func TestRelayExclusiveReads(t *testing.T) {
+	handler, _ := newTestRelay(t, webhooks.WithExclusiveReads(true))
+
+	// Park a first reader in the long-poll endpoint; it holds the read slot
+	// until its request context is cancelled. A concurrent probe below may
+	// hold the slot momentarily and bounce this reader with a 409, so retry
+	// until a request is admitted, i.e. blocks until cancellation.
+	firstCtx, cancelFirst := context.WithCancel(context.Background())
+	firstDone := make(chan struct{})
+	go func() {
+		defer close(firstDone)
+		for {
+			w := httptest.NewRecorder()
+			req := httptest.NewRequest(http.MethodGet, "/api/wait", nil).WithContext(firstCtx)
+			handler(w, req)
+			if w.Code != http.StatusConflict {
+				return
+			}
+		}
+	}()
+
+	// Once the first reader is inside the handler, concurrent polls must be
+	// rejected with 409. Poll until that is observed to avoid racing with the
+	// goroutine starting up. The probe requests carry an already-cancelled
+	// context so that one admitted before the first reader takes the slot
+	// returns immediately instead of blocking on the empty queue.
+	probeCtx, cancelProbe := context.WithCancel(context.Background())
+	cancelProbe()
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		req := httptest.NewRequest(http.MethodGet, "/api/wait", nil).WithContext(probeCtx)
+		w := httptest.NewRecorder()
+		handler(w, req)
+		if w.Code == http.StatusConflict {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("second reader was never rejected, last status %d", w.Code)
+		}
+		time.Sleep(time.Millisecond)
+	}
+
+	// Releasing the first reader frees the slot for subsequent readers.
+	cancelFirst()
+	<-firstDone
+
+	payload := []byte(`{"event":"exclusive"}`)
+	if got := postWebhook(t, handler, payload); got != http.StatusAccepted {
+		t.Fatalf("post: got status %d, want %d", got, http.StatusAccepted)
+	}
+	req := httptest.NewRequest(http.MethodGet, "/api/wait", nil)
+	w := httptest.NewRecorder()
+	handler(w, req)
+	if got := w.Code; got != http.StatusOK {
+		t.Errorf("wait after release: got status %d, want %d", got, http.StatusOK)
+	}
+	if !bytes.Equal(w.Body.Bytes(), payload) {
+		t.Errorf("body: got %s, want %s", w.Body.Bytes(), payload)
+	}
+}
+
+func TestRelayConcurrentReadsDefault(t *testing.T) {
+	handler, _ := newTestRelay(t)
+
+	// Without exclusive reads, a second reader is admitted while the first is
+	// still waiting: both block until a delivery arrives, and each delivery
+	// goes to exactly one reader.
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	var got atomic.Int32
+	var wg sync.WaitGroup
+	for range 2 {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			req := httptest.NewRequest(http.MethodGet, "/api/wait", nil).WithContext(ctx)
+			w := httptest.NewRecorder()
+			handler(w, req)
+			if w.Code == http.StatusOK {
+				got.Add(1)
+			}
+		}()
+	}
+
+	payload := []byte(`{"event":"concurrent"}`)
+	if status := postWebhook(t, handler, payload); status != http.StatusAccepted {
+		t.Fatalf("post: got status %d, want %d", status, http.StatusAccepted)
+	}
+	if status := postWebhook(t, handler, payload); status != http.StatusAccepted {
+		t.Fatalf("post: got status %d, want %d", status, http.StatusAccepted)
+	}
+	wg.Wait()
+	if got.Load() != 2 {
+		t.Errorf("readers served: got %d, want 2", got.Load())
+	}
+}
+
 func TestRelayValidatorError(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)

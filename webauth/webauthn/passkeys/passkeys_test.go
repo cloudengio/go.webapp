@@ -57,12 +57,12 @@ func (m *mockWebAuthn) FinishRegistration(_ webauthn.User, _ webauthn.SessionDat
 
 func (m *mockWebAuthn) BeginDiscoverableMediatedLogin(_ protocol.CredentialMediationRequirement, _ ...webauthn.LoginOption) (*protocol.CredentialAssertion, *webauthn.SessionData, error) {
 	return &protocol.CredentialAssertion{
-			Response: protocol.PublicKeyCredentialRequestOptions{
-				Challenge: protocol.URLEncodedBase64("test-challenge"),
-			},
-		}, &webauthn.SessionData{
-			Challenge: "dGVzdC1jaGFsbGVuZ2U",
-		}, nil
+		Response: protocol.PublicKeyCredentialRequestOptions{
+			Challenge: protocol.URLEncodedBase64("test-challenge"),
+		},
+	}, &webauthn.SessionData{
+		Challenge: "dGVzdC1jaGFsbGVuZ2U",
+	}, nil
 }
 
 func (m *mockWebAuthn) FinishPasskeyLogin(handler webauthn.DiscoverableUserHandler, session webauthn.SessionData, _ *http.Request) (webauthn.User, *webauthn.Credential, error) {
