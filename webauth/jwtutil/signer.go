@@ -65,10 +65,10 @@ func NewSigner(jwkKey jwk.Key, id string, algo jwa.SignatureAlgorithm) (Signer, 
 		return nil, err
 	}
 	return signer{
-		pk:        pk,
-		opt:       jwt.WithKey(algo, jwkKey),
-		validator: validator{set: set},
-		algo:      algo,
+		pk:   pk,
+		opt:  jwt.WithKey(algo, jwkKey),
+		set:  set,
+		algo: algo,
 	}, nil
 
 }

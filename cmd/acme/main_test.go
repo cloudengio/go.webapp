@@ -16,24 +16,19 @@ import (
 	"cloudeng.io/logging"
 	"cloudeng.io/logging/ctxlog"
 	"cloudeng.io/webapp"
-	"cloudeng.io/webapp/webauth/acme"
 	"cloudeng.io/webapp/webauth/acme/pebble"
 	"cloudeng.io/webapp/webauth/acme/pebble/pebbletest"
 )
 
 func defaultManagerFlags(pebbleCfg pebble.Config, pebbleTestDir, pebbleCacheDir string) certManagerFlags {
 	return certManagerFlags{
-		ClientHostFlag: ClientHostFlag{pebbleCfg.Address},
-		ServiceFlags: acme.ServiceFlags{
-			Provider: pebbleCfg.DirectoryURL(),
-			Email:    "dev@cloudeng.io",
-		},
+		ClientHostFlag:   ClientHostFlag{pebbleCfg.Address},
+		Provider:         pebbleCfg.DirectoryURL(),
+		Email:            "dev@cloudeng.io",
 		HTTPPort:         pebbleCfg.HTTPPort,
 		TestingCAPEMFlag: TestingCAPEMFlag{filepath.Join(pebbleTestDir, pebbleCfg.CAFile)},
 		RefreshInterval:  time.Minute,
-		TLSCertStoreFlags: TLSCertStoreFlags{
-			LocalCacheDir: pebbleCacheDir,
-		},
+		LocalCacheDir:    pebbleCacheDir,
 	}
 }
 
