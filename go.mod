@@ -1,16 +1,16 @@
 module cloudeng.io/webapp
 
-go 1.26.4
+go 1.27
 
 require (
-	cloudeng.io/cicd v0.0.0-20260823223504-797c3e258457
-	cloudeng.io/cmdutil v0.0.0-20260823223504-797c3e258457
+	cloudeng.io/cicd v0.0.0-20260826182854-c9ad2d9d1c94
+	cloudeng.io/cmdutil v0.0.0-20260826182854-c9ad2d9d1c94
 	cloudeng.io/errors v0.0.14-0.20260312171538-61fcde6ce278
-	cloudeng.io/file v0.0.0-20260823223504-797c3e258457
-	cloudeng.io/io v0.0.0-20260823223504-797c3e258457
-	cloudeng.io/logging v0.0.0-20260823223504-797c3e258457
-	cloudeng.io/net v0.0.0-20260823223504-797c3e258457
-	cloudeng.io/os v0.0.0-20260823223504-797c3e258457
+	cloudeng.io/file v0.0.0-20260826182854-c9ad2d9d1c94
+	cloudeng.io/io v0.0.0-20260826182854-c9ad2d9d1c94
+	cloudeng.io/logging v0.0.0-20260826182854-c9ad2d9d1c94
+	cloudeng.io/net v0.0.0-20260826182854-c9ad2d9d1c94
+	cloudeng.io/os v0.0.0-20260826151410-a6aa81de89d4
 	cloudeng.io/sync v0.0.12-0.20260804222138-e9281ed260ba
 	cloudeng.io/text v0.0.16-0.20260624171915-da98fe9dec2b
 	cloudeng.io/webapi/operations v0.0.0-20260808001644-2694e12e1341
@@ -20,15 +20,15 @@ require (
 	github.com/go-json-experiment/json v0.0.0-20260820222146-c27c302e5fc3
 	github.com/go-webauthn/webauthn v0.17.4
 	github.com/lestrrat-go/jwx/v3 v3.2.0
-	github.com/stretchr/testify v1.12.0
+	github.com/stretchr/testify v1.12.1
 	golang.org/x/crypto v0.55.0
 	golang.org/x/net v0.58.0
 	gopkg.in/yaml.v3 v3.0.1
 )
 
 require (
-	cloudeng.io/algo v0.0.0-20260823223504-797c3e258457 // indirect
-	cloudeng.io/sys v0.0.0-20260823223504-797c3e258457 // indirect
+	cloudeng.io/algo v0.0.0-20260826151410-a6aa81de89d4 // indirect
+	cloudeng.io/sys v0.0.0-20260826182854-c9ad2d9d1c94 // indirect
 	github.com/chromedp/sysutil v1.1.0 // indirect
 	github.com/decred/dcrd/dcrec/secp256k1/v4 v4.4.1 // indirect
 	github.com/fxamacker/cbor/v2 v2.9.3 // indirect
@@ -52,6 +52,7 @@ require (
 	github.com/tinylib/msgp v1.6.4 // indirect
 	github.com/valyala/fastjson v1.6.10 // indirect
 	github.com/x448/float16 v0.8.4 // indirect
+	go.yaml.in/yaml/v3 v3.0.5 // indirect
 	golang.org/x/sync v0.22.0 // indirect
 	golang.org/x/sys v0.47.0 // indirect
 	golang.org/x/text v0.41.0 // indirect
