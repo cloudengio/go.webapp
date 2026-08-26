@@ -301,21 +301,18 @@ func TestRelayConcurrentReadsDefault(t *testing.T) {
 	// Without exclusive reads, a second reader is admitted while the first is
 	// still waiting: both block until a delivery arrives, and each delivery
 	// goes to exactly one reader.
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 	var got atomic.Int32
 	var wg sync.WaitGroup
 	for range 2 {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			req := httptest.NewRequest(http.MethodGet, "/api/wait", nil).WithContext(ctx)
 			w := httptest.NewRecorder()
 			handler(w, req)
 			if w.Code == http.StatusOK {
 				got.Add(1)
 			}
-		}()
+		})
 	}
 
 	payload := []byte(`{"event":"concurrent"}`)

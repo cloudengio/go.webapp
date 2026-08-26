@@ -33,8 +33,7 @@ func checkReadBodyErr(t *testing.T, err error, tt testCase) {
 		if err == nil {
 			t.Errorf("expected error, got nil")
 		} else if tt.wantMaxBytesError {
-			var maxBytesErr *http.MaxBytesError
-			if !errors.As(err, &maxBytesErr) {
+			if _, ok := errors.AsType[*http.MaxBytesError](err); !ok {
 				t.Errorf("expected *http.MaxBytesError, got %T: %v", err, err)
 			}
 		}
@@ -147,8 +146,7 @@ func TestReadBodyLimit_ReadError(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}
-	var maxBytesErr *http.MaxBytesError
-	if errors.As(err, &maxBytesErr) {
+	if _, ok := errors.AsType[*http.MaxBytesError](err); ok {
 		t.Fatal("expected generic read error, got MaxBytesError")
 	}
 }

@@ -36,3 +36,4 @@ webauth/webauthn/passkeys/*.pem
 webauth/webauthn/passkeys/mkcert-ca
 
 .gograph/
+graphify-out/
