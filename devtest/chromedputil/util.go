@@ -16,6 +16,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"path/filepath"
 	goruntime "runtime"
 	"slices"
 	"strings"
@@ -280,6 +281,59 @@ func UserDataDirOnCI() string {
 // ChromeBinPathOnCI returns the Chrome binary path for CI.
 func ChromeBinPathOnCI() string {
 	return os.Getenv("CHROME_BIN_PATH")
+}
+
+// NativeMessagingHostsDirOnCI returns the directory where Chrome looks for native
+// messaging hosts.
+func NativeMessagingHostsDir() string {
+	configDir, err := os.UserConfigDir()
+	if err != nil {
+		return ""
+	}
+	switch goruntime.GOOS {
+	case "darwin":
+		return filepath.Join(configDir, darwinChromedpProduct(), "NativeMessagingHosts")
+	case "linux":
+		return filepath.Join(configDir, linuxChromedpProduct(), "NativeMessagingHosts")
+	default:
+		panic(fmt.Sprintf("unsupported OS: %s", goruntime.GOOS))
+	}
+}
+
+func darwinChromedpProduct() string {
+	// Determine Chrome variant from the CI binary path, defaulting to
+	// standard Google Chrome.
+	product := "Google/Chrome"
+	if bin := ChromeBinPathOnCI(); bin != "" {
+		switch {
+		case strings.Contains(bin, "for Testing"):
+			product = "Google/Chrome for Testing"
+		case strings.Contains(bin, "Chromium"):
+			product = "Chromium"
+		case strings.Contains(bin, "Canary"):
+			product = "Google/Chrome Canary"
+		}
+	}
+	return filepath.Join(product)
+}
+
+func linuxChromedpProduct() string {
+	// Determine Chrome variant directory from the CI binary path,
+	// defaulting to standard Google Chrome.
+	product := "google-chrome"
+	if bin := ChromeBinPathOnCI(); bin != "" {
+		switch {
+		case strings.Contains(bin, "chrome-for-testing"), strings.Contains(bin, "for Testing"):
+			product = "google-chrome-for-testing"
+		case strings.Contains(bin, "chromium"):
+			product = "chromium"
+		case strings.Contains(bin, "beta"):
+			product = "google-chrome-beta"
+		case strings.Contains(bin, "unstable"), strings.Contains(bin, "dev"), strings.Contains(bin, "canary"):
+			product = "google-chrome-unstable"
+		}
+	}
+	return filepath.Join(product, "NativeMessagingHosts")
 }
 
 // SkipTestsIfNoChromeForTesting skips the test if chrome-for-testing is not
