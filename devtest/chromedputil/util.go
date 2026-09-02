@@ -314,7 +314,7 @@ func darwinChromedpProduct() string {
 			product = "Google/Chrome Canary"
 		}
 	}
-	return filepath.Join(product)
+	return product
 }
 
 func linuxChromedpProduct() string {
@@ -333,7 +333,7 @@ func linuxChromedpProduct() string {
 			product = "google-chrome-unstable"
 		}
 	}
-	return filepath.Join(product, "NativeMessagingHosts")
+	return product
 }
 
 // SkipTestsIfNoChromeForTesting skips the test if chrome-for-testing is not
