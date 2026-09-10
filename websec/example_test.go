@@ -7,6 +7,7 @@ package websec_test
 import (
 	"context"
 	"crypto/ed25519"
+	"fmt"
 	"net/http"
 	"time"
 
@@ -39,7 +40,7 @@ func ExampleNewLocalhostHandler() {
 
 	// Prints: http://127.0.0.1:8080/dashboard?token=eyJhbGci...
 	// When clicked, sets the cookie and redirects cleanly to /dashboard
-	println("Open in browser:", bootstrapURL)
+	fmt.Println("Open in browser:", bootstrapURL)
 
 	http.ListenAndServe("127.0.0.1:8080", secured)
 }
