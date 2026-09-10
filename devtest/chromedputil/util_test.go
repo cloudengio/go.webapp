@@ -427,6 +427,13 @@ func TestCIEnvironment(t *testing.T) {
 // TestNativeMessagingHostsDirLocation verifies that the directory is the
 // browser's own configuration directory with NativeMessagingHosts beneath it.
 func TestNativeMessagingHostsDirLocation(t *testing.T) {
+	// Only darwin and linux have a directory to name; NativeMessagingHostsDir
+	// panics on anything else rather than guessing one.
+	switch goruntime.GOOS {
+	case "darwin", "linux":
+	default:
+		t.Skipf("no native messaging hosts directory for %v", goruntime.GOOS)
+	}
 	t.Setenv("CHROME_BIN_PATH", "")
 	config, err := os.UserConfigDir()
 	if err != nil {
