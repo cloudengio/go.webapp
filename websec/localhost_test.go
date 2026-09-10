@@ -6,11 +6,15 @@ package websec_test
 
 import (
 	"context"
+	"crypto/ed25519"
+	"crypto/rand"
 	"net/http"
 	"net/http/httptest"
 	"sync/atomic"
 	"testing"
+	"time"
 
+	"cloudeng.io/webapp/webauth/jwtutil"
 	"cloudeng.io/webapp/websec"
 )
 
@@ -342,5 +346,243 @@ func TestIndividualCounters(t *testing.T) {
 
 	if nonLoopbackCount.Load() != 1 {
 		t.Errorf("expected nonLoopbackCount=1, got %d", nonLoopbackCount.Load())
+	}
+}
+
+func setupSigner(t *testing.T) jwtutil.Signer {
+	t.Helper()
+	_, priv, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatalf("failed to generate ed25519 key: %v", err)
+	}
+	signer, err := jwtutil.NewED25519Signer(priv, "test-key-id")
+	if err != nil {
+		t.Fatalf("failed to create signer: %v", err)
+	}
+	return signer
+}
+
+func TestJWTCookieValidation(t *testing.T) {
+	ctx := t.Context()
+	signer := setupSigner(t)
+	pubKey, err := signer.PublicKey()
+	if err != nil {
+		t.Fatalf("failed to get public key: %v", err)
+	}
+
+	claimKey := "role"
+	claimValue := "admin"
+
+	// Create valid token
+	validToken, err := jwtutil.CreateVerificationToken(ctx, signer, "user-1", claimKey, claimValue, time.Hour, "", "")
+	if err != nil {
+		t.Fatalf("failed to create verification token: %v", err)
+	}
+
+	// Create expired token
+	expiredToken, err := jwtutil.CreateVerificationToken(ctx, signer, "user-1", claimKey, claimValue, -time.Minute, "", "")
+	if err != nil {
+		t.Fatalf("failed to create expired token: %v", err)
+	}
+
+	// Create token with wrong claim value
+	wrongClaimToken, err := jwtutil.CreateVerificationToken(ctx, signer, "user-1", claimKey, "guest", time.Hour, "", "")
+	if err != nil {
+		t.Fatalf("failed to create wrong claim token: %v", err)
+	}
+
+	// Signer with different key
+	otherSigner := setupSigner(t)
+	otherKeyToken, err := jwtutil.CreateVerificationToken(ctx, otherSigner, "user-1", claimKey, claimValue, time.Hour, "", "")
+	if err != nil {
+		t.Fatalf("failed to create other key token: %v", err)
+	}
+
+	var contextSubject string
+	echoHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if tok, ok := websec.TokenFromContext(r.Context()); ok {
+			sub, _ := tok.Subject()
+			contextSubject = sub
+		}
+		w.WriteHeader(http.StatusOK)
+	})
+
+	handler := websec.NewLocalhostHandler(echoHandler,
+		websec.WithJWTCookie("auth_cookie", pubKey, claimKey, claimValue),
+		websec.WithJWTBootstrapQueryParam(""), // disable bootstrap for this test
+	)
+
+	tests := []struct {
+		name       string
+		cookieVal  string
+		wantStatus int
+		wantSub    string
+	}{
+		{
+			name:       "valid token in cookie",
+			cookieVal:  string(validToken),
+			wantStatus: http.StatusOK,
+			wantSub:    "user-1",
+		},
+		{
+			name:       "missing cookie",
+			cookieVal:  "",
+			wantStatus: http.StatusUnauthorized,
+		},
+		{
+			name:       "corrupted token",
+			cookieVal:  "invalid.token.string",
+			wantStatus: http.StatusUnauthorized,
+		},
+		{
+			name:       "expired token",
+			cookieVal:  string(expiredToken),
+			wantStatus: http.StatusUnauthorized,
+		},
+		{
+			name:       "wrong claim value",
+			cookieVal:  string(wrongClaimToken),
+			wantStatus: http.StatusUnauthorized,
+		},
+		{
+			name:       "different signing key",
+			cookieVal:  string(otherKeyToken),
+			wantStatus: http.StatusUnauthorized,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			contextSubject = ""
+			req := httptest.NewRequest(http.MethodGet, "/", nil)
+			req.RemoteAddr = "127.0.0.1:1234"
+			req.Host = "localhost"
+			if tc.cookieVal != "" {
+				req.AddCookie(&http.Cookie{
+					Name:  "auth_cookie",
+					Value: tc.cookieVal,
+				})
+			}
+			w := httptest.NewRecorder()
+
+			handler.ServeHTTP(w, req)
+			if got := w.Code; got != tc.wantStatus {
+				t.Errorf("got status %d, want %d", got, tc.wantStatus)
+			}
+			if tc.wantSub != "" && contextSubject != tc.wantSub {
+				t.Errorf("got context subject %q, want %q", contextSubject, tc.wantSub)
+			}
+		})
+	}
+}
+
+func TestJWTBootstrapQueryParam(t *testing.T) {
+	ctx := t.Context()
+	signer := setupSigner(t)
+	pubKey, err := signer.PublicKey()
+	if err != nil {
+		t.Fatalf("failed to get public key: %v", err)
+	}
+
+	validToken, err := jwtutil.CreateVerificationToken(ctx, signer, "user-2", "access", "granted", time.Hour, "", "")
+	if err != nil {
+		t.Fatalf("failed to create token: %v", err)
+	}
+
+	handler := websec.NewLocalhostHandler(okHandler(),
+		websec.WithJWTCookie("session_token", pubKey, "access", "granted"),
+		websec.WithJWTBootstrapQueryParam("token"),
+	)
+
+	t.Run("successful bootstrap with redirect and cookie", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodGet, "/dashboard?source=email&token="+string(validToken), nil)
+		req.RemoteAddr = "127.0.0.1:1234"
+		req.Host = "localhost"
+		w := httptest.NewRecorder()
+
+		handler.ServeHTTP(w, req)
+
+		if got, want := w.Code, http.StatusSeeOther; got != want {
+			t.Fatalf("got status %d, want %d", got, want)
+		}
+
+		// Verify redirect Location strips token query param
+		location := w.Header().Get("Location")
+		if location != "/dashboard?source=email" {
+			t.Errorf("got Location %q, want %q", location, "/dashboard?source=email")
+		}
+
+		// Verify cookie was set
+		cookies := w.Result().Cookies()
+		var sessionCookie *http.Cookie
+		for _, c := range cookies {
+			if c.Name == "session_token" {
+				sessionCookie = c
+				break
+			}
+		}
+		if sessionCookie == nil {
+			t.Fatal("session_token cookie was not set in response")
+		}
+		if sessionCookie.Value != string(validToken) {
+			t.Errorf("got cookie value %q, want %q", sessionCookie.Value, string(validToken))
+		}
+		if !sessionCookie.HttpOnly {
+			t.Error("cookie should be HttpOnly")
+		}
+		if sessionCookie.SameSite != http.SameSiteStrictMode {
+			t.Errorf("got SameSite %v, want %v", sessionCookie.SameSite, http.SameSiteStrictMode)
+		}
+
+		// Follow-up request using the newly issued cookie
+		req2 := httptest.NewRequest(http.MethodGet, "/dashboard?source=email", nil)
+		req2.RemoteAddr = "127.0.0.1:1234"
+		req2.Host = "localhost"
+		req2.AddCookie(sessionCookie)
+		w2 := httptest.NewRecorder()
+
+		handler.ServeHTTP(w2, req2)
+		if got, want := w2.Code, http.StatusOK; got != want {
+			t.Errorf("follow up with cookie: got status %d, want %d", got, want)
+		}
+	})
+
+	t.Run("invalid bootstrap token", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodGet, "/dashboard?token=bad.token", nil)
+		req.RemoteAddr = "127.0.0.1:1234"
+		req.Host = "localhost"
+		w := httptest.NewRecorder()
+
+		handler.ServeHTTP(w, req)
+		if got, want := w.Code, http.StatusUnauthorized; got != want {
+			t.Errorf("got status %d, want %d", got, want)
+		}
+	})
+}
+
+func TestInvalidJWTCounter(t *testing.T) {
+	var invalidJWTCnt, totalCnt atomic.Int32
+	signer := setupSigner(t)
+	pubKey, _ := signer.PublicKey()
+
+	handler := websec.NewLocalhostHandler(okHandler(),
+		websec.WithJWTCookie("test_cookie", pubKey, "perm", "read"),
+		websec.WithJWTBootstrapQueryParam(""),
+		websec.WithInvalidJWTCounter(func(context.Context) { invalidJWTCnt.Add(1) }),
+		websec.WithDeniedCounter(func(context.Context) { totalCnt.Add(1) }),
+	)
+
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req.RemoteAddr = "127.0.0.1:1234"
+	req.Host = "localhost"
+	w := httptest.NewRecorder()
+
+	handler.ServeHTTP(w, req)
+
+	if invalidJWTCnt.Load() != 1 {
+		t.Errorf("got invalidJWTCnt %d, want 1", invalidJWTCnt.Load())
+	}
+	if totalCnt.Load() != 1 {
+		t.Errorf("got totalCnt %d, want 1", totalCnt.Load())
 	}
 }

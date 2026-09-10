@@ -18,10 +18,21 @@ import (
 	"strings"
 
 	"cloudeng.io/webapp"
+	"cloudeng.io/webapp/webauth/jwtutil"
+	"github.com/lestrrat-go/jwx/v3/jwk"
+	"github.com/lestrrat-go/jwx/v3/jwt"
 )
 
 // Option configures the security handler.
 type Option func(o *options)
+
+type jwtConfig struct {
+	cookieName          string
+	validator           jwtutil.Validator
+	claimKey            string
+	claimValue          any
+	bootstrapQueryParam string
+}
 
 type options struct {
 	enforceLoopback       bool
@@ -32,10 +43,12 @@ type options struct {
 	securityHeaders       bool
 	customResponseHeaders map[string]string
 	logger                *slog.Logger
+	jwt                   *jwtConfig
 	totalDeniedCounter    webapp.CounterInc
 	nonLoopbackCounter    webapp.CounterInc
 	invalidHostCounter    webapp.CounterInc
 	crossSiteCounter      webapp.CounterInc
+	invalidJWTCounter     webapp.CounterInc
 }
 
 func noopCounter(context.Context) {}
@@ -63,6 +76,7 @@ func defaultOptions() options {
 		nonLoopbackCounter: noopCounter,
 		invalidHostCounter: noopCounter,
 		crossSiteCounter:   noopCounter,
+		invalidJWTCounter:  noopCounter,
 	}
 }
 
@@ -193,6 +207,62 @@ func WithCrossSiteCounter(counter webapp.CounterInc) Option {
 	}
 }
 
+// WithJWTCookie enables JWT validation for requests presented in a cookie.
+// It verifies that the cookie named cookieName contains a valid JWT verifiable
+// by pubKey and containing claimKey == claimValue. If cookieName is empty,
+// it defaults to "auth_token". By default, bootstrapping from a "?token=<jwt>"
+// URL query parameter is enabled.
+func WithJWTCookie(cookieName string, pubKey jwk.Key, claimKey string, claimValue any) Option {
+	return func(o *options) {
+		if cookieName == "" {
+			cookieName = "auth_token"
+		}
+		set := jwk.NewSet()
+		if pubKey != nil {
+			_ = set.AddKey(pubKey)
+		}
+		o.jwt = &jwtConfig{
+			cookieName:          cookieName,
+			validator:           jwtutil.NewValidator(set),
+			claimKey:            claimKey,
+			claimValue:          claimValue,
+			bootstrapQueryParam: "token",
+		}
+	}
+}
+
+// WithJWTBootstrapQueryParam configures the URL query parameter name used to bootstrap
+// the JWT cookie into the client's browser (e.g. "?token=<jwt>"). If a request arrives
+// without the cookie but with a valid token in this query parameter, the handler sets
+// the secure HTTP cookie and issues an HTTP 303 redirect to the clean URL without the token.
+// Pass an empty string to disable query parameter bootstrapping.
+func WithJWTBootstrapQueryParam(param string) Option {
+	return func(o *options) {
+		if o.jwt != nil {
+			o.jwt.bootstrapQueryParam = param
+		}
+	}
+}
+
+// WithInvalidJWTCounter configures a counter callback invoked when a request
+// is rejected due to a missing, invalid, or expired JWT.
+func WithInvalidJWTCounter(counter webapp.CounterInc) Option {
+	return func(o *options) {
+		if counter != nil {
+			o.invalidJWTCounter = counter
+		}
+	}
+}
+
+type tokenContextKey struct{}
+
+// TokenFromContext returns the validated jwt.Token from the request context,
+// if one was validated by the handler.
+func TokenFromContext(ctx context.Context) (jwt.Token, bool) {
+	tok, ok := ctx.Value(tokenContextKey{}).(jwt.Token)
+	return tok, ok
+}
+
 type handler struct {
 	next http.Handler
 	opts options
@@ -234,6 +304,14 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if h.opts.jwt != nil {
+		req, ok := h.verifyJWT(w, r)
+		if !ok {
+			return
+		}
+		r = req
+	}
+
 	if h.opts.securityHeaders {
 		for k, v := range h.opts.customResponseHeaders {
 			w.Header().Set(k, v)
@@ -243,19 +321,81 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	h.next.ServeHTTP(w, r)
 }
 
+func (h *handler) verifyJWT(w http.ResponseWriter, r *http.Request) (*http.Request, bool) {
+	cfg := h.opts.jwt
+
+	// 1. Check cookie
+	if cookie, err := r.Cookie(cfg.cookieName); err == nil && cookie.Value != "" {
+		tok, err := h.validateToken(r.Context(), cookie.Value)
+		if err == nil {
+			ctx := context.WithValue(r.Context(), tokenContextKey{}, tok)
+			return r.WithContext(ctx), true
+		}
+		h.denyWithStatus(w, r, http.StatusUnauthorized, "invalid jwt cookie: "+err.Error(), h.opts.invalidJWTCounter)
+		return r, false
+	}
+
+	// 2. Check query parameter bootstrap (e.g. ?token=<jwt>)
+	if cfg.bootstrapQueryParam != "" {
+		if tokenStr := r.URL.Query().Get(cfg.bootstrapQueryParam); tokenStr != "" {
+			if _, err := h.validateToken(r.Context(), tokenStr); err != nil {
+				h.denyWithStatus(w, r, http.StatusUnauthorized, "invalid bootstrap token: "+err.Error(), h.opts.invalidJWTCounter)
+				return r, false
+			}
+
+			// Valid token: set cookie and redirect to clean URL
+			http.SetCookie(w, &http.Cookie{
+				Name:     cfg.cookieName,
+				Value:    tokenStr,
+				Path:     "/",
+				HttpOnly: true,
+				SameSite: http.SameSiteStrictMode,
+				Secure:   r.TLS != nil,
+			})
+
+			q := r.URL.Query()
+			q.Del(cfg.bootstrapQueryParam)
+			u := *r.URL
+			u.RawQuery = q.Encode()
+			cleanURL := u.RequestURI()
+			if cleanURL == "" {
+				cleanURL = "/"
+			}
+			http.Redirect(w, r, cleanURL, http.StatusSeeOther)
+			return r, false
+		}
+	}
+
+	h.denyWithStatus(w, r, http.StatusUnauthorized, "missing authentication cookie", h.opts.invalidJWTCounter)
+	return r, false
+}
+
+func (h *handler) validateToken(ctx context.Context, tokenStr string) (jwt.Token, error) {
+	var validators []jwt.ValidateOption
+	if h.opts.jwt.claimKey != "" {
+		validators = append(validators, jwt.WithClaimValue(h.opts.jwt.claimKey, h.opts.jwt.claimValue))
+	}
+	return h.opts.jwt.validator.ParseAndValidate(ctx, []byte(tokenStr), validators...)
+}
+
 func (h *handler) deny(w http.ResponseWriter, r *http.Request, reason string, specificCounter webapp.CounterInc) {
+	h.denyWithStatus(w, r, http.StatusForbidden, reason, specificCounter)
+}
+
+func (h *handler) denyWithStatus(w http.ResponseWriter, r *http.Request, status int, reason string, specificCounter webapp.CounterInc) {
 	h.opts.totalDeniedCounter(r.Context())
 	if specificCounter != nil {
 		specificCounter(r.Context())
 	}
 	h.opts.logger.WarnContext(r.Context(), "request rejected by localhost security handler",
+		"status", status,
 		"reason", reason,
 		"remote_addr", r.RemoteAddr,
 		"host", r.Host,
 		"origin", r.Header.Get("Origin"),
 		"sec_fetch_site", r.Header.Get("Sec-Fetch-Site"),
 	)
-	http.Error(w, "forbidden: "+reason, http.StatusForbidden)
+	http.Error(w, reason, status)
 }
 
 func (h *handler) verifyLoopback(r *http.Request) bool {
