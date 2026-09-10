@@ -11,7 +11,9 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"path/filepath"
 	"reflect"
+	goruntime "runtime"
 	"slices"
 	"strings"
 	"testing"
@@ -397,5 +399,95 @@ func TestPlatformObjects(t *testing.T) {
 				t.Errorf("expected className to be %q, got %q", tc.expectedClass, platformInfo.ClassName)
 			}
 		})
+	}
+}
+
+func TestCIEnvironment(t *testing.T) {
+	// The CI accessors are thin readers of the environment, and report an
+	// empty string when unset rather than a default.
+	t.Setenv("CHROME_USER_DATA_DIR", "")
+	t.Setenv("CHROME_BIN_PATH", "")
+	if got := chromedputil.UserDataDirOnCI(); got != "" {
+		t.Errorf("got %q, want an empty string when unset", got)
+	}
+	if got := chromedputil.ChromeBinPathOnCI(); got != "" {
+		t.Errorf("got %q, want an empty string when unset", got)
+	}
+
+	t.Setenv("CHROME_USER_DATA_DIR", "/tmp/user-data")
+	t.Setenv("CHROME_BIN_PATH", "/opt/chrome/chrome")
+	if got, want := chromedputil.UserDataDirOnCI(), "/tmp/user-data"; got != want {
+		t.Errorf("got %q, want %q", got, want)
+	}
+	if got, want := chromedputil.ChromeBinPathOnCI(), "/opt/chrome/chrome"; got != want {
+		t.Errorf("got %q, want %q", got, want)
+	}
+}
+
+// TestNativeMessagingHostsDirLocation verifies that the directory is the
+// browser's own configuration directory with NativeMessagingHosts beneath it.
+func TestNativeMessagingHostsDirLocation(t *testing.T) {
+	// Only darwin and linux have a directory to name; NativeMessagingHostsDir
+	// panics on anything else rather than guessing one.
+	switch goruntime.GOOS {
+	case "darwin", "linux":
+	default:
+		t.Skipf("no native messaging hosts directory for %v", goruntime.GOOS)
+	}
+	t.Setenv("CHROME_BIN_PATH", "")
+	config, err := os.UserConfigDir()
+	if err != nil {
+		t.Skipf("no user config directory: %v", err)
+	}
+	got := chromedputil.NativeMessagingHostsDir()
+	if !strings.HasPrefix(got, config) {
+		t.Errorf("got %q, want it to be under %q", got, config)
+	}
+	if filepath.Base(got) != "NativeMessagingHosts" {
+		t.Errorf("got %q, want it to end with NativeMessagingHosts", got)
+	}
+}
+
+// TestNativeMessagingHostsDirProduct verifies that the browser variant is
+// derived from the binary path used on CI, since each variant keeps its
+// manifests in its own directory. The expected directory names differ by
+// platform, so only those for the platform under test are checked.
+func TestNativeMessagingHostsDirProduct(t *testing.T) {
+	var cases []struct{ name, bin, want string }
+	switch goruntime.GOOS {
+	case "darwin":
+		cases = []struct{ name, bin, want string }{
+			{"unset", "", "Google/Chrome"},
+			{"chrome", "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome", "Google/Chrome"},
+			{"chrome for testing",
+				"/Applications/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing",
+				"Google/Chrome for Testing"},
+			{"chromium", "/Applications/Chromium.app/Contents/MacOS/Chromium", "Chromium"},
+			{"canary", "/Applications/Google Chrome Canary.app/Contents/MacOS/Google Chrome Canary",
+				"Google/Chrome Canary"},
+		}
+	case "linux":
+		cases = []struct{ name, bin, want string }{
+			{"unset", "", "google-chrome"},
+			{"chrome", "/opt/google/chrome/chrome", "google-chrome"},
+			{"chrome for testing", "/opt/chrome-for-testing/chrome", "google-chrome-for-testing"},
+			{"chromium", "/usr/bin/chromium", "chromium"},
+			{"beta", "/opt/google/chrome-beta/chrome", "google-chrome-beta"},
+			{"unstable", "/opt/google/chrome-unstable/chrome", "google-chrome-unstable"},
+		}
+	default:
+		t.Skipf("no expected directories for %v", goruntime.GOOS)
+	}
+
+	config, err := os.UserConfigDir()
+	if err != nil {
+		t.Skipf("no user config directory: %v", err)
+	}
+	for _, tc := range cases {
+		t.Setenv("CHROME_BIN_PATH", tc.bin)
+		want := filepath.Join(config, tc.want, "NativeMessagingHosts")
+		if got := chromedputil.NativeMessagingHostsDir(); got != want {
+			t.Errorf("%v:\n got %v\nwant %v", tc.name, got, want)
+		}
 	}
 }

@@ -21,13 +21,13 @@ LetsEncryptProduction = acme.LetsEncryptURL
 
 
 ## Functions
-### Func NewAutocertManager
+### Func GetCertificateECDSAOnly
 ```go
-func NewAutocertManager(cache autocert.Cache, cl AutocertConfig, allowedHosts ...string) (*autocert.Manager, error)
+func GetCertificateECDSAOnly(getCert func(*tls.ClientHelloInfo) (*tls.Certificate, error)) func(*tls.ClientHelloInfo) (*tls.Certificate, error)
 ```
-NewAutocertManager creates a new autocert.Manager from the supplied config.
-Any supplied hosts specify the allowed hosts for the manager, ie. those for
-which it will obtain/renew certificates.
+GetCertificateECDSAOnly returns a GetCertificate function that wraps the
+provided autocert.Manager's GetCertificate function with a check that the
+client supports ECDSA certificates, returning an error if not.
 
 ### Func RefreshMetricStatusValues
 ```go
@@ -44,6 +44,13 @@ RefreshMetricsColumns returns the list of columns that will be used for the
 refresh metric. Host is populated with the host name and status is populated
 with the outcome of the refresh operation as per RefreshMetricStatusValues.
 
+### Func SupportsECDSA
+```go
+func SupportsECDSA(hello *tls.ClientHelloInfo) bool
+```
+SupportsECDSA returns true if the client requests supports ECDSA
+certificates Taken from acme/autocert.go
+
 
 
 ## Types
@@ -57,6 +64,8 @@ type AutocertConfig struct {
 	UserAgent   string        `yaml:"user_agent"`    // User agent to use when connecting to the ACME service.
 	Provider    string        `yaml:"acme_provider"` // ACME service provider URL or 'letsencrypt' or 'letsencrypt-staging'.
 	RenewBefore time.Duration `yaml:"renew_before"`  // How early certificates should be renewed before they expire.
+
+	AllowRSACertificates bool `yaml:"allow_rsa_certificates" doc:"if true, allow RSA certificates to be issued, otherwise only ECDSA certificates will be issued"`
 }
 ```
 AutocertConfig represents the configuration required to create an
@@ -83,7 +92,7 @@ for a set of hosts using the provided autocert.Manager.
 ### Functions
 
 ```go
-func NewClient(mgr *autocert.Manager, opts ...ClientOption) *Client
+func NewClient(mgr *Manager, opts ...ClientOption) *Client
 ```
 NewClient creates a new client that refreshes certificates for the provided
 hosts using the autocert.Manager.
@@ -128,6 +137,45 @@ func WithRefreshOnFailure(interval time.Duration) ClientOption
 ```
 WithRefreshOnFailure configures the client to refresh certificates at the
 provided interval when a refresh fails. If not set, the default is 1 minute.
+
+
+
+
+### Type Manager
+```go
+type Manager struct {
+	*autocert.Manager
+	// contains filtered or unexported fields
+}
+```
+Manager embeds an autocert.Manager but overrides the GetCertificate function
+to enforce the AllowRSACertificates setting.
+
+### Functions
+
+```go
+func NewAutocertManager(cache autocert.Cache, cl AutocertConfig, allowedHosts ...string) (*Manager, error)
+```
+NewAutocertManager creates a new autocert.Manager from the supplied config.
+Any supplied hosts specify the allowed hosts for the manager, ie. those for
+which it will obtain/renew certificates.
+
+
+
+### Methods
+
+```go
+func (m *Manager) GetCertificate(hello *tls.ClientHelloInfo) (*tls.Certificate, error)
+```
+
+
+```go
+func (m *Manager) TLSConfig() *tls.Config
+```
+TLSConfig returns a tls.Config obtained using from the underlying
+autocert.Manager, but with the GetCertificate function replaced with the
+Manager's GetCertificate function, which enforces the AllowRSACertificates
+setting.
 
 
 

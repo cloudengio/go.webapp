@@ -7,27 +7,6 @@ import cloudeng.io/webapp/tlsvalidate
 Package tlsvalidate provides functions for validating TLS certificates
 across multiple hosts and addresses.
 
-## Functions
-### Func ParseCipherSuite
-```go
-func ParseCipherSuite(name string) (uint16, error)
-```
-ParseCipherSuite returns the cipher suite ID for the given name, as returned
-by tls.CipherSuiteName, e.g. "TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256".
-It returns an error if name does not match any cipher suite known to the
-crypto/tls package, including its insecure ones.
-
-### Func ParseSignatureAlgorithm
-```go
-func ParseSignatureAlgorithm(name string) (x509.SignatureAlgorithm, error)
-```
-ParseSignatureAlgorithm returns the x509.SignatureAlgorithm for the given
-name, as returned by x509.SignatureAlgorithm.String(), e.g. "SHA256-RSA" or
-"Ed25519". It returns an error if name does not match any known signature
-algorithm.
-
-
-
 ## Types
 ### Type ErrValidator
 ```go
@@ -94,6 +73,15 @@ func WithCheckSignatureAlgorithm(check bool) Option
 WithCheckSignatureAlgorithm returns an option that configures the validator
 to check that the certificates for all IP addresses for a given host use the
 same signature algorithm.
+
+
+```go
+func WithCheckZeroSerialNumbers(check bool) Option
+```
+WithCheckZeroSerialNumbers returns an option that configures the validator
+to check that the certificates for all IP addresses for a given host have
+non-zero serial numbers. The default is for this check to be enabled,
+but it can be disabled for testing purposes.
 
 
 ```go
