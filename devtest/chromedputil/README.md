@@ -157,6 +157,14 @@ Listen sets up a listener for Chrome DevTools Protocol events and calls
 each of the supplied handlers in turn when an event is received. The first
 handler to return true stops the event propagation.
 
+### Func NativeMessagingHostsDir
+```go
+func NativeMessagingHostsDir() string
+```
+NativeMessagingHostsDir returns the directory where Chrome looks for native
+messaging hosts. The browser variant is derived from ChromeBinPathOnCI,
+since each variant keeps its manifests in its own directory.
+
 ### Func NewListenHandler
 ```go
 func NewListenHandler[T any](ch chan<- T) func(ctx context.Context, ev any) bool
@@ -171,6 +179,13 @@ func RunLoggingListener(ctx context.Context, logger *slog.Logger, opts ...Loggin
 RunLoggingListener starts the logging listener for Chrome DevTools Protocol
 events. It returns a channel that is closed when the goroutine that listens
 on events terminates.
+
+### Func SkipTestsIfNoChromeForTesting
+```go
+func SkipTestsIfNoChromeForTesting(t cicd.TestingTSkip)
+```
+SkipTestsIfNoChromeForTesting skips the test if chrome-for-testing is not
+available on the system, currently this is only implemented for linux/arm64.
 
 ### Func SourceScript
 ```go
