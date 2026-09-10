@@ -135,31 +135,6 @@ spec.
 
 
 
-### Type CipherSuites
-```go
-type CipherSuites []uint16
-```
-CipherSuites is a list of TLS cipher suite names, e.g.
-"TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256" as returned by tls.CipherSuiteName.
-When unmarshaled from YAML it accepts a list of such names and converts them
-to the corresponding crypto/tls constants.
-
-### Methods
-
-```go
-func (c CipherSuites) MarshalYAML() (any, error)
-```
-MarshalYAML implements yaml.Marshaler.
-
-
-```go
-func (c *CipherSuites) UnmarshalYAML(node *yaml.Node) error
-```
-UnmarshalYAML implements yaml.Unmarshaler.
-
-
-
-
 ### Type GoGetTest
 ```go
 type GoGetTest struct {
@@ -485,31 +460,6 @@ func (a *SelectorAction) UnmarshalYAML(value *yaml.Node) error
 
 
 
-### Type SignatureAlgorithms
-```go
-type SignatureAlgorithms []x509.SignatureAlgorithm
-```
-SignatureAlgorithms is a list of x509 signature algorithm names, e.g.
-"SHA256-RSA" as returned by x509.SignatureAlgorithm.String(). When
-unmarshaled from YAML it accepts a list of such names and converts them to
-the corresponding crypto/x509 constants.
-
-### Methods
-
-```go
-func (s SignatureAlgorithms) MarshalYAML() (any, error)
-```
-MarshalYAML implements yaml.Marshaler.
-
-
-```go
-func (s *SignatureAlgorithms) UnmarshalYAML(node *yaml.Node) error
-```
-UnmarshalYAML implements yaml.Unmarshaler.
-
-
-
-
 ### Type TLSSpec
 ```go
 type TLSSpec struct {
@@ -523,7 +473,7 @@ type TLSSpec struct {
 	ExpandDNSNames     bool               `yaml:"expand-dns-names" doc:"see tlsvalidate.WithExpandDNSNames"`                                                              // see tlsvalidate.WithExpandDNSNames
 	CheckSerialNumbers bool               `yaml:"check-serial-numbers" doc:"see tlsvalidate.WithCheckSerialNumbers"`                                                      // see tlsvalidate.WithCheckSerialNumbers
 	ValidFor           time.Duration      `yaml:"valid-for" doc:"see tlsvalidate.WithValidForAtLeast"`                                                                    // see tlsvalidate.WithValidForAtLeast
-	TLSMinVersion      uint16             `yaml:"tls-min-version" doc:"see tlsvalidate.WithTLSMinVersion"`                                                                // see tlsvalidate.WithTLSMinVersion
+	TLSMinVersion      webapp.TLSVersion  `yaml:"tls-min-version" doc:"see tlsvalidate.WithTLSMinVersion"`                                                                // see tlsvalidate.WithTLSMinVersion
 	IssuerREs          cmdyaml.RegexpList `yaml:"issuer-res" doc:"see tlsvalidate.WithIssuerRegexps"`                                                                     // see tlsvalidate.WithIssuerRegexps
 	CustomCAPEM        string             `yaml:"custom-ca-pem" doc:"used tlsvalidate.WithCustomRootCAPEM"`                                                               // used tlsvalidate.WithCustomRootCAPEM
 	CustomCAPEMOnly    bool               `yaml:"custom-ca-pem-only" doc:"if true, only the custom CA PEM file is used, otherwise it's appended to the system cert pool"` // if true, only the custom CA PEM file is used, otherwise it's appended to the system cert pool
@@ -534,10 +484,10 @@ type TLSSpec struct {
 	// specify algorithms that the server must not use; if either is
 	// non-empty and the server negotiates/uses one of them, validation
 	// fails.
-	CipherSuites                  CipherSuites        `yaml:"cipher-suites" doc:"names of the cipher suites that the server must support, e.g. TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256; see tls.CipherSuites for a list of supported cipher suites"`
-	NotAllowedCipherSuites        CipherSuites        `yaml:"not-allowed-cipher-suites" doc:"names of the cipher suites that the server must not negotiate; see tls.CipherSuites for a list of supported cipher suites. Use 'insecure' to refer to all insecure suites."`
-	SignatureAlgorithms           SignatureAlgorithms `yaml:"signature-algorithms" doc:"names of the signature algorithms that the certificate must use, e.g. SHA256-RSA; see tlsvalidate.WithAllowedSignatureAlgorithms. Use 'rsa', 'dsa', 'ecdsa', 'ed25519' or 'rsa-pss' to refer to all algorithms of that type."`
-	NotAllowedSignatureAlgorithms SignatureAlgorithms `yaml:"not-allowed-signature-algorithms" doc:"names of the signature algorithms that the certificate must not use; see tlsvalidate.WithDeniedSignatureAlgorithms"`
+	CipherSuites                  webapp.CipherSuites        `yaml:"cipher-suites" doc:"names of the cipher suites that the server must support, e.g. TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256; see tls.CipherSuites for a list of supported cipher suites"`
+	NotAllowedCipherSuites        webapp.CipherSuites        `yaml:"not-allowed-cipher-suites" doc:"names of the cipher suites that the server must not negotiate; see tls.CipherSuites for a list of supported cipher suites. Use 'insecure' to refer to all insecure suites."`
+	SignatureAlgorithms           webapp.SignatureAlgorithms `yaml:"signature-algorithms" doc:"names of the signature algorithms that the certificate must use, e.g. SHA256-RSA; see tlsvalidate.WithAllowedSignatureAlgorithms. Use 'rsa', 'dsa', 'ecdsa', 'ed25519' or 'rsa-pss' to refer to all algorithms of that type."`
+	NotAllowedSignatureAlgorithms webapp.SignatureAlgorithms `yaml:"not-allowed-signature-algorithms" doc:"names of the signature algorithms that the certificate must not use; see tlsvalidate.WithDeniedSignatureAlgorithms"`
 	// contains filtered or unexported fields
 }
 ```

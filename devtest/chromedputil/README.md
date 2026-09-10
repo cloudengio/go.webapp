@@ -161,9 +161,8 @@ handler to return true stops the event propagation.
 ```go
 func NativeMessagingHostsDir() string
 ```
-NativeMessagingHostsDir returns the directory where Chrome looks for native
-messaging hosts. The browser variant is derived from ChromeBinPathOnCI,
-since each variant keeps its manifests in its own directory.
+NativeMessagingHostsDirOnCI returns the directory where Chrome looks for
+native messaging hosts.
 
 ### Func NewListenHandler
 ```go
