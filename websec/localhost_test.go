@@ -10,7 +10,8 @@ import (
 	"crypto/rand"
 	"net/http"
 	"net/http/httptest"
-	"sync/atomic"
+	"slices"
+	"sync"
 	"testing"
 	"time"
 
@@ -117,12 +118,12 @@ func TestHostValidation(t *testing.T) {
 
 func TestCrossSiteRequests(t *testing.T) {
 	tests := []struct {
-		name          string
-		secFetchSite  string
-		origin        string
-		referer       string
-		opts          []websec.Option
-		wantStatus    int
+		name         string
+		secFetchSite string
+		origin       string
+		referer      string
+		opts         []websec.Option
+		wantStatus   int
 	}{
 		{
 			name:         "sec-fetch-site same-origin",
@@ -278,16 +279,64 @@ func TestSecurityHeaders(t *testing.T) {
 	})
 }
 
-func TestCounters(t *testing.T) {
-	var totalCount, nonLoopbackCount, invalidHostCount, crossSiteCount atomic.Int32
-	incTotal := func(context.Context) { totalCount.Add(1) }
-	incNonLoopback := func(context.Context) { nonLoopbackCount.Add(1) }
-	incInvalidHost := func(context.Context) { invalidHostCount.Add(1) }
-	incCrossSite := func(context.Context) { crossSiteCount.Add(1) }
+type fakeCounterVec struct {
+	mu     sync.Mutex
+	counts map[string]int
+}
+
+func newFakeCounterVec() *fakeCounterVec {
+	f := &fakeCounterVec{
+		counts: make(map[string]int),
+	}
+	// Initialized for each denial label value.
+	for _, val := range websec.MetricsDenialValues() {
+		f.counts[val] = 0
+	}
+	return f
+}
+
+func (f *fakeCounterVec) Inc(_ context.Context, labels ...string) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if len(labels) > 0 {
+		f.counts[labels[0]]++
+	}
+}
+
+func (f *fakeCounterVec) Count(val string) int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.counts[val]
+}
+
+func TestMetricsColumnsAndDenialValues(t *testing.T) {
+	if got, want := websec.MetricsColumns(), []string{"reason"}; !slices.Equal(got, want) {
+		t.Errorf("got %v, want %v", got, want)
+	}
+	wantValues := []string{
+		websec.DenialNonLoopback,
+		websec.DenialInvalidHost,
+		websec.DenialCrossSite,
+		websec.DenialInvalidJWT,
+	}
+	if got := websec.MetricsDenialValues(); !slices.Equal(got, wantValues) {
+		t.Errorf("got %v, want %v", got, wantValues)
+	}
+}
+
+func TestCounterVec(t *testing.T) {
+	vec := newFakeCounterVec()
 
 	handler := websec.NewHandler(okHandler(),
-		websec.WithCounters(incTotal, incNonLoopback, incInvalidHost, incCrossSite),
+		websec.WithCounterVec(vec.Inc),
 	)
+
+	// Verify all labels initialized to 0.
+	for _, reason := range websec.MetricsDenialValues() {
+		if got := vec.Count(reason); got != 0 {
+			t.Errorf("initially expected 0 for %q, got %d", reason, got)
+		}
+	}
 
 	// Valid request -> no counter increments
 	req1 := httptest.NewRequest(http.MethodGet, "/", nil)
@@ -295,9 +344,10 @@ func TestCounters(t *testing.T) {
 	req1.Host = "localhost"
 	w1 := httptest.NewRecorder()
 	handler.ServeHTTP(w1, req1)
-	if totalCount.Load() != 0 || nonLoopbackCount.Load() != 0 || invalidHostCount.Load() != 0 || crossSiteCount.Load() != 0 {
-		t.Errorf("expected 0 for all counters, got total=%d, nonLoopback=%d, invalidHost=%d, crossSite=%d",
-			totalCount.Load(), nonLoopbackCount.Load(), invalidHostCount.Load(), crossSiteCount.Load())
+	for _, reason := range websec.MetricsDenialValues() {
+		if got := vec.Count(reason); got != 0 {
+			t.Errorf("after valid request: expected 0 for %q, got %d", reason, got)
+		}
 	}
 
 	// 1. Non-loopback rejection
@@ -306,8 +356,8 @@ func TestCounters(t *testing.T) {
 	req2.Host = "localhost"
 	w2 := httptest.NewRecorder()
 	handler.ServeHTTP(w2, req2)
-	if totalCount.Load() != 1 || nonLoopbackCount.Load() != 1 || invalidHostCount.Load() != 0 || crossSiteCount.Load() != 0 {
-		t.Errorf("after non-loopback: got total=%d (want 1), nonLoopback=%d (want 1)", totalCount.Load(), nonLoopbackCount.Load())
+	if got := vec.Count(websec.DenialNonLoopback); got != 1 {
+		t.Errorf("after non-loopback: got %d (want 1)", got)
 	}
 
 	// 2. Invalid host rejection
@@ -316,8 +366,8 @@ func TestCounters(t *testing.T) {
 	req3.Host = "evil.com"
 	w3 := httptest.NewRecorder()
 	handler.ServeHTTP(w3, req3)
-	if totalCount.Load() != 2 || nonLoopbackCount.Load() != 1 || invalidHostCount.Load() != 1 || crossSiteCount.Load() != 0 {
-		t.Errorf("after invalid host: got total=%d (want 2), invalidHost=%d (want 1)", totalCount.Load(), invalidHostCount.Load())
+	if got := vec.Count(websec.DenialInvalidHost); got != 1 {
+		t.Errorf("after invalid host: got %d (want 1)", got)
 	}
 
 	// 3. Cross-site rejection
@@ -327,25 +377,52 @@ func TestCounters(t *testing.T) {
 	req4.Header.Set("Sec-Fetch-Site", "cross-site")
 	w4 := httptest.NewRecorder()
 	handler.ServeHTTP(w4, req4)
-	if totalCount.Load() != 3 || nonLoopbackCount.Load() != 1 || invalidHostCount.Load() != 1 || crossSiteCount.Load() != 1 {
-		t.Errorf("after cross-site: got total=%d (want 3), crossSite=%d (want 1)", totalCount.Load(), crossSiteCount.Load())
+	if got := vec.Count(websec.DenialCrossSite); got != 1 {
+		t.Errorf("after cross-site: got %d (want 1)", got)
 	}
 }
 
-func TestIndividualCounters(t *testing.T) {
-	var nonLoopbackCount atomic.Int32
-	handler := websec.NewHandler(okHandler(),
-		websec.WithNonLoopbackCounter(func(context.Context) { nonLoopbackCount.Add(1) }),
+func TestCounterVecAdd_Initialization(t *testing.T) {
+	var mu sync.Mutex
+	initialDeltas := make(map[string]float64)
+	addCounts := make(map[string]float64)
+
+	addFn := func(_ context.Context, delta float64, labels ...string) {
+		mu.Lock()
+		defer mu.Unlock()
+		if len(labels) > 0 {
+			if delta == 0 {
+				initialDeltas[labels[0]] = delta
+			} else {
+				addCounts[labels[0]] += delta
+			}
+		}
+	}
+
+	handler := websec.NewLocalhostHandler(okHandler(),
+		websec.WithCounterVecAdd(addFn),
 	)
 
+	// Verify that NewLocalhostHandler initialized every denial label with delta 0.
+	mu.Lock()
+	for _, val := range websec.MetricsDenialValues() {
+		if _, ok := initialDeltas[val]; !ok {
+			t.Errorf("expected initial delta 0 for label %q, but was not called", val)
+		}
+	}
+	mu.Unlock()
+
+	// Trigger non-loopback denial
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
 	req.RemoteAddr = "192.168.1.1:1234"
 	req.Host = "localhost"
 	w := httptest.NewRecorder()
 	handler.ServeHTTP(w, req)
 
-	if nonLoopbackCount.Load() != 1 {
-		t.Errorf("expected nonLoopbackCount=1, got %d", nonLoopbackCount.Load())
+	mu.Lock()
+	defer mu.Unlock()
+	if got := addCounts[websec.DenialNonLoopback]; got != 1 {
+		t.Errorf("got non-loopback delta %v, want 1", got)
 	}
 }
 
@@ -400,7 +477,7 @@ func TestJWTCookieValidation(t *testing.T) {
 
 	var contextSubject string
 	echoHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if tok, ok := websec.TokenFromContext(r.Context()); ok {
+		if tok, ok := jwtutil.TokenFromContext(r.Context(), "auth_cookie"); ok {
 			sub, _ := tok.Subject()
 			contextSubject = sub
 		}
@@ -458,7 +535,9 @@ func TestJWTCookieValidation(t *testing.T) {
 			req.RemoteAddr = "127.0.0.1:1234"
 			req.Host = "localhost"
 			if tc.cookieVal != "" {
-				req.AddCookie(&http.Cookie{
+				// G124 concerns response cookies; Secure, HttpOnly and
+				// SameSite have no meaning on one a client sends.
+				req.AddCookie(&http.Cookie{ //nolint:gosec // G124: a request cookie.
 					Name:  "auth_cookie",
 					Value: tc.cookieVal,
 				})
@@ -561,15 +640,14 @@ func TestJWTBootstrapQueryParam(t *testing.T) {
 }
 
 func TestInvalidJWTCounter(t *testing.T) {
-	var invalidJWTCnt, totalCnt atomic.Int32
+	vec := newFakeCounterVec()
 	signer := setupSigner(t)
 	pubKey, _ := signer.PublicKey()
 
 	handler := websec.NewLocalhostHandler(okHandler(),
 		websec.WithJWTCookie("test_cookie", pubKey, "perm", "read"),
 		websec.WithJWTBootstrapQueryParam(""),
-		websec.WithInvalidJWTCounter(func(context.Context) { invalidJWTCnt.Add(1) }),
-		websec.WithDeniedCounter(func(context.Context) { totalCnt.Add(1) }),
+		websec.WithCounterVec(vec.Inc),
 	)
 
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
@@ -579,10 +657,137 @@ func TestInvalidJWTCounter(t *testing.T) {
 
 	handler.ServeHTTP(w, req)
 
-	if invalidJWTCnt.Load() != 1 {
-		t.Errorf("got invalidJWTCnt %d, want 1", invalidJWTCnt.Load())
+	if got := vec.Count(websec.DenialInvalidJWT); got != 1 {
+		t.Errorf("got invalid-jwt count %d, want 1", got)
 	}
-	if totalCnt.Load() != 1 {
-		t.Errorf("got totalCnt %d, want 1", totalCnt.Load())
+}
+
+// TestJWTCookieNameAndContextKey covers the options that separate the name of
+// the cookie carrying the token from the key the token is stored under in the
+// request context. Without them the two are necessarily the same, so each case
+// here also fails if the option is ignored: the cookie the client sends is the
+// one the option names, so a handler still looking for the original name finds
+// no cookie at all.
+func TestJWTCookieNameAndContextKey(t *testing.T) {
+	ctx := t.Context()
+	signer := setupSigner(t)
+	pubKey, err := signer.PublicKey()
+	if err != nil {
+		t.Fatalf("failed to get public key: %v", err)
+	}
+	token, err := jwtutil.CreateVerificationToken(ctx, signer, "user-3", "role", "admin", time.Hour, "", "")
+	if err != nil {
+		t.Fatalf("failed to create token: %v", err)
+	}
+
+	for _, tc := range []struct {
+		name string
+		opts []websec.Option
+		// sends is the cookie the client presents, wantKey the context key the
+		// token must then be retrievable under.
+		sends   string
+		wantKey string
+	}{
+		{"defaults to the cookie name", nil, "auth_cookie", "auth_cookie"},
+		{"renamed cookie", []websec.Option{websec.WithJWTCookieName("renamed")}, "renamed", "renamed"},
+		{"separate context key", []websec.Option{websec.WithJWTContextKey("session")}, "auth_cookie", "session"},
+		{"both", []websec.Option{
+			websec.WithJWTCookieName("renamed"),
+			websec.WithJWTContextKey("session"),
+		}, "renamed", "session"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var gotKeys []string
+			var gotSubject string
+			inner := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				for k := range jwtutil.TokensFromContext(r.Context()) {
+					gotKeys = append(gotKeys, k)
+				}
+				slices.Sort(gotKeys)
+				if tok, ok := jwtutil.TokenFromContext(r.Context(), tc.wantKey); ok {
+					gotSubject, _ = tok.Subject()
+				}
+				w.WriteHeader(http.StatusOK)
+			})
+
+			opts := append([]websec.Option{
+				websec.WithJWTCookie("auth_cookie", pubKey, "role", "admin"),
+			}, tc.opts...)
+			handler := websec.NewLocalhostHandler(inner, opts...)
+
+			req := httptest.NewRequest(http.MethodGet, "/", nil)
+			req.RemoteAddr = "127.0.0.1:1234"
+			req.Host = "localhost"
+			// G124 concerns response cookies; Secure, HttpOnly and SameSite
+			// have no meaning on one a client sends.
+			req.AddCookie(&http.Cookie{Name: tc.sends, Value: string(token)}) //nolint:gosec // G124: a request cookie.
+			w := httptest.NewRecorder()
+			handler.ServeHTTP(w, req)
+
+			if got, want := w.Code, http.StatusOK; got != want {
+				t.Fatalf("got status %d, want %d (body %q)", got, want, w.Body.String())
+			}
+			// The token is stored once, under the expected key and no other.
+			if got, want := gotKeys, []string{tc.wantKey}; !slices.Equal(got, want) {
+				t.Errorf("token stored under %v, want %v", got, want)
+			}
+			if got, want := gotSubject, "user-3"; got != want {
+				t.Errorf("subject: got %v, want %v", got, want)
+			}
+		})
+	}
+}
+
+// TestJWTBootstrapCookieName verifies that the cookie written when
+// bootstrapping from a query parameter carries the configured name, and the
+// attributes that make it usable for the subsequent request.
+func TestJWTBootstrapCookieName(t *testing.T) {
+	ctx := t.Context()
+	signer := setupSigner(t)
+	pubKey, err := signer.PublicKey()
+	if err != nil {
+		t.Fatalf("failed to get public key: %v", err)
+	}
+	token, err := jwtutil.CreateVerificationToken(ctx, signer, "user-4", "role", "admin", time.Hour, "", "")
+	if err != nil {
+		t.Fatalf("failed to create token: %v", err)
+	}
+
+	handler := websec.NewLocalhostHandler(okHandler(),
+		websec.WithJWTCookie("auth_cookie", pubKey, "role", "admin"),
+		websec.WithJWTCookieName("renamed"),
+	)
+
+	req := httptest.NewRequest(http.MethodGet, "/?token="+string(token), nil)
+	req.RemoteAddr = "127.0.0.1:1234"
+	req.Host = "localhost"
+	w := httptest.NewRecorder()
+	handler.ServeHTTP(w, req)
+
+	if got, want := w.Code, http.StatusSeeOther; got != want {
+		t.Fatalf("got status %d, want %d (body %q)", got, want, w.Body.String())
+	}
+	set := w.Result().Cookies()
+	if len(set) != 1 {
+		t.Fatalf("got %d cookies, want 1: %v", len(set), set)
+	}
+	ck := set[0]
+	if got, want := ck.Name, "renamed"; got != want {
+		t.Errorf("cookie name: got %v, want %v", got, want)
+	}
+	if got, want := ck.Value, string(token); got != want {
+		t.Errorf("cookie value: got %v, want %v", got, want)
+	}
+	if !ck.HttpOnly {
+		t.Error("cookie is not HttpOnly")
+	}
+	if !ck.Secure {
+		t.Error("cookie is not Secure")
+	}
+	if got, want := ck.SameSite, http.SameSiteStrictMode; got != want {
+		t.Errorf("cookie SameSite: got %v, want %v", got, want)
+	}
+	if got, want := ck.Path, "/"; got != want {
+		t.Errorf("cookie path: got %v, want %v", got, want)
 	}
 }

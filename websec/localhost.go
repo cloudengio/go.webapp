@@ -18,6 +18,7 @@ import (
 	"strings"
 
 	"cloudeng.io/webapp"
+	"cloudeng.io/webapp/cookies"
 	"cloudeng.io/webapp/webauth/jwtutil"
 	"github.com/lestrrat-go/jwx/v3/jwk"
 	"github.com/lestrrat-go/jwx/v3/jwt"
@@ -27,11 +28,50 @@ import (
 type Option func(o *options)
 
 type jwtConfig struct {
-	cookieName          string
+	cookie              cookies.Secure
+	contextKey          string
 	validator           jwtutil.Validator
 	claimKey            string
 	claimValue          any
 	bootstrapQueryParam string
+}
+
+// tokenKey returns the key that a validated token is stored under in the
+// request context. It defaults to the name of the cookie the token arrived in,
+// which is what WithJWTContextKey overrides.
+func (c *jwtConfig) tokenKey() string {
+	if c.contextKey != "" {
+		return c.contextKey
+	}
+	return string(c.cookie)
+}
+
+// Denial reason constants used as label values for the denial metric.
+const (
+	DenialNonLoopback = "non-loopback"
+	DenialInvalidHost = "invalid-host"
+	DenialCrossSite   = "cross-site"
+	DenialInvalidJWT  = "invalid-jwt"
+)
+
+// MetricsColumns returns the list of column/label names used for the denial metric.
+func MetricsColumns() []string {
+	return []string{"reason"}
+}
+
+// MetricsDenialValues returns the list of values used for the "reason" label of the denial metric.
+func MetricsDenialValues() []string {
+	return []string{
+		DenialNonLoopback,
+		DenialInvalidHost,
+		DenialCrossSite,
+		DenialInvalidJWT,
+	}
+}
+
+// DenialMetricValues is an alias for MetricsDenialValues.
+func DenialMetricValues() []string {
+	return MetricsDenialValues()
 }
 
 type options struct {
@@ -44,14 +84,9 @@ type options struct {
 	customResponseHeaders map[string]string
 	logger                *slog.Logger
 	jwt                   *jwtConfig
-	totalDeniedCounter    webapp.CounterInc
-	nonLoopbackCounter    webapp.CounterInc
-	invalidHostCounter    webapp.CounterInc
-	crossSiteCounter      webapp.CounterInc
-	invalidJWTCounter     webapp.CounterInc
+	counterVec            webapp.CounterVecInc
+	counterVecAdd         webapp.CounterVecAdd
 }
-
-func noopCounter(context.Context) {}
 
 func defaultOptions() options {
 	return options{
@@ -71,12 +106,8 @@ func defaultOptions() options {
 			"Cross-Origin-Opener-Policy":   "same-origin",
 			"Cache-Control":                "no-store",
 		},
-		logger:             slog.New(slog.DiscardHandler),
-		totalDeniedCounter: noopCounter,
-		nonLoopbackCounter: noopCounter,
-		invalidHostCounter: noopCounter,
-		crossSiteCounter:   noopCounter,
-		invalidJWTCounter:  noopCounter,
+		logger:     slog.New(slog.DiscardHandler),
+		counterVec: func(context.Context, ...string) {},
 	}
 }
 
@@ -145,64 +176,34 @@ func WithLogger(logger *slog.Logger) Option {
 	}
 }
 
-// WithCounters configures metric counters for all rejection types:
-// - total: incremented on any rejected request
-// - nonLoopback: incremented when the client remote address is not loopback
-// - invalidHost: incremented when the Host header is invalid (DNS rebinding)
-// - crossSite: incremented when a cross-site browser request is blocked
-func WithCounters(total, nonLoopback, invalidHost, crossSite webapp.CounterInc) Option {
+// WithCounterVec configures a CounterVecInc metric that is incremented whenever
+// a request is rejected, with the denial reason supplied as a label value
+// (one of MetricsDenialValues).
+func WithCounterVec(counter webapp.CounterVecInc) Option {
 	return func(o *options) {
-		if total != nil {
-			o.totalDeniedCounter = total
-		}
-		if nonLoopback != nil {
-			o.nonLoopbackCounter = nonLoopback
-		}
-		if invalidHost != nil {
-			o.invalidHostCounter = invalidHost
-		}
-		if crossSite != nil {
-			o.crossSiteCounter = crossSite
+		if counter != nil {
+			o.counterVec = counter
 		}
 	}
 }
 
-// WithDeniedCounter configures a counter callback invoked when a request
-// is rejected for any reason (total denials).
-func WithDeniedCounter(counter webapp.CounterInc) Option {
-	return func(o *options) {
-		if counter != nil {
-			o.totalDeniedCounter = counter
-		}
-	}
+// WithMetrics is an alias for WithCounterVec.
+func WithMetrics(metrics webapp.CounterVecInc) Option {
+	return WithCounterVec(metrics)
 }
 
-// WithNonLoopbackCounter configures a counter callback invoked when a request
-// is rejected because the remote client address is not loopback.
-func WithNonLoopbackCounter(counter webapp.CounterInc) Option {
-	return func(o *options) {
-		if counter != nil {
-			o.nonLoopbackCounter = counter
-		}
-	}
+// WithCounters is an alias for WithCounterVec.
+func WithCounters(counter webapp.CounterVecInc) Option {
+	return WithCounterVec(counter)
 }
 
-// WithInvalidHostCounter configures a counter callback invoked when a request
-// is rejected due to an invalid Host header.
-func WithInvalidHostCounter(counter webapp.CounterInc) Option {
+// WithCounterVecAdd configures a CounterVecAdd metric for request denials.
+// At handler initialization, all denial reason labels from MetricsDenialValues
+// are initialized with delta 0, and incremented by 1 on each denial.
+func WithCounterVecAdd(counter webapp.CounterVecAdd) Option {
 	return func(o *options) {
 		if counter != nil {
-			o.invalidHostCounter = counter
-		}
-	}
-}
-
-// WithCrossSiteCounter configures a counter callback invoked when a request
-// is rejected because it was initiated cross-site by a browser.
-func WithCrossSiteCounter(counter webapp.CounterInc) Option {
-	return func(o *options) {
-		if counter != nil {
-			o.crossSiteCounter = counter
+			o.counterVecAdd = counter
 		}
 	}
 }
@@ -212,6 +213,10 @@ func WithCrossSiteCounter(counter webapp.CounterInc) Option {
 // by pubKey and containing claimKey == claimValue. If cookieName is empty,
 // it defaults to "auth_token". By default, bootstrapping from a "?token=<jwt>"
 // URL query parameter is enabled.
+//
+// The validated token is stored in the request context under the name of the
+// cookie unless WithJWTContextKey says otherwise. WithJWTCookieName can be
+// used to set the cookie name separately from this option.
 func WithJWTCookie(cookieName string, pubKey jwk.Key, claimKey string, claimValue any) Option {
 	return func(o *options) {
 		if cookieName == "" {
@@ -222,11 +227,37 @@ func WithJWTCookie(cookieName string, pubKey jwk.Key, claimKey string, claimValu
 			_ = set.AddKey(pubKey)
 		}
 		o.jwt = &jwtConfig{
-			cookieName:          cookieName,
+			cookie:              cookies.Secure(cookieName),
 			validator:           jwtutil.NewValidator(set),
 			claimKey:            claimKey,
 			claimValue:          claimValue,
 			bootstrapQueryParam: "token",
+		}
+	}
+}
+
+// WithJWTCookieName sets the name of the cookie that carries the JWT,
+// overriding the name given to WithJWTCookie. An empty name is ignored, since
+// a cookie has to be named something. Like the other JWT options it has no
+// effect unless WithJWTCookie has already been applied.
+func WithJWTCookieName(name string) Option {
+	return func(o *options) {
+		if o.jwt != nil && name != "" {
+			o.jwt.cookie = cookies.Secure(name)
+		}
+	}
+}
+
+// WithJWTContextKey sets the key that a validated token is stored under in the
+// request context, for retrieval with TokenFromContext. It defaults to the
+// name of the cookie, so this is needed where the two should differ, such as
+// when the name of the cookie is not one the rest of the application should
+// have to know. Like the other JWT options it has no effect unless
+// WithJWTCookie has already been applied.
+func WithJWTContextKey(key string) Option {
+	return func(o *options) {
+		if o.jwt != nil {
+			o.jwt.contextKey = key
 		}
 	}
 }
@@ -244,23 +275,16 @@ func WithJWTBootstrapQueryParam(param string) Option {
 	}
 }
 
-// WithInvalidJWTCounter configures a counter callback invoked when a request
-// is rejected due to a missing, invalid, or expired JWT.
-func WithInvalidJWTCounter(counter webapp.CounterInc) Option {
-	return func(o *options) {
-		if counter != nil {
-			o.invalidJWTCounter = counter
-		}
-	}
+// ContextWithToken returns a new context derived from ctx that carries the
+// provided jwt.Token keyed by key. It is an alias for jwtutil.ContextWithToken.
+func ContextWithToken(ctx context.Context, key string, tok jwt.Token) context.Context {
+	return jwtutil.ContextWithToken(ctx, key, tok)
 }
 
-type tokenContextKey struct{}
-
-// TokenFromContext returns the validated jwt.Token from the request context,
-// if one was validated by the handler.
-func TokenFromContext(ctx context.Context) (jwt.Token, bool) {
-	tok, ok := ctx.Value(tokenContextKey{}).(jwt.Token)
-	return tok, ok
+// TokenFromContext returns the validated jwt.Token from the request context
+// for the given key. It is an alias for jwtutil.TokenFromContext.
+func TokenFromContext(ctx context.Context, key string) (jwt.Token, bool) {
+	return jwtutil.TokenFromContext(ctx, key)
 }
 
 type handler struct {
@@ -276,6 +300,14 @@ func NewLocalhostHandler(next http.Handler, opts ...Option) http.Handler {
 	o := defaultOptions()
 	for _, opt := range opts {
 		opt(&o)
+	}
+	if o.counterVec == nil {
+		o.counterVec = func(context.Context, ...string) {}
+	}
+	if o.counterVecAdd != nil {
+		for _, val := range MetricsDenialValues() {
+			o.counterVecAdd(context.Background(), 0, val)
+		}
 	}
 	return &handler{
 		next: next,
@@ -295,17 +327,17 @@ func NewLocalHost(next http.Handler, opts ...Option) http.Handler {
 
 func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if h.opts.enforceLoopback && !h.verifyLoopback(r) {
-		h.deny(w, r, "remote client address is not loopback", h.opts.nonLoopbackCounter)
+		h.deny(w, r, "remote client address is not loopback", DenialNonLoopback)
 		return
 	}
 
 	if !h.verifyHost(r) {
-		h.deny(w, r, "invalid host header", h.opts.invalidHostCounter)
+		h.deny(w, r, "invalid host header", DenialInvalidHost)
 		return
 	}
 
 	if h.opts.blockCrossSite && !h.verifyCrossSite(r) {
-		h.deny(w, r, "cross-site browser request blocked", h.opts.crossSiteCounter)
+		h.deny(w, r, "cross-site browser request blocked", DenialCrossSite)
 		return
 	}
 
@@ -330,13 +362,13 @@ func (h *handler) verifyJWT(w http.ResponseWriter, r *http.Request) (*http.Reque
 	cfg := h.opts.jwt
 
 	// 1. Check cookie
-	if cookie, err := r.Cookie(cfg.cookieName); err == nil && cookie.Value != "" {
-		tok, err := h.validateToken(r.Context(), cookie.Value)
+	if value, ok := cfg.cookie.Read(r); ok && value != "" {
+		tok, err := h.validateToken(r.Context(), value)
 		if err == nil {
-			ctx := context.WithValue(r.Context(), tokenContextKey{}, tok)
+			ctx := jwtutil.ContextWithToken(r.Context(), cfg.tokenKey(), tok)
 			return r.WithContext(ctx), true
 		}
-		h.denyWithStatus(w, r, http.StatusUnauthorized, "invalid jwt cookie: "+err.Error(), h.opts.invalidJWTCounter)
+		h.denyWithStatus(w, r, http.StatusUnauthorized, "invalid jwt cookie: "+err.Error(), DenialInvalidJWT)
 		return r, false
 	}
 
@@ -344,18 +376,22 @@ func (h *handler) verifyJWT(w http.ResponseWriter, r *http.Request) (*http.Reque
 	if cfg.bootstrapQueryParam != "" {
 		if tokenStr := r.URL.Query().Get(cfg.bootstrapQueryParam); tokenStr != "" {
 			if _, err := h.validateToken(r.Context(), tokenStr); err != nil {
-				h.denyWithStatus(w, r, http.StatusUnauthorized, "invalid bootstrap token: "+err.Error(), h.opts.invalidJWTCounter)
+				h.denyWithStatus(w, r, http.StatusUnauthorized, "invalid bootstrap token: "+err.Error(), DenialInvalidJWT)
 				return r, false
 			}
 
-			// Valid token: set cookie and redirect to clean URL
-			http.SetCookie(w, &http.Cookie{
-				Name:     cfg.cookieName,
-				Value:    tokenStr,
-				Path:     "/",
-				HttpOnly: true,
-				SameSite: http.SameSiteStrictMode,
-				Secure:   r.TLS != nil,
+			// Valid token: set cookie and redirect to clean URL. The name,
+			// and the Secure, HttpOnly and SameSite attributes, are supplied
+			// by cookies.Secure and overwrite whatever is given here.
+			//
+			// The cookie is therefore Secure even when this handler is
+			// reached over plain HTTP, which loopback addresses commonly are.
+			// Browsers that treat a loopback origin as trustworthy send it
+			// regardless; those that do not will drop it, leaving the request
+			// unauthenticated.
+			cfg.cookie.Set(w, &http.Cookie{ //nolint:gosec // G124: set by cookies.Secure, not here.
+				Value: tokenStr,
+				Path:  "/",
 			})
 
 			q := r.URL.Query()
@@ -366,12 +402,14 @@ func (h *handler) verifyJWT(w http.ResponseWriter, r *http.Request) (*http.Reque
 			if cleanURL == "" {
 				cleanURL = "/"
 			}
-			http.Redirect(w, r, cleanURL, http.StatusSeeOther)
+			// cleanURL comes from RequestURI, which is a path and query and
+			// so always relative to this host: it cannot redirect elsewhere.
+			http.Redirect(w, r, cleanURL, http.StatusSeeOther) //nolint:gosec // G710: not an open redirect, see above.
 			return r, false
 		}
 	}
 
-	h.denyWithStatus(w, r, http.StatusUnauthorized, "missing authentication cookie", h.opts.invalidJWTCounter)
+	h.denyWithStatus(w, r, http.StatusUnauthorized, "missing authentication cookie", DenialInvalidJWT)
 	return r, false
 }
 
@@ -383,18 +421,19 @@ func (h *handler) validateToken(ctx context.Context, tokenStr string) (jwt.Token
 	return h.opts.jwt.validator.ParseAndValidate(ctx, []byte(tokenStr), validators...)
 }
 
-func (h *handler) deny(w http.ResponseWriter, r *http.Request, reason string, specificCounter webapp.CounterInc) {
-	h.denyWithStatus(w, r, http.StatusForbidden, reason, specificCounter)
+func (h *handler) deny(w http.ResponseWriter, r *http.Request, reason string, denialType string) {
+	h.denyWithStatus(w, r, http.StatusForbidden, reason, denialType)
 }
 
-func (h *handler) denyWithStatus(w http.ResponseWriter, r *http.Request, status int, reason string, specificCounter webapp.CounterInc) {
-	h.opts.totalDeniedCounter(r.Context())
-	if specificCounter != nil {
-		specificCounter(r.Context())
+func (h *handler) denyWithStatus(w http.ResponseWriter, r *http.Request, status int, reason string, denialType string) {
+	h.opts.counterVec(r.Context(), denialType)
+	if h.opts.counterVecAdd != nil {
+		h.opts.counterVecAdd(r.Context(), 1, denialType)
 	}
 	h.opts.logger.WarnContext(r.Context(), "request rejected by localhost security handler",
 		"status", status,
 		"reason", reason,
+		"denial_type", denialType,
 		"remote_addr", r.RemoteAddr,
 		"host", r.Host,
 		"origin", r.Header.Get("Origin"),

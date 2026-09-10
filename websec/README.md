@@ -12,12 +12,59 @@ requests, and framing/MIME-sniffing vulnerabilities.
 
 Package websec provides HTTP security middleware for web applications.
 
+## Constants
+### DenialNonLoopback, DenialInvalidHost, DenialCrossSite, DenialInvalidJWT
+```go
+DenialNonLoopback = "non-loopback"
+DenialInvalidHost = "invalid-host"
+DenialCrossSite = "cross-site"
+DenialInvalidJWT = "invalid-jwt"
+
+```
+Denial reason constants used as label values for the denial metric.
+
+
+
 ## Functions
+### Func ContextWithToken
+```go
+func ContextWithToken(ctx context.Context, key string, tok jwt.Token) context.Context
+```
+ContextWithToken returns a new context derived from ctx that
+carries the provided jwt.Token keyed by key. It is an alias for
+jwtutil.ContextWithToken.
+
+### Func DenialMetricValues
+```go
+func DenialMetricValues() []string
+```
+DenialMetricValues is an alias for MetricsDenialValues.
+
+### Func MetricsColumns
+```go
+func MetricsColumns() []string
+```
+MetricsColumns returns the list of column/label names used for the denial
+metric.
+
+### Func MetricsDenialValues
+```go
+func MetricsDenialValues() []string
+```
+MetricsDenialValues returns the list of values used for the "reason" label
+of the denial metric.
+
 ### Func NewHandler
 ```go
 func NewHandler(next http.Handler, opts ...Option) http.Handler
 ```
 NewHandler is an alias for NewLocalhostHandler.
+
+### Func NewLocalHost
+```go
+func NewLocalHost(next http.Handler, opts ...Option) http.Handler
+```
+NewLocalHost is an alias for NewLocalhostHandler.
 
 ### Func NewLocalhostHandler
 ```go
@@ -27,6 +74,13 @@ NewLocalhostHandler wraps next with security controls designed for services
 bound to 127.0.0.1 or ::1. By default, it enforces loopback connections,
 validates Host headers against DNS rebinding, blocks cross-site browser
 requests, and sets defensive response headers.
+
+### Func TokenFromContext
+```go
+func TokenFromContext(ctx context.Context, key string) (jwt.Token, bool)
+```
+TokenFromContext returns the validated jwt.Token from the request context
+for the given key. It is an alias for jwtutil.TokenFromContext.
 
 
 
@@ -69,20 +123,25 @@ and Referer). Defaults to true.
 
 
 ```go
-func WithCounters(total, nonLoopback, invalidHost, crossSite webapp.CounterInc) Option
+func WithCounterVec(counter webapp.CounterVecInc) Option
 ```
-WithCounters configures metric counters for all rejection types: - total:
-incremented on any rejected request - nonLoopback: incremented when the
-client remote address is not loopback - invalidHost: incremented when the
-Host header is invalid (DNS rebinding) - crossSite: incremented when a
-cross-site browser request is blocked
+WithCounterVec configures a CounterVecInc metric that is incremented
+whenever a request is rejected, with the denial reason supplied as a label
+value (one of MetricsDenialValues).
 
 
 ```go
-func WithCrossSiteCounter(counter webapp.CounterInc) Option
+func WithCounterVecAdd(counter webapp.CounterVecAdd) Option
 ```
-WithCrossSiteCounter configures a counter callback invoked when a request is
-rejected because it was initiated cross-site by a browser.
+WithCounterVecAdd configures a CounterVecAdd metric for request denials.
+At handler initialization, all denial reason labels from MetricsDenialValues
+are initialized with delta 0, and incremented by 1 on each denial.
+
+
+```go
+func WithCounters(counter webapp.CounterVecInc) Option
+```
+WithCounters is an alias for WithCounterVec.
 
 
 ```go
@@ -93,13 +152,6 @@ headers.
 
 
 ```go
-func WithDeniedCounter(counter webapp.CounterInc) Option
-```
-WithDeniedCounter configures a counter callback invoked when a request is
-rejected for any reason (total denials).
-
-
-```go
 func WithEnforceLoopback(enforce bool) Option
 ```
 WithEnforceLoopback toggles raw socket RemoteAddr loopback verification.
@@ -107,10 +159,48 @@ Defaults to true.
 
 
 ```go
-func WithInvalidHostCounter(counter webapp.CounterInc) Option
+func WithJWTBootstrapQueryParam(param string) Option
 ```
-WithInvalidHostCounter configures a counter callback invoked when a request
-is rejected due to an invalid Host header.
+WithJWTBootstrapQueryParam configures the URL query parameter name used to
+bootstrap the JWT cookie into the client's browser (e.g. "?token=<jwt>").
+If a request arrives without the cookie but with a valid token in this query
+parameter, the handler sets the secure HTTP cookie and issues an HTTP 303
+redirect to the clean URL without the token. Pass an empty string to disable
+query parameter bootstrapping.
+
+
+```go
+func WithJWTContextKey(key string) Option
+```
+WithJWTContextKey sets the key that a validated token is stored under in
+the request context, for retrieval with TokenFromContext. It defaults to
+the name of the cookie, so this is needed where the two should differ,
+such as when the name of the cookie is not one the rest of the application
+should have to know. Like the other JWT options it has no effect unless
+WithJWTCookie has already been applied.
+
+
+```go
+func WithJWTCookie(cookieName string, pubKey jwk.Key, claimKey string, claimValue any) Option
+```
+WithJWTCookie enables JWT validation for requests presented in a cookie.
+It verifies that the cookie named cookieName contains a valid JWT verifiable
+by pubKey and containing claimKey == claimValue. If cookieName is empty,
+it defaults to "auth_token". By default, bootstrapping from a "?token=<jwt>"
+URL query parameter is enabled.
+
+The validated token is stored in the request context under the name of the
+cookie unless WithJWTContextKey says otherwise. WithJWTCookieName can be
+used to set the cookie name separately from this option.
+
+
+```go
+func WithJWTCookieName(name string) Option
+```
+WithJWTCookieName sets the name of the cookie that carries the JWT,
+overriding the name given to WithJWTCookie. An empty name is ignored,
+since a cookie has to be named something. Like the other JWT options it has
+no effect unless WithJWTCookie has already been applied.
 
 
 ```go
@@ -120,10 +210,9 @@ WithLogger sets the structured logger for security event logging.
 
 
 ```go
-func WithNonLoopbackCounter(counter webapp.CounterInc) Option
+func WithMetrics(metrics webapp.CounterVecInc) Option
 ```
-WithNonLoopbackCounter configures a counter callback invoked when a request
-is rejected because the remote client address is not loopback.
+WithMetrics is an alias for WithCounterVec.
 
 
 ```go
@@ -134,6 +223,11 @@ WithSecurityHeaders toggles whether defensive HTTP response headers
 
 
 
+
+
+
+## Examples
+### [ExampleNewLocalhostHandler](https://pkg.go.dev/cloudeng.io/webapp/websec?tab=doc#example-NewLocalhostHandler)
 
 
 

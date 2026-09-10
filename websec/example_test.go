@@ -23,9 +23,9 @@ func ExampleNewLocalhostHandler() {
 
 	// 2. Wrap app with websec middleware
 	appHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		tok, _ := websec.TokenFromContext(r.Context())
+		tok, _ := jwtutil.TokenFromContext(r.Context(), "session_token")
 		sub, _ := tok.Subject()
-		w.Write([]byte("Hello, " + sub))
+		_, _ = w.Write([]byte("Hello, " + sub))
 	})
 
 	secured := websec.NewLocalhostHandler(appHandler,
@@ -42,5 +42,5 @@ func ExampleNewLocalhostHandler() {
 	// When clicked, sets the cookie and redirects cleanly to /dashboard
 	fmt.Println("Open in browser:", bootstrapURL)
 
-	http.ListenAndServe("127.0.0.1:8080", secured)
+	_ = http.ListenAndServe("127.0.0.1:8080", secured) //nolint:gosec // G114: an example, not a server to be run.
 }
