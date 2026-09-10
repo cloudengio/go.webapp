@@ -288,6 +288,11 @@ func NewHandler(next http.Handler, opts ...Option) http.Handler {
 	return NewLocalhostHandler(next, opts...)
 }
 
+// NewLocalHost is an alias for NewLocalhostHandler.
+func NewLocalHost(next http.Handler, opts ...Option) http.Handler {
+	return NewLocalhostHandler(next, opts...)
+}
+
 func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if h.opts.enforceLoopback && !h.verifyLoopback(r) {
 		h.deny(w, r, "remote client address is not loopback", h.opts.nonLoopbackCounter)
