@@ -771,3 +771,57 @@ func TestJWTTokenNotAcceptedFromQuery(t *testing.T) {
 		})
 	}
 }
+
+func TestJWTIssuerIntegration(t *testing.T) {
+	signer := setupSigner(t)
+	validator := setupValidator(t, signer)
+
+	issuer := jwtutil.JWTIssuerMust(signer,
+		jwtutil.WithSubject("alice"),
+		jwtutil.WithClaim("role", "manager"),
+		jwtutil.WithCookie("session_cookie"),
+		jwtutil.WithRedirect("/dashboard"),
+	)
+
+	// Step 1: Client visits login endpoint
+	loginReq := httptest.NewRequest(http.MethodGet, "/login", nil)
+	loginReq.RemoteAddr = "127.0.0.1:1234"
+	loginReq.Host = "localhost"
+	loginRec := httptest.NewRecorder()
+	issuer.ServeHTTP(loginRec, loginReq)
+
+	if got, want := loginRec.Code, http.StatusSeeOther; got != want {
+		t.Fatalf("login: got status %d, want %d", got, want)
+	}
+	cookies := loginRec.Result().Cookies()
+	if len(cookies) == 0 || cookies[0].Name != "session_cookie" {
+		t.Fatalf("login: expected session_cookie, got %v", cookies)
+	}
+
+	// Step 2: Client visits secured endpoint presenting the issued cookie
+	var receivedSub string
+	app := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if tok, ok := jwtutil.TokenFromContext(r.Context(), "session_cookie"); ok {
+			receivedSub, _ = tok.Subject()
+		}
+		w.WriteHeader(http.StatusOK)
+	})
+
+	secured := websec.NewLocalhostHandler(app,
+		websec.WithJWTCookie("session_cookie", validator, "role", "manager"),
+	)
+
+	apiReq := httptest.NewRequest(http.MethodGet, "/dashboard", nil)
+	apiReq.RemoteAddr = "127.0.0.1:1234"
+	apiReq.Host = "localhost"
+	apiReq.AddCookie(cookies[0]) //nolint:gosec // G124: a request cookie.
+	apiRec := httptest.NewRecorder()
+
+	secured.ServeHTTP(apiRec, apiReq)
+	if got, want := apiRec.Code, http.StatusOK; got != want {
+		t.Fatalf("api: got status %d, want %d (body %q)", got, want, apiRec.Body.String())
+	}
+	if got, want := receivedSub, "alice"; got != want {
+		t.Errorf("api: got subject %q, want %q", got, want)
+	}
+}
