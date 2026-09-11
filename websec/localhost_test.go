@@ -17,6 +17,7 @@ import (
 
 	"cloudeng.io/webapp/webauth/jwtutil"
 	"cloudeng.io/webapp/websec"
+	"github.com/lestrrat-go/jwx/v3/jwk"
 )
 
 func okHandler() http.Handler {
@@ -426,6 +427,21 @@ func TestCounterVecAdd_Initialization(t *testing.T) {
 	}
 }
 
+// setupValidator returns a Validator for the tokens that signer produces,
+// which is what WithJWTCookie verifies them with.
+func setupValidator(t *testing.T, signer jwtutil.Signer) jwtutil.Validator {
+	t.Helper()
+	pubKey, err := signer.PublicKey()
+	if err != nil {
+		t.Fatalf("failed to get public key: %v", err)
+	}
+	set := jwk.NewSet()
+	if err := set.AddKey(pubKey); err != nil {
+		t.Fatalf("failed to add key to set: %v", err)
+	}
+	return jwtutil.NewValidator(set)
+}
+
 func setupSigner(t *testing.T) jwtutil.Signer {
 	t.Helper()
 	_, priv, err := ed25519.GenerateKey(rand.Reader)
@@ -442,10 +458,7 @@ func setupSigner(t *testing.T) jwtutil.Signer {
 func TestJWTCookieValidation(t *testing.T) {
 	ctx := t.Context()
 	signer := setupSigner(t)
-	pubKey, err := signer.PublicKey()
-	if err != nil {
-		t.Fatalf("failed to get public key: %v", err)
-	}
+	validator := setupValidator(t, signer)
 
 	claimKey := "role"
 	claimValue := "admin"
@@ -485,8 +498,7 @@ func TestJWTCookieValidation(t *testing.T) {
 	})
 
 	handler := websec.NewLocalhostHandler(echoHandler,
-		websec.WithJWTCookie("auth_cookie", pubKey, claimKey, claimValue),
-		websec.WithJWTBootstrapQueryParam(""), // disable bootstrap for this test
+		websec.WithJWTCookie("auth_cookie", validator, claimKey, claimValue),
 	)
 
 	tests := []struct {
@@ -555,98 +567,13 @@ func TestJWTCookieValidation(t *testing.T) {
 	}
 }
 
-func TestJWTBootstrapQueryParam(t *testing.T) {
-	ctx := t.Context()
-	signer := setupSigner(t)
-	pubKey, err := signer.PublicKey()
-	if err != nil {
-		t.Fatalf("failed to get public key: %v", err)
-	}
-
-	validToken, err := jwtutil.CreateVerificationToken(ctx, signer, "user-2", "access", "granted", time.Hour, "", "")
-	if err != nil {
-		t.Fatalf("failed to create token: %v", err)
-	}
-
-	handler := websec.NewLocalhostHandler(okHandler(),
-		websec.WithJWTCookie("session_token", pubKey, "access", "granted"),
-		websec.WithJWTBootstrapQueryParam("token"),
-	)
-
-	t.Run("successful bootstrap with redirect and cookie", func(t *testing.T) {
-		req := httptest.NewRequest(http.MethodGet, "/dashboard?source=email&token="+string(validToken), nil)
-		req.RemoteAddr = "127.0.0.1:1234"
-		req.Host = "localhost"
-		w := httptest.NewRecorder()
-
-		handler.ServeHTTP(w, req)
-
-		if got, want := w.Code, http.StatusSeeOther; got != want {
-			t.Fatalf("got status %d, want %d", got, want)
-		}
-
-		// Verify redirect Location strips token query param
-		location := w.Header().Get("Location")
-		if location != "/dashboard?source=email" {
-			t.Errorf("got Location %q, want %q", location, "/dashboard?source=email")
-		}
-
-		// Verify cookie was set
-		cookies := w.Result().Cookies()
-		var sessionCookie *http.Cookie
-		for _, c := range cookies {
-			if c.Name == "session_token" {
-				sessionCookie = c
-				break
-			}
-		}
-		if sessionCookie == nil {
-			t.Fatal("session_token cookie was not set in response")
-		}
-		if sessionCookie.Value != string(validToken) {
-			t.Errorf("got cookie value %q, want %q", sessionCookie.Value, string(validToken))
-		}
-		if !sessionCookie.HttpOnly {
-			t.Error("cookie should be HttpOnly")
-		}
-		if sessionCookie.SameSite != http.SameSiteStrictMode {
-			t.Errorf("got SameSite %v, want %v", sessionCookie.SameSite, http.SameSiteStrictMode)
-		}
-
-		// Follow-up request using the newly issued cookie
-		req2 := httptest.NewRequest(http.MethodGet, "/dashboard?source=email", nil)
-		req2.RemoteAddr = "127.0.0.1:1234"
-		req2.Host = "localhost"
-		req2.AddCookie(sessionCookie)
-		w2 := httptest.NewRecorder()
-
-		handler.ServeHTTP(w2, req2)
-		if got, want := w2.Code, http.StatusOK; got != want {
-			t.Errorf("follow up with cookie: got status %d, want %d", got, want)
-		}
-	})
-
-	t.Run("invalid bootstrap token", func(t *testing.T) {
-		req := httptest.NewRequest(http.MethodGet, "/dashboard?token=bad.token", nil)
-		req.RemoteAddr = "127.0.0.1:1234"
-		req.Host = "localhost"
-		w := httptest.NewRecorder()
-
-		handler.ServeHTTP(w, req)
-		if got, want := w.Code, http.StatusUnauthorized; got != want {
-			t.Errorf("got status %d, want %d", got, want)
-		}
-	})
-}
-
 func TestInvalidJWTCounter(t *testing.T) {
 	vec := newFakeCounterVec()
 	signer := setupSigner(t)
-	pubKey, _ := signer.PublicKey()
+	validator := setupValidator(t, signer)
 
 	handler := websec.NewLocalhostHandler(okHandler(),
-		websec.WithJWTCookie("test_cookie", pubKey, "perm", "read"),
-		websec.WithJWTBootstrapQueryParam(""),
+		websec.WithJWTCookie("test_cookie", validator, "perm", "read"),
 		websec.WithCounterVec(vec.Inc),
 	)
 
@@ -671,10 +598,7 @@ func TestInvalidJWTCounter(t *testing.T) {
 func TestJWTCookieNameAndContextKey(t *testing.T) {
 	ctx := t.Context()
 	signer := setupSigner(t)
-	pubKey, err := signer.PublicKey()
-	if err != nil {
-		t.Fatalf("failed to get public key: %v", err)
-	}
+	validator := setupValidator(t, signer)
 	token, err := jwtutil.CreateVerificationToken(ctx, signer, "user-3", "role", "admin", time.Hour, "", "")
 	if err != nil {
 		t.Fatalf("failed to create token: %v", err)
@@ -711,7 +635,7 @@ func TestJWTCookieNameAndContextKey(t *testing.T) {
 			})
 
 			opts := append([]websec.Option{
-				websec.WithJWTCookie("auth_cookie", pubKey, "role", "admin"),
+				websec.WithJWTCookie("auth_cookie", validator, "role", "admin"),
 			}, tc.opts...)
 			handler := websec.NewLocalhostHandler(inner, opts...)
 
@@ -738,56 +662,39 @@ func TestJWTCookieNameAndContextKey(t *testing.T) {
 	}
 }
 
-// TestJWTBootstrapCookieName verifies that the cookie written when
-// bootstrapping from a query parameter carries the configured name, and the
-// attributes that make it usable for the subsequent request.
-func TestJWTBootstrapCookieName(t *testing.T) {
+// TestJWTTokenNotAcceptedFromQuery verifies that a token is only accepted from
+// the cookie. Bootstrapping one from a URL query parameter was supported once,
+// and a valid token presented that way must now be refused: a token in a URL
+// is visible in logs, history and referrers, so accepting one again would
+// weaken the middleware silently.
+func TestJWTTokenNotAcceptedFromQuery(t *testing.T) {
 	ctx := t.Context()
 	signer := setupSigner(t)
-	pubKey, err := signer.PublicKey()
-	if err != nil {
-		t.Fatalf("failed to get public key: %v", err)
-	}
-	token, err := jwtutil.CreateVerificationToken(ctx, signer, "user-4", "role", "admin", time.Hour, "", "")
+	validator := setupValidator(t, signer)
+	token, err := jwtutil.CreateVerificationToken(ctx, signer, "user-5", "role", "admin", time.Hour, "", "")
 	if err != nil {
 		t.Fatalf("failed to create token: %v", err)
 	}
 
 	handler := websec.NewLocalhostHandler(okHandler(),
-		websec.WithJWTCookie("auth_cookie", pubKey, "role", "admin"),
-		websec.WithJWTCookieName("renamed"),
+		websec.WithJWTCookie("auth_cookie", validator, "role", "admin"),
 	)
 
-	req := httptest.NewRequest(http.MethodGet, "/?token="+string(token), nil)
-	req.RemoteAddr = "127.0.0.1:1234"
-	req.Host = "localhost"
-	w := httptest.NewRecorder()
-	handler.ServeHTTP(w, req)
+	for _, param := range []string{"token", "auth_cookie", "jwt"} {
+		t.Run(param, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodGet, "/?"+param+"="+string(token), nil)
+			req.RemoteAddr = "127.0.0.1:1234"
+			req.Host = "localhost"
+			w := httptest.NewRecorder()
+			handler.ServeHTTP(w, req)
 
-	if got, want := w.Code, http.StatusSeeOther; got != want {
-		t.Fatalf("got status %d, want %d (body %q)", got, want, w.Body.String())
-	}
-	set := w.Result().Cookies()
-	if len(set) != 1 {
-		t.Fatalf("got %d cookies, want 1: %v", len(set), set)
-	}
-	ck := set[0]
-	if got, want := ck.Name, "renamed"; got != want {
-		t.Errorf("cookie name: got %v, want %v", got, want)
-	}
-	if got, want := ck.Value, string(token); got != want {
-		t.Errorf("cookie value: got %v, want %v", got, want)
-	}
-	if !ck.HttpOnly {
-		t.Error("cookie is not HttpOnly")
-	}
-	if !ck.Secure {
-		t.Error("cookie is not Secure")
-	}
-	if got, want := ck.SameSite, http.SameSiteStrictMode; got != want {
-		t.Errorf("cookie SameSite: got %v, want %v", got, want)
-	}
-	if got, want := ck.Path, "/"; got != want {
-		t.Errorf("cookie path: got %v, want %v", got, want)
+			if got, want := w.Code, http.StatusUnauthorized; got != want {
+				t.Errorf("got status %d, want %d", got, want)
+			}
+			// Nor may it be turned into a cookie for the next request.
+			if set := w.Result().Cookies(); len(set) != 0 {
+				t.Errorf("got cookies %v, want none", set)
+			}
+		})
 	}
 }

@@ -20,7 +20,6 @@ import (
 	"cloudeng.io/webapp"
 	"cloudeng.io/webapp/cookies"
 	"cloudeng.io/webapp/webauth/jwtutil"
-	"github.com/lestrrat-go/jwx/v3/jwk"
 	"github.com/lestrrat-go/jwx/v3/jwt"
 )
 
@@ -28,12 +27,11 @@ import (
 type Option func(o *options)
 
 type jwtConfig struct {
-	cookie              cookies.Secure
-	contextKey          string
-	validator           jwtutil.Validator
-	claimKey            string
-	claimValue          any
-	bootstrapQueryParam string
+	cookie     cookies.Secure
+	contextKey string
+	validator  jwtutil.Validator
+	claimKey   string
+	claimValue any
 }
 
 // tokenKey returns the key that a validated token is stored under in the
@@ -209,29 +207,23 @@ func WithCounterVecAdd(counter webapp.CounterVecAdd) Option {
 }
 
 // WithJWTCookie enables JWT validation for requests presented in a cookie.
-// It verifies that the cookie named cookieName contains a valid JWT verifiable
-// by pubKey and containing claimKey == claimValue. If cookieName is empty,
-// it defaults to "auth_token". By default, bootstrapping from a "?token=<jwt>"
-// URL query parameter is enabled.
+// It verifies that the cookie named cookieName contains a JWT that validator
+// accepts and that contains claimKey == claimValue. If cookieName is empty,
+// it defaults to "auth_token".
 //
 // The validated token is stored in the request context under the name of the
 // cookie unless WithJWTContextKey says otherwise. WithJWTCookieName can be
 // used to set the cookie name separately from this option.
-func WithJWTCookie(cookieName string, pubKey jwk.Key, claimKey string, claimValue any) Option {
+func WithJWTCookie(cookieName string, validator jwtutil.Validator, claimKey string, claimValue any) Option {
 	return func(o *options) {
 		if cookieName == "" {
 			cookieName = "auth_token"
 		}
-		set := jwk.NewSet()
-		if pubKey != nil {
-			_ = set.AddKey(pubKey)
-		}
 		o.jwt = &jwtConfig{
-			cookie:              cookies.Secure(cookieName),
-			validator:           jwtutil.NewValidator(set),
-			claimKey:            claimKey,
-			claimValue:          claimValue,
-			bootstrapQueryParam: "token",
+			cookie:     cookies.Secure(cookieName),
+			validator:  validator,
+			claimKey:   claimKey,
+			claimValue: claimValue,
 		}
 	}
 }
@@ -258,19 +250,6 @@ func WithJWTContextKey(key string) Option {
 	return func(o *options) {
 		if o.jwt != nil {
 			o.jwt.contextKey = key
-		}
-	}
-}
-
-// WithJWTBootstrapQueryParam configures the URL query parameter name used to bootstrap
-// the JWT cookie into the client's browser (e.g. "?token=<jwt>"). If a request arrives
-// without the cookie but with a valid token in this query parameter, the handler sets
-// the secure HTTP cookie and issues an HTTP 303 redirect to the clean URL without the token.
-// Pass an empty string to disable query parameter bootstrapping.
-func WithJWTBootstrapQueryParam(param string) Option {
-	return func(o *options) {
-		if o.jwt != nil {
-			o.jwt.bootstrapQueryParam = param
 		}
 	}
 }
@@ -361,7 +340,6 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 func (h *handler) verifyJWT(w http.ResponseWriter, r *http.Request) (*http.Request, bool) {
 	cfg := h.opts.jwt
 
-	// 1. Check cookie
 	if value, ok := cfg.cookie.Read(r); ok && value != "" {
 		tok, err := h.validateToken(r.Context(), value)
 		if err == nil {
@@ -370,43 +348,6 @@ func (h *handler) verifyJWT(w http.ResponseWriter, r *http.Request) (*http.Reque
 		}
 		h.denyWithStatus(w, r, http.StatusUnauthorized, "invalid jwt cookie: "+err.Error(), DenialInvalidJWT)
 		return r, false
-	}
-
-	// 2. Check query parameter bootstrap (e.g. ?token=<jwt>)
-	if cfg.bootstrapQueryParam != "" {
-		if tokenStr := r.URL.Query().Get(cfg.bootstrapQueryParam); tokenStr != "" {
-			if _, err := h.validateToken(r.Context(), tokenStr); err != nil {
-				h.denyWithStatus(w, r, http.StatusUnauthorized, "invalid bootstrap token: "+err.Error(), DenialInvalidJWT)
-				return r, false
-			}
-
-			// Valid token: set cookie and redirect to clean URL. The name,
-			// and the Secure, HttpOnly and SameSite attributes, are supplied
-			// by cookies.Secure and overwrite whatever is given here.
-			//
-			// The cookie is therefore Secure even when this handler is
-			// reached over plain HTTP, which loopback addresses commonly are.
-			// Browsers that treat a loopback origin as trustworthy send it
-			// regardless; those that do not will drop it, leaving the request
-			// unauthenticated.
-			cfg.cookie.Set(w, &http.Cookie{ //nolint:gosec // G124: set by cookies.Secure, not here.
-				Value: tokenStr,
-				Path:  "/",
-			})
-
-			q := r.URL.Query()
-			q.Del(cfg.bootstrapQueryParam)
-			u := *r.URL
-			u.RawQuery = q.Encode()
-			cleanURL := u.RequestURI()
-			if cleanURL == "" {
-				cleanURL = "/"
-			}
-			// cleanURL comes from RequestURI, which is a path and query and
-			// so always relative to this host: it cannot redirect elsewhere.
-			http.Redirect(w, r, cleanURL, http.StatusSeeOther) //nolint:gosec // G710: not an open redirect, see above.
-			return r, false
-		}
 	}
 
 	h.denyWithStatus(w, r, http.StatusUnauthorized, "missing authentication cookie", DenialInvalidJWT)

@@ -159,17 +159,6 @@ Defaults to true.
 
 
 ```go
-func WithJWTBootstrapQueryParam(param string) Option
-```
-WithJWTBootstrapQueryParam configures the URL query parameter name used to
-bootstrap the JWT cookie into the client's browser (e.g. "?token=<jwt>").
-If a request arrives without the cookie but with a valid token in this query
-parameter, the handler sets the secure HTTP cookie and issues an HTTP 303
-redirect to the clean URL without the token. Pass an empty string to disable
-query parameter bootstrapping.
-
-
-```go
 func WithJWTContextKey(key string) Option
 ```
 WithJWTContextKey sets the key that a validated token is stored under in
@@ -181,13 +170,12 @@ WithJWTCookie has already been applied.
 
 
 ```go
-func WithJWTCookie(cookieName string, pubKey jwk.Key, claimKey string, claimValue any) Option
+func WithJWTCookie(cookieName string, validator jwtutil.Validator, claimKey string, claimValue any) Option
 ```
 WithJWTCookie enables JWT validation for requests presented in a cookie.
-It verifies that the cookie named cookieName contains a valid JWT verifiable
-by pubKey and containing claimKey == claimValue. If cookieName is empty,
-it defaults to "auth_token". By default, bootstrapping from a "?token=<jwt>"
-URL query parameter is enabled.
+It verifies that the cookie named cookieName contains a JWT that validator
+accepts and that contains claimKey == claimValue. If cookieName is empty,
+it defaults to "auth_token".
 
 The validated token is stored in the request context under the name of the
 cookie unless WithJWTContextKey says otherwise. WithJWTCookieName can be

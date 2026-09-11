@@ -11,8 +11,10 @@ import (
 	"net/http"
 	"time"
 
+	"cloudeng.io/webapp/cookies"
 	"cloudeng.io/webapp/webauth/jwtutil"
 	"cloudeng.io/webapp/websec"
+	"github.com/lestrrat-go/jwx/v3/jwk"
 )
 
 func ExampleNewLocalhostHandler() {
@@ -20,6 +22,9 @@ func ExampleNewLocalhostHandler() {
 	_, priv, _ := ed25519.GenerateKey(nil)
 	signer, _ := jwtutil.NewED25519Signer(priv, "key-1")
 	pubKey, _ := signer.PublicKey()
+	keys := jwk.NewSet()
+	_ = keys.AddKey(pubKey)
+	validator := jwtutil.NewValidator(keys)
 
 	// 2. Wrap app with websec middleware
 	appHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -30,17 +35,28 @@ func ExampleNewLocalhostHandler() {
 
 	secured := websec.NewLocalhostHandler(appHandler,
 		websec.WithAllowedPorts(8080),
-		websec.WithJWTCookie("session_token", pubKey, "role", "admin"),
+		websec.WithJWTCookie("session_token", validator, "role", "admin"),
 	)
 
-	// 3. Generate bootstrap URL to open in browser
+	// 3. Deliver a token to the browser as the cookie the middleware reads.
+	// The middleware only reads that cookie; setting it is the application's
+	// responsibility.
 	tokenBytes, _ := jwtutil.CreateVerificationToken(context.Background(),
 		signer, "local-user", "role", "admin", time.Hour, "", "")
-	bootstrapURL, _ := jwtutil.VerificationURL("http://127.0.0.1:8080/dashboard", tokenBytes)
 
-	// Prints: http://127.0.0.1:8080/dashboard?token=eyJhbGci...
-	// When clicked, sets the cookie and redirects cleanly to /dashboard
-	fmt.Println("Open in browser:", bootstrapURL)
+	mux := http.NewServeMux()
+	mux.Handle("/", secured)
+	mux.HandleFunc("/login", func(w http.ResponseWriter, r *http.Request) {
+		// cookies.Secure supplies the name, and the Secure, HttpOnly and
+		// SameSite attributes.
+		cookies.Secure("session_token").Set(w, &http.Cookie{ //nolint:gosec // G124: set by cookies.Secure, not here.
+			Value: string(tokenBytes),
+			Path:  "/",
+		})
+		http.Redirect(w, r, "/dashboard", http.StatusSeeOther)
+	})
 
-	_ = http.ListenAndServe("127.0.0.1:8080", secured) //nolint:gosec // G114: an example, not a server to be run.
+	fmt.Println("Open in browser: http://127.0.0.1:8080/login")
+
+	_ = http.ListenAndServe("127.0.0.1:8080", mux) //nolint:gosec // G114: an example, not a server to be run.
 }
