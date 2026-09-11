@@ -99,6 +99,18 @@ func TestHostValidation(t *testing.T) {
 			[]websec.Option{websec.WithAllowedPorts(8080, 8443)},
 			http.StatusForbidden,
 		},
+		{
+			"allowed port omitted when port required",
+			"localhost",
+			[]websec.Option{websec.WithAllowedPorts(8080, 8443)},
+			http.StatusForbidden,
+		},
+		{
+			"allowed port 80 omitted matches http default",
+			"localhost",
+			[]websec.Option{websec.WithAllowedPorts(80)},
+			http.StatusOK,
+		},
 	}
 
 	for _, tc := range tests {
@@ -188,6 +200,20 @@ func TestCrossSiteRequests(t *testing.T) {
 			origin:       "http://evil.com",
 			opts:         []websec.Option{websec.WithBlockCrossSiteRequests(false)},
 			wantStatus:   http.StatusOK,
+		},
+		{
+			name:         "explicit allowed referer with cross-site fetch site and no origin",
+			secFetchSite: "cross-site",
+			referer:      "https://trusted-partner.com/dashboard",
+			opts:         []websec.Option{websec.WithAllowedOrigins("https://trusted-partner.com")},
+			wantStatus:   http.StatusOK,
+		},
+		{
+			name:         "untrusted referer with cross-site fetch site and no origin",
+			secFetchSite: "cross-site",
+			referer:      "https://evil.com/dashboard",
+			opts:         []websec.Option{websec.WithAllowedOrigins("https://trusted-partner.com")},
+			wantStatus:   http.StatusForbidden,
 		},
 	}
 
@@ -560,6 +586,11 @@ func TestJWTCookieValidation(t *testing.T) {
 			if got := w.Code; got != tc.wantStatus {
 				t.Errorf("got status %d, want %d", got, tc.wantStatus)
 			}
+			if tc.wantStatus == http.StatusUnauthorized && tc.cookieVal != "" {
+				if got, want := w.Body.String(), "invalid or expired authentication token\n"; got != want {
+					t.Errorf("got body %q, want %q", got, want)
+				}
+			}
 			if tc.wantSub != "" && contextSubject != tc.wantSub {
 				t.Errorf("got context subject %q, want %q", contextSubject, tc.wantSub)
 			}
@@ -605,20 +636,65 @@ func TestJWTCookieNameAndContextKey(t *testing.T) {
 	}
 
 	for _, tc := range []struct {
-		name string
-		opts []websec.Option
-		// sends is the cookie the client presents, wantKey the context key the
-		// token must then be retrievable under.
+		name    string
+		opts    []websec.Option
 		sends   string
 		wantKey string
 	}{
-		{"defaults to the cookie name", nil, "auth_cookie", "auth_cookie"},
-		{"renamed cookie", []websec.Option{websec.WithJWTCookieName("renamed")}, "renamed", "renamed"},
-		{"separate context key", []websec.Option{websec.WithJWTContextKey("session")}, "auth_cookie", "session"},
-		{"both", []websec.Option{
-			websec.WithJWTCookieName("renamed"),
-			websec.WithJWTContextKey("session"),
-		}, "renamed", "session"},
+		{
+			name: "defaults to the cookie name",
+			opts: []websec.Option{
+				websec.WithJWTCookie("auth_cookie", validator, "role", "admin"),
+			},
+			sends:   "auth_cookie",
+			wantKey: "auth_cookie",
+		},
+		{
+			name: "renamed cookie after WithJWTCookie",
+			opts: []websec.Option{
+				websec.WithJWTCookie("auth_cookie", validator, "role", "admin"),
+				websec.WithJWTCookieName("renamed"),
+			},
+			sends:   "renamed",
+			wantKey: "renamed",
+		},
+		{
+			name: "renamed cookie before WithJWTCookie",
+			opts: []websec.Option{
+				websec.WithJWTCookieName("renamed"),
+				websec.WithJWTCookie("auth_cookie", validator, "role", "admin"),
+			},
+			sends:   "renamed",
+			wantKey: "renamed",
+		},
+		{
+			name: "separate context key after WithJWTCookie",
+			opts: []websec.Option{
+				websec.WithJWTCookie("auth_cookie", validator, "role", "admin"),
+				websec.WithJWTContextKey("session"),
+			},
+			sends:   "auth_cookie",
+			wantKey: "session",
+		},
+		{
+			name: "separate context key before WithJWTCookie",
+			opts: []websec.Option{
+				websec.WithJWTContextKey("session"),
+				websec.WithJWTCookie("auth_cookie", validator, "role", "admin"),
+			},
+			sends:   "auth_cookie",
+			wantKey: "session",
+		},
+		{
+			name: "both before WithJWTCookie",
+			opts: []websec.Option{
+				websec.WithJWTCookieName("renamed"),
+				websec.WithJWTContextKey("session"),
+				websec.WithJWTCookie("auth_cookie", validator, "role", "admin"),
+			},
+			sends:   "renamed",
+			wantKey: "session",
+		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			var gotKeys []string
@@ -634,10 +710,7 @@ func TestJWTCookieNameAndContextKey(t *testing.T) {
 				w.WriteHeader(http.StatusOK)
 			})
 
-			opts := append([]websec.Option{
-				websec.WithJWTCookie("auth_cookie", validator, "role", "admin"),
-			}, tc.opts...)
-			handler := websec.NewLocalhostHandler(inner, opts...)
+			handler := websec.NewLocalhostHandler(inner, tc.opts...)
 
 			req := httptest.NewRequest(http.MethodGet, "/", nil)
 			req.RemoteAddr = "127.0.0.1:1234"

@@ -10,8 +10,6 @@ for HTTP/HTTPS endpoints bound to 127.0.0.1 or ::1, defending against
 non-loopback connections, DNS rebinding attacks, cross-site browser
 requests, and framing/MIME-sniffing vulnerabilities.
 
-Package websec provides HTTP security middleware for web applications.
-
 ## Constants
 ### DenialNonLoopback, DenialInvalidHost, DenialCrossSite, DenialInvalidJWT
 ```go
@@ -26,14 +24,6 @@ Denial reason constants used as label values for the denial metric.
 
 
 ## Functions
-### Func ContextWithToken
-```go
-func ContextWithToken(ctx context.Context, key string, tok jwt.Token) context.Context
-```
-ContextWithToken returns a new context derived from ctx that
-carries the provided jwt.Token keyed by key. It is an alias for
-jwtutil.ContextWithToken.
-
 ### Func DenialMetricValues
 ```go
 func DenialMetricValues() []string
@@ -75,13 +65,6 @@ bound to 127.0.0.1 or ::1. By default, it enforces loopback connections,
 validates Host headers against DNS rebinding, blocks cross-site browser
 requests, and sets defensive response headers.
 
-### Func TokenFromContext
-```go
-func TokenFromContext(ctx context.Context, key string) (jwt.Token, bool)
-```
-TokenFromContext returns the validated jwt.Token from the request context
-for the given key. It is an alias for jwtutil.TokenFromContext.
-
 
 
 ## Types
@@ -103,8 +86,9 @@ defense. If not specified, defaults to "127.0.0.1", "localhost", and "::1".
 ```go
 func WithAllowedOrigins(origins ...string) Option
 ```
-WithAllowedOrigins permits specific origins to make cross-origin requests
-(e.g. a local dev UI on http://localhost:3000 calling an API on :8080).
+WithAllowedOrigins permits specific external or non-loopback origins to make
+cross-origin requests (e.g. a dev UI on https://trusted-partner.local or an
+external web client).
 
 
 ```go
@@ -161,12 +145,11 @@ Defaults to true.
 ```go
 func WithJWTContextKey(key string) Option
 ```
-WithJWTContextKey sets the key that a validated token is stored under in
-the request context, for retrieval with TokenFromContext. It defaults to
-the name of the cookie, so this is needed where the two should differ,
+WithJWTContextKey sets the key that a validated token is stored under in the
+request context, for retrieval with jwtutil.TokenFromContext. It defaults
+to the name of the cookie, so this is needed where the two should differ,
 such as when the name of the cookie is not one the rest of the application
-should have to know. Like the other JWT options it has no effect unless
-WithJWTCookie has already been applied.
+should have to know.
 
 
 ```go
@@ -187,8 +170,7 @@ func WithJWTCookieName(name string) Option
 ```
 WithJWTCookieName sets the name of the cookie that carries the JWT,
 overriding the name given to WithJWTCookie. An empty name is ignored,
-since a cookie has to be named something. Like the other JWT options it has
-no effect unless WithJWTCookie has already been applied.
+since a cookie has to be named something.
 
 
 ```go

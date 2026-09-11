@@ -2,7 +2,6 @@
 // Use of this source code is governed by the Apache-2.0
 // license that can be found in the LICENSE file.
 
-// Package websec provides HTTP security middleware for web applications.
 package websec
 
 import (
@@ -13,7 +12,6 @@ import (
 	"net/http"
 	"net/netip"
 	"net/url"
-	"slices"
 	"strconv"
 	"strings"
 
@@ -72,6 +70,17 @@ func DenialMetricValues() []string {
 	return MetricsDenialValues()
 }
 
+var defaultCustomResponseHeaders = map[string]string{
+	"X-Frame-Options":              "DENY",
+	"X-Content-Type-Options":       "nosniff",
+	"Content-Security-Policy":      "frame-ancestors 'none';",
+	"Cross-Origin-Resource-Policy": "same-origin",
+	"Cross-Origin-Opener-Policy":   "same-origin",
+	"Cache-Control":                "no-store",
+}
+
+func noopCounter(context.Context, ...string) {}
+
 type options struct {
 	enforceLoopback       bool
 	blockCrossSite        bool
@@ -82,6 +91,8 @@ type options struct {
 	customResponseHeaders map[string]string
 	logger                *slog.Logger
 	jwt                   *jwtConfig
+	jwtCookieName         string
+	jwtContextKey         string
 	counterVec            webapp.CounterVecInc
 	counterVecAdd         webapp.CounterVecAdd
 }
@@ -95,17 +106,10 @@ func defaultOptions() options {
 			"localhost",
 			"::1",
 		},
-		securityHeaders: true,
-		customResponseHeaders: map[string]string{
-			"X-Frame-Options":              "DENY",
-			"X-Content-Type-Options":       "nosniff",
-			"Content-Security-Policy":      "frame-ancestors 'none';",
-			"Cross-Origin-Resource-Policy": "same-origin",
-			"Cross-Origin-Opener-Policy":   "same-origin",
-			"Cache-Control":                "no-store",
-		},
-		logger:     slog.New(slog.DiscardHandler),
-		counterVec: func(context.Context, ...string) {},
+		securityHeaders:       true,
+		customResponseHeaders: defaultCustomResponseHeaders,
+		logger:                slog.New(slog.DiscardHandler),
+		counterVec:            noopCounter,
 	}
 }
 
@@ -134,8 +138,9 @@ func WithAllowedPorts(ports ...int) Option {
 	}
 }
 
-// WithAllowedOrigins permits specific origins to make cross-origin requests
-// (e.g. a local dev UI on http://localhost:3000 calling an API on :8080).
+// WithAllowedOrigins permits specific external or non-loopback origins to
+// make cross-origin requests (e.g. a dev UI on https://trusted-partner.local
+// or an external web client).
 func WithAllowedOrigins(origins ...string) Option {
 	return func(o *options) {
 		o.allowedOrigins = append([]string(nil), origins...)
@@ -230,45 +235,38 @@ func WithJWTCookie(cookieName string, validator jwtutil.Validator, claimKey stri
 
 // WithJWTCookieName sets the name of the cookie that carries the JWT,
 // overriding the name given to WithJWTCookie. An empty name is ignored, since
-// a cookie has to be named something. Like the other JWT options it has no
-// effect unless WithJWTCookie has already been applied.
+// a cookie has to be named something.
 func WithJWTCookieName(name string) Option {
 	return func(o *options) {
-		if o.jwt != nil && name != "" {
-			o.jwt.cookie = cookies.Secure(name)
+		if name != "" {
+			o.jwtCookieName = name
+			if o.jwt != nil {
+				o.jwt.cookie = cookies.Secure(name)
+			}
 		}
 	}
 }
 
 // WithJWTContextKey sets the key that a validated token is stored under in the
-// request context, for retrieval with TokenFromContext. It defaults to the
+// request context, for retrieval with jwtutil.TokenFromContext. It defaults to the
 // name of the cookie, so this is needed where the two should differ, such as
 // when the name of the cookie is not one the rest of the application should
-// have to know. Like the other JWT options it has no effect unless
-// WithJWTCookie has already been applied.
+// have to know.
 func WithJWTContextKey(key string) Option {
 	return func(o *options) {
+		o.jwtContextKey = key
 		if o.jwt != nil {
 			o.jwt.contextKey = key
 		}
 	}
 }
 
-// ContextWithToken returns a new context derived from ctx that carries the
-// provided jwt.Token keyed by key. It is an alias for jwtutil.ContextWithToken.
-func ContextWithToken(ctx context.Context, key string, tok jwt.Token) context.Context {
-	return jwtutil.ContextWithToken(ctx, key, tok)
-}
-
-// TokenFromContext returns the validated jwt.Token from the request context
-// for the given key. It is an alias for jwtutil.TokenFromContext.
-func TokenFromContext(ctx context.Context, key string) (jwt.Token, bool) {
-	return jwtutil.TokenFromContext(ctx, key)
-}
-
 type handler struct {
-	next http.Handler
-	opts options
+	next           http.Handler
+	opts           options
+	allowedHosts   map[string]struct{}
+	allowedPorts   map[int]struct{}
+	allowedOrigins map[string]struct{}
 }
 
 // NewLocalhostHandler wraps next with security controls designed for services
@@ -280,18 +278,73 @@ func NewLocalhostHandler(next http.Handler, opts ...Option) http.Handler {
 	for _, opt := range opts {
 		opt(&o)
 	}
+	if o.jwt != nil {
+		if o.jwtCookieName != "" {
+			o.jwt.cookie = cookies.Secure(o.jwtCookieName)
+		}
+		if o.jwtContextKey != "" {
+			o.jwt.contextKey = o.jwtContextKey
+		}
+	}
 	if o.counterVec == nil {
-		o.counterVec = func(context.Context, ...string) {}
+		o.counterVec = noopCounter
 	}
 	if o.counterVecAdd != nil {
 		for _, val := range MetricsDenialValues() {
 			o.counterVecAdd(context.Background(), 0, val)
 		}
 	}
+
 	return &handler{
-		next: next,
-		opts: o,
+		next:           next,
+		opts:           o,
+		allowedHosts:   newAllowedHosts(o.allowedHosts),
+		allowedPorts:   newAllowedPorts(o.allowedPorts),
+		allowedOrigins: newAllowedOrigins(o.allowedOrigins),
 	}
+}
+
+func newAllowedHosts(hosts []string) map[string]struct{} {
+	if len(hosts) == 0 {
+		return nil
+	}
+	m := make(map[string]struct{}, len(hosts)*2)
+	for _, allowed := range hosts {
+		lower := strings.ToLower(allowed)
+		m[lower] = struct{}{}
+		m[strings.Trim(lower, "[]")] = struct{}{}
+	}
+	return m
+}
+
+func newAllowedPorts(ports []int) map[int]struct{} {
+	if len(ports) == 0 {
+		return nil
+	}
+	m := make(map[int]struct{}, len(ports))
+	for _, port := range ports {
+		m[port] = struct{}{}
+	}
+	return m
+}
+
+func newAllowedOrigins(origins []string) map[string]struct{} {
+	if len(origins) == 0 {
+		return nil
+	}
+	m := make(map[string]struct{}, len(origins)*3)
+	for _, orig := range origins {
+		m[orig] = struct{}{}
+		if u, err := url.Parse(orig); err == nil {
+			if u.Scheme != "" && u.Host != "" {
+				m[u.Scheme+"://"+u.Host] = struct{}{}
+			}
+			if u.Host != "" {
+				m[u.Host] = struct{}{}
+			}
+		}
+	}
+	return m
 }
 
 // NewHandler is an alias for NewLocalhostHandler.
@@ -346,7 +399,8 @@ func (h *handler) verifyJWT(w http.ResponseWriter, r *http.Request) (*http.Reque
 			ctx := jwtutil.ContextWithToken(r.Context(), cfg.tokenKey(), tok)
 			return r.WithContext(ctx), true
 		}
-		h.denyWithStatus(w, r, http.StatusUnauthorized, "invalid jwt cookie: "+err.Error(), DenialInvalidJWT)
+		h.opts.logger.WarnContext(r.Context(), "invalid jwt token in cookie", "error", err)
+		h.denyWithStatus(w, r, http.StatusUnauthorized, "invalid or expired authentication token", DenialInvalidJWT)
 		return r, false
 	}
 
@@ -392,7 +446,7 @@ func (h *handler) verifyLoopback(r *http.Request) bool {
 }
 
 func (h *handler) verifyHost(r *http.Request) bool {
-	if len(h.opts.allowedHosts) == 0 {
+	if len(h.allowedHosts) == 0 {
 		return true
 	}
 	rawHost := strings.ToLower(r.Host)
@@ -403,71 +457,97 @@ func (h *handler) verifyHost(r *http.Request) bool {
 	}
 	hostWithoutBrackets := strings.Trim(host, "[]")
 
-	hostMatched := false
-	for _, allowed := range h.opts.allowedHosts {
-		allowedLower := strings.ToLower(allowed)
-		if rawHost == allowedLower || host == allowedLower || hostWithoutBrackets == allowedLower || hostWithoutBrackets == strings.Trim(allowedLower, "[]") {
-			hostMatched = true
-			break
-		}
+	matched := false
+	if _, ok := h.allowedHosts[rawHost]; ok {
+		matched = true
+	} else if _, ok := h.allowedHosts[host]; ok {
+		matched = true
+	} else if _, ok := h.allowedHosts[hostWithoutBrackets]; ok {
+		matched = true
 	}
-	if !hostMatched {
+	if !matched {
 		return false
 	}
 
-	if len(h.opts.allowedPorts) > 0 && portStr != "" {
-		port, err := strconv.Atoi(portStr)
-		if err != nil || !slices.Contains(h.opts.allowedPorts, port) {
-			return false
+	if len(h.allowedPorts) > 0 {
+		if portStr != "" {
+			port, err := strconv.Atoi(portStr)
+			if err != nil {
+				return false
+			}
+			if _, ok := h.allowedPorts[port]; !ok {
+				return false
+			}
+		} else {
+			defaultPort := 80
+			if r.TLS != nil {
+				defaultPort = 443
+			}
+			if _, ok := h.allowedPorts[defaultPort]; !ok {
+				return false
+			}
 		}
 	}
 	return true
 }
 
+func parseURL(raw string) *url.URL {
+	if raw == "" {
+		return nil
+	}
+	u, _ := url.Parse(raw)
+	return u
+}
+
 func (h *handler) verifyCrossSite(r *http.Request) bool {
 	origin := r.Header.Get("Origin")
-	if origin != "" && h.isOriginAllowed(origin) {
+	originURL := parseURL(origin)
+	if originURL != nil && h.isURLOriginAllowed(origin, originURL) {
 		return true
 	}
 
-	// Fetch Metadata inspection: Sec-Fetch-Site
+	referer := r.Header.Get("Referer")
+	refererURL := parseURL(referer)
+	if origin == "" && refererURL != nil && h.isURLOriginAllowed(referer, refererURL) {
+		return true
+	}
+
 	secFetchSite := strings.ToLower(r.Header.Get("Sec-Fetch-Site"))
 	if secFetchSite == "cross-site" {
 		return false
 	}
 
-	// Origin header check
-	if origin != "" && !h.isLoopbackOrigin(origin) {
-		return false
+	if origin != "" {
+		return isLoopbackURL(originURL)
 	}
-
-	// Referer header check (if Origin was absent)
-	if origin == "" {
-		if referer := r.Header.Get("Referer"); referer != "" {
-			if !h.isLoopbackOrigin(referer) && !h.isOriginAllowed(referer) {
-				return false
-			}
-		}
+	if referer != "" {
+		return isLoopbackURL(refererURL)
 	}
-
 	return true
 }
 
-func (h *handler) isOriginAllowed(originStr string) bool {
-	if slices.Contains(h.opts.allowedOrigins, originStr) {
-		return true
-	}
-	u, err := url.Parse(originStr)
-	if err != nil {
+func (h *handler) isURLOriginAllowed(raw string, u *url.URL) bool {
+	if len(h.allowedOrigins) == 0 || u == nil {
 		return false
 	}
-	normalized := u.Scheme + "://" + u.Host
-	return slices.Contains(h.opts.allowedOrigins, normalized) || slices.Contains(h.opts.allowedOrigins, u.Host)
+	if _, ok := h.allowedOrigins[raw]; ok {
+		return true
+	}
+	if u.Scheme != "" && u.Host != "" {
+		if _, ok := h.allowedOrigins[u.Scheme+"://"+u.Host]; ok {
+			return true
+		}
+	}
+	if u.Host != "" {
+		if _, ok := h.allowedOrigins[u.Host]; ok {
+			return true
+		}
+	}
+	return false
 }
 
-func (h *handler) isLoopbackOrigin(originStr string) bool {
-	u, err := url.Parse(originStr)
-	if err != nil {
+func isLoopbackURL(u *url.URL) bool {
+	if u == nil {
 		return false
 	}
 	host := u.Hostname()
