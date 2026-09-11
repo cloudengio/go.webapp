@@ -776,7 +776,7 @@ func TestJWTIssuerIntegration(t *testing.T) {
 	signer := setupSigner(t)
 	validator := setupValidator(t, signer)
 
-	issuer := jwtutil.JWTIssuer(signer,
+	issuer := jwtutil.JWTIssuerMust(signer,
 		jwtutil.WithSubject("alice"),
 		jwtutil.WithClaim("role", "manager"),
 		jwtutil.WithCookie("session_cookie"),

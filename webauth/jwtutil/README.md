@@ -28,17 +28,32 @@ and audience.
 
 ### Func JWTIssuer
 ```go
-func JWTIssuer(signer Signer, opts ...JWTIssuerOption) http.Handler
+func JWTIssuer(signer Signer, opts ...JWTIssuerOption) (http.Handler, error)
 ```
 JWTIssuer returns an http.Handler that issues JWTs using signer according
 to the configured options. It runs without authentication, issuing tokens to
 any client that accesses it.
 
+### Func JWTIssuerMust
+```go
+func JWTIssuerMust(signer Signer, opts ...JWTIssuerOption) http.Handler
+```
+JWTIssuerMust creates a new JWTIssuer handler or panics on error.
+
 ### Func NewJWTIssuer
 ```go
-func NewJWTIssuer(signer Signer, opts ...JWTIssuerOption) http.Handler
+func NewJWTIssuer(signer Signer, opts ...JWTIssuerOption) (http.Handler, error)
 ```
-NewJWTIssuer creates a new http.Handler that issues JWTs using signer.
+NewJWTIssuer creates a new http.Handler that issues JWTs using signer
+according to the configured options. It returns an error if signer is nil or
+if more than one cookie option is specified.
+
+### Func NewJWTIssuerMust
+```go
+func NewJWTIssuerMust(signer Signer, opts ...JWTIssuerOption) http.Handler
+```
+NewJWTIssuerMust creates a new http.Handler that issues JWTs using signer,
+and panics if an error occurs.
 
 ### Func TokenFromContext
 ```go
@@ -81,6 +96,13 @@ JWTIssuerOption configures a JWTIssuer handler.
 ### Functions
 
 ```go
+func WithAllowedRedirects(allowed ...string) JWTIssuerOption
+```
+WithAllowedRedirects configures an allowlist of permitted redirect
+destinations (URLs or origins) for the redirect query parameter.
+
+
+```go
 func WithAudience(audience ...string) JWTIssuerOption
 ```
 WithAudience sets the "aud" claim of issued tokens.
@@ -101,8 +123,8 @@ WithClaims adds or replaces multiple custom claims in issued tokens.
 ```go
 func WithCookie(name string) JWTIssuerOption
 ```
-WithCookie configures the handler to set the token in an HTTP cookie with
-the given name (using cookies.Secure by default).
+WithCookie configures the handler to set the token in a secure HTTP cookie
+with the given name (alias for WithSecureCookie).
 
 
 ```go
@@ -146,8 +168,10 @@ WithExpiresIn is an alias for WithExpiration.
 ```go
 func WithInsecureCookie(name string) JWTIssuerOption
 ```
-WithInsecureCookie configures the handler to set the token in a plain HTTP
-cookie without forcing Secure and SameSiteStrictMode attributes.
+WithInsecureCookie configures the handler to set the token in a plain
+HTTP cookie without forcing Secure and SameSiteStrictMode attributes. A
+subsequent WithCookieSameSite option can be used to set a specific SameSite
+mode. Only one cookie option may be specified.
 
 
 ```go
@@ -182,17 +206,27 @@ WithRedirect configures an HTTP redirect destination after cookie issuance.
 
 
 ```go
+func WithRedirectAllowlist(allowed ...string) JWTIssuerOption
+```
+WithRedirectAllowlist is an alias for WithAllowedRedirects.
+
+
+```go
 func WithRedirectQueryParam(paramName string) JWTIssuerOption
 ```
 WithRedirectQueryParam configures the name of a query parameter (e.g.
-"redirect") that specifies the redirect URL after cookie issuance.
+"redirect") that specifies the redirect URL after cookie issuance. The
+destination is restricted to same-origin relative paths (e.g. "/dashboard")
+unless explicitly permitted by WithAllowedRedirects. If the parameter
+contains an untrusted or invalid redirect destination, it is ignored and the
+handler falls back to WithRedirect (if configured).
 
 
 ```go
 func WithSecureCookie(name string) JWTIssuerOption
 ```
 WithSecureCookie configures the handler to set the token in a secure HTTP
-cookie with the given name.
+cookie with the given name. Only one cookie option may be specified.
 
 
 ```go

@@ -6,8 +6,11 @@ package jwtutil
 
 import (
 	"encoding/json"
+	"fmt"
 	"log/slog"
+	"maps"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
@@ -19,24 +22,28 @@ import (
 type JWTIssuerOption func(*jwtIssuerOptions)
 
 type jwtIssuerOptions struct {
-	subject         string
-	issuer          string
-	audience        []string
-	expiration      time.Duration
-	notBeforeOffset time.Duration
-	notBeforeSet    bool
-	claims          map[string]any
-	cookieName      string
-	cookieSecure    bool
-	cookiePath      string
-	cookieDomain    string
-	cookieSameSite  http.SameSite
-	direct          bool
-	directSet       bool
-	json            bool
-	redirectURL     string
-	redirectParam   string
-	logger          *slog.Logger
+	subject           string
+	issuer            string
+	audience          []string
+	expiration        time.Duration
+	notBeforeOffset   time.Duration
+	notBeforeSet      bool
+	claims            map[string]any
+	cookieName        string
+	cookieSecure      bool
+	cookiePath        string
+	cookieDomain      string
+	cookieSameSite    http.SameSite
+	hasSecureCookie   bool
+	hasInsecureCookie bool
+	cookieCount       int
+	direct            bool
+	directSet         bool
+	json              bool
+	redirectURL       string
+	redirectParam     string
+	allowedRedirects  []string
+	logger            *slog.Logger
 }
 
 func defaultJWTIssuerOptions() jwtIssuerOptions {
@@ -102,33 +109,39 @@ func WithClaim(key string, value any) JWTIssuerOption {
 // WithClaims adds or replaces multiple custom claims in issued tokens.
 func WithClaims(claims map[string]any) JWTIssuerOption {
 	return func(o *jwtIssuerOptions) {
-		for k, v := range claims {
-			o.claims[k] = v
-		}
+		maps.Copy(o.claims, claims)
 	}
 }
 
-// WithCookie configures the handler to set the token in an HTTP cookie
-// with the given name (using cookies.Secure by default).
+// WithCookie configures the handler to set the token in a secure HTTP cookie
+// with the given name (alias for WithSecureCookie).
 func WithCookie(name string) JWTIssuerOption {
-	return func(o *jwtIssuerOptions) {
-		o.cookieName = name
-		o.cookieSecure = true
-	}
+	return WithSecureCookie(name)
 }
 
 // WithSecureCookie configures the handler to set the token in a secure HTTP
-// cookie with the given name.
+// cookie with the given name. Only one cookie option may be specified.
 func WithSecureCookie(name string) JWTIssuerOption {
-	return WithCookie(name)
+	return func(o *jwtIssuerOptions) {
+		o.cookieName = name
+		o.cookieSecure = true
+		o.cookieSameSite = http.SameSiteStrictMode
+		o.hasSecureCookie = true
+		o.cookieCount++
+	}
 }
 
 // WithInsecureCookie configures the handler to set the token in a plain HTTP cookie
-// without forcing Secure and SameSiteStrictMode attributes.
+// without forcing Secure and SameSiteStrictMode attributes. A subsequent
+// WithCookieSameSite option can be used to set a specific SameSite mode.
+// Only one cookie option may be specified.
 func WithInsecureCookie(name string) JWTIssuerOption {
 	return func(o *jwtIssuerOptions) {
 		o.cookieName = name
 		o.cookieSecure = false
+		o.cookieSameSite = 0
+		o.hasInsecureCookie = true
+		o.cookieCount++
 	}
 }
 
@@ -177,11 +190,28 @@ func WithRedirect(url string) JWTIssuerOption {
 }
 
 // WithRedirectQueryParam configures the name of a query parameter (e.g. "redirect")
-// that specifies the redirect URL after cookie issuance.
+// that specifies the redirect URL after cookie issuance. The destination is
+// restricted to same-origin relative paths (e.g. "/dashboard") unless explicitly
+// permitted by WithAllowedRedirects. If the parameter contains an untrusted or
+// invalid redirect destination, it is ignored and the handler falls back to
+// WithRedirect (if configured).
 func WithRedirectQueryParam(paramName string) JWTIssuerOption {
 	return func(o *jwtIssuerOptions) {
 		o.redirectParam = paramName
 	}
+}
+
+// WithAllowedRedirects configures an allowlist of permitted redirect destinations
+// (URLs or origins) for the redirect query parameter.
+func WithAllowedRedirects(allowed ...string) JWTIssuerOption {
+	return func(o *jwtIssuerOptions) {
+		o.allowedRedirects = append(o.allowedRedirects, allowed...)
+	}
+}
+
+// WithRedirectAllowlist is an alias for WithAllowedRedirects.
+func WithRedirectAllowlist(allowed ...string) JWTIssuerOption {
+	return WithAllowedRedirects(allowed...)
 }
 
 // WithLogger sets the structured logger for issuance events and errors.
@@ -201,15 +231,31 @@ type jwtIssuerHandler struct {
 // JWTIssuer returns an http.Handler that issues JWTs using signer according to
 // the configured options. It runs without authentication, issuing tokens to any
 // client that accesses it.
-func JWTIssuer(signer Signer, opts ...JWTIssuerOption) http.Handler {
+func JWTIssuer(signer Signer, opts ...JWTIssuerOption) (http.Handler, error) {
 	return NewJWTIssuer(signer, opts...)
 }
 
-// NewJWTIssuer creates a new http.Handler that issues JWTs using signer.
-func NewJWTIssuer(signer Signer, opts ...JWTIssuerOption) http.Handler {
+// JWTIssuerMust creates a new JWTIssuer handler or panics on error.
+func JWTIssuerMust(signer Signer, opts ...JWTIssuerOption) http.Handler {
+	return NewJWTIssuerMust(signer, opts...)
+}
+
+// NewJWTIssuer creates a new http.Handler that issues JWTs using signer according
+// to the configured options. It returns an error if signer is nil or if more than
+// one cookie option is specified.
+func NewJWTIssuer(signer Signer, opts ...JWTIssuerOption) (http.Handler, error) {
+	if signer == nil {
+		return nil, fmt.Errorf("jwtutil.NewJWTIssuer: signer cannot be nil")
+	}
 	o := defaultJWTIssuerOptions()
 	for _, opt := range opts {
 		opt(&o)
+	}
+	if o.cookieCount > 1 {
+		if o.hasSecureCookie && o.hasInsecureCookie {
+			return nil, fmt.Errorf("jwtutil.NewJWTIssuer: cannot specify both secure and insecure cookie options")
+		}
+		return nil, fmt.Errorf("jwtutil.NewJWTIssuer: only one cookie option may be specified (found %d)", o.cookieCount)
 	}
 	if !o.directSet && o.cookieName == "" {
 		o.direct = true
@@ -217,10 +263,22 @@ func NewJWTIssuer(signer Signer, opts ...JWTIssuerOption) http.Handler {
 	return &jwtIssuerHandler{
 		signer: signer,
 		opts:   o,
+	}, nil
+}
+
+// NewJWTIssuerMust creates a new http.Handler that issues JWTs using signer,
+// and panics if an error occurs.
+func NewJWTIssuerMust(signer Signer, opts ...JWTIssuerOption) http.Handler {
+	h, err := NewJWTIssuer(signer, opts...)
+	if err != nil {
+		panic(err)
 	}
+	return h
 }
 
 func (h *jwtIssuerHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Cache-Control", "no-store")
+
 	if h.signer == nil {
 		h.opts.logger.ErrorContext(r.Context(), "jwt issuer: signer is nil")
 		http.Error(w, "internal server error", http.StatusInternalServerError)
@@ -295,7 +353,13 @@ func (h *jwtIssuerHandler) setCookie(w http.ResponseWriter, tokenStr string) {
 		ck.MaxAge = int(h.opts.expiration.Seconds())
 	}
 	if h.opts.cookieSecure {
-		cookies.Secure(h.opts.cookieName).Set(w, ck)
+		if h.opts.cookieSameSite == http.SameSiteStrictMode {
+			cookies.Secure(h.opts.cookieName).Set(w, ck)
+		} else {
+			ck.Secure = true
+			ck.HttpOnly = true
+			cookies.T(h.opts.cookieName).Set(w, ck)
+		}
 	} else {
 		cookies.T(h.opts.cookieName).Set(w, ck)
 	}
@@ -304,10 +368,63 @@ func (h *jwtIssuerHandler) setCookie(w http.ResponseWriter, tokenStr string) {
 func (h *jwtIssuerHandler) getRedirectURL(r *http.Request) string {
 	if h.opts.redirectParam != "" {
 		if dest := r.URL.Query().Get(h.opts.redirectParam); dest != "" {
-			return dest
+			if h.isAllowedRedirect(dest) {
+				return dest
+			}
+			h.opts.logger.WarnContext(r.Context(), "jwt issuer: rejected untrusted redirect URL", "redirect", dest)
 		}
 	}
 	return h.opts.redirectURL
+}
+
+func (h *jwtIssuerHandler) isAllowedRedirect(dest string) bool {
+	if isSameOriginRelative(dest) {
+		return true
+	}
+	if len(h.opts.allowedRedirects) == 0 {
+		return false
+	}
+	u, err := url.Parse(dest)
+	if err != nil {
+		return false
+	}
+	for _, allowed := range h.opts.allowedRedirects {
+		if isAllowedURL(u, dest, allowed) {
+			return true
+		}
+	}
+	return false
+}
+
+func isSameOriginRelative(dest string) bool {
+	if dest == "" || !strings.HasPrefix(dest, "/") || strings.HasPrefix(dest, "//") {
+		return false
+	}
+	if strings.Contains(dest, "\\") || strings.ContainsAny(dest, "\r\n\t") {
+		return false
+	}
+	u, err := url.Parse(dest)
+	if err != nil {
+		return false
+	}
+	return u.Scheme == "" && u.Host == "" && strings.HasPrefix(u.Path, "/")
+}
+
+func isAllowedURL(u *url.URL, target, pattern string) bool {
+	if target == pattern {
+		return true
+	}
+	p, err := url.Parse(pattern)
+	if err != nil || p.Scheme == "" || p.Host == "" {
+		return false
+	}
+	if !strings.EqualFold(u.Scheme, p.Scheme) || !strings.EqualFold(u.Host, p.Host) {
+		return false
+	}
+	if p.Path == "" || p.Path == "/" {
+		return true
+	}
+	return u.Path == p.Path || strings.HasPrefix(u.Path, strings.TrimSuffix(p.Path, "/")+"/")
 }
 
 func (h *jwtIssuerHandler) writeDirect(w http.ResponseWriter, r *http.Request, tokenStr string) {

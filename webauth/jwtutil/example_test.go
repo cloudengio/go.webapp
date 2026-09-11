@@ -22,7 +22,7 @@ func ExampleJWTIssuer() {
 
 	// 2. Direct issuance (e.g. for API clients or curl):
 	// Returns a JSON payload {"token": "..."} to any visitor.
-	apiIssuer := jwtutil.JWTIssuer(signer,
+	apiIssuer := jwtutil.JWTIssuerMust(signer,
 		jwtutil.WithSubject("service-account"),
 		jwtutil.WithIssuer("auth-service"),
 		jwtutil.WithAudience("api.example.com"),
@@ -34,7 +34,7 @@ func ExampleJWTIssuer() {
 
 	// 3. Cookie issuance with redirect (e.g. for browser login into a localhost app):
 	// Sets a secure HTTP cookie and redirects the browser to the dashboard.
-	loginIssuer := jwtutil.JWTIssuer(signer,
+	loginIssuer := jwtutil.JWTIssuerMust(signer,
 		jwtutil.WithSubject("local-user"),
 		jwtutil.WithClaim("role", "admin"),
 		jwtutil.WithExpiration(8*time.Hour),
