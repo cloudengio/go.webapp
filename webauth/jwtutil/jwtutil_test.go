@@ -5,6 +5,7 @@
 package jwtutil_test
 
 import (
+	"context"
 	"crypto/ed25519"
 	"crypto/rand"
 	"encoding/json"
@@ -134,4 +135,54 @@ func marshalKeySet(key jwk.Key) (jwk.Set, error) {
 		return nil, err
 	}
 	return out, nil
+}
+
+func TestContextToken(t *testing.T) {
+	ctx := context.Background()
+	if _, ok := jwtutil.TokenFromContext(ctx, "session"); ok {
+		t.Fatal("expected no token in empty context")
+	}
+	if all := jwtutil.TokensFromContext(ctx); all != nil {
+		t.Fatalf("expected nil map for empty context, got %v", all)
+	}
+
+	tok1 := newToken(t)
+	tok2 := newToken(t)
+
+	// Add first token
+	ctx1 := jwtutil.ContextWithToken(ctx, "session", tok1)
+	if _, ok := jwtutil.TokenFromContext(ctx, "session"); ok {
+		t.Fatal("parent context should not be mutated")
+	}
+
+	retrieved1, ok := jwtutil.TokenFromContext(ctx1, "session")
+	if !ok || retrieved1 != tok1 {
+		t.Fatalf("expected tok1, got %v (ok=%v)", retrieved1, ok)
+	}
+	if _, ok := jwtutil.TokenFromContext(ctx1, "api"); ok {
+		t.Fatal("expected no api token yet")
+	}
+
+	// Add second token to derived context
+	ctx2 := jwtutil.ContextWithToken(ctx1, "api", tok2)
+	retrieved1, ok = jwtutil.TokenFromContext(ctx2, "session")
+	if !ok || retrieved1 != tok1 {
+		t.Fatalf("expected session tok1 in ctx2, got %v", retrieved1)
+	}
+	retrieved2, ok := jwtutil.TokenFromContext(ctx2, "api")
+	if !ok || retrieved2 != tok2 {
+		t.Fatalf("expected api tok2 in ctx2, got %v", retrieved2)
+	}
+
+	// Verify all tokens map
+	all := jwtutil.TokensFromContext(ctx2)
+	if len(all) != 2 || all["session"] != tok1 || all["api"] != tok2 {
+		t.Fatalf("unexpected tokens map: %v", all)
+	}
+
+	// Mutating returned map must not affect context
+	delete(all, "session")
+	if _, ok := jwtutil.TokenFromContext(ctx2, "session"); !ok {
+		t.Fatal("mutating returned map affected context")
+	}
 }

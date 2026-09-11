@@ -10,6 +10,14 @@ package provides simplified wrappers around the JWT signing and verification
 process to allow for more convenient usage in web applications.
 
 ## Functions
+### Func ContextWithToken
+```go
+func ContextWithToken(ctx context.Context, key string, tok jwt.Token) context.Context
+```
+ContextWithToken returns a new context derived from ctx that carries
+the provided jwt.Token keyed by key. If ctx already contains tokens,
+the existing tokens are preserved and the token for key is added or updated.
+
 ### Func CreateVerificationToken
 ```go
 func CreateVerificationToken(ctx context.Context, s Signer, subject, claimKey string, claimValue any, expiresIn time.Duration, issuer, audience string) ([]byte, error)
@@ -17,6 +25,19 @@ func CreateVerificationToken(ctx context.Context, s Signer, subject, claimKey st
 CreateVerificationToken creates a compacted JWT containing the specified
 claim to be verified along with an expiration time, subject, issuer,
 and audience.
+
+### Func TokenFromContext
+```go
+func TokenFromContext(ctx context.Context, key string) (jwt.Token, bool)
+```
+TokenFromContext retrieves the jwt.Token keyed by key from ctx, if present.
+
+### Func TokensFromContext
+```go
+func TokensFromContext(ctx context.Context) map[string]jwt.Token
+```
+TokensFromContext returns a copy of all jwt.Token instances stored in ctx,
+keyed by their string identifiers.
 
 ### Func ValidateVerificationToken
 ```go
