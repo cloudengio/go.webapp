@@ -25,6 +25,7 @@ import (
 	"cloudeng.io/webapp/webauth/jwtutil"
 	"github.com/lestrrat-go/jwx/v3/jwk"
 	"github.com/lestrrat-go/jwx/v3/jwt"
+	"gopkg.in/yaml.v3"
 )
 
 const (
@@ -129,8 +130,6 @@ func TestConfigVerifyPublicKeyOnly(t *testing.T) {
 	}{
 		{"public key in token", []byte(base64.StdEncoding.EncodeToString(pub)), nil},
 		{"public key in extra", nil, map[string]any{"public_key": base64.StdEncoding.EncodeToString(pub)}},
-		{"hex encoded public key", []byte(hex.EncodeToString(pub)), nil},
-		{"raw public key", pub, nil},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			// The key store contains only the public key, the signed token
@@ -161,9 +160,10 @@ func newConfigToken(t *testing.T) jwt.Token {
 	return tok
 }
 
-// TestConfigHexAndSeedSigningKey covers the encodings accepted for raw ed25519
-// signing key material.
-func TestConfigHexAndSeedSigningKey(t *testing.T) {
+// TestConfigSigningKeyEncoding covers the key material accepted for an ed25519
+// signing key, namely the base64, standard encoding, of either the private key
+// or its seed.
+func TestConfigSigningKeyEncoding(t *testing.T) {
 	_, priv, err := ed25519.GenerateKey(rand.Reader)
 	if err != nil {
 		t.Fatalf("failed to generate key: %v", err)
@@ -172,11 +172,8 @@ func TestConfigHexAndSeedSigningKey(t *testing.T) {
 		name  string
 		token []byte
 	}{
-		{"base64", []byte(base64.StdEncoding.EncodeToString(priv))},
-		{"base64 raw url", []byte(base64.RawURLEncoding.EncodeToString(priv))},
-		{"hex", []byte(hex.EncodeToString(priv))},
-		{"raw", priv},
-		{"seed", priv.Seed()},
+		{"private key", []byte(base64.StdEncoding.EncodeToString(priv))},
+		{"seed", []byte(base64.StdEncoding.EncodeToString(priv.Seed()))},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			ctx := storeKey(context.Background(), testKeySpec, append([]byte(nil), tc.token...), nil)
@@ -185,6 +182,7 @@ func TestConfigHexAndSeedSigningKey(t *testing.T) {
 			if err != nil {
 				t.Fatalf("NewSigner: %v", err)
 			}
+
 			signed, err := signer.Sign(ctx, newConfigToken(t))
 			if err != nil {
 				t.Fatalf("Sign: %v", err)
@@ -199,6 +197,23 @@ func TestConfigHexAndSeedSigningKey(t *testing.T) {
 			}
 			if _, err := verifier.ParseAndValidate(vctx, signed); err != nil {
 				t.Errorf("ParseAndValidate: %v", err)
+			}
+		})
+	}
+
+	// Only the standard base64 encoding is accepted.
+	for _, tc := range []struct {
+		name  string
+		token []byte
+	}{
+		{"hex", []byte(hex.EncodeToString(priv))},
+		{"raw bytes", priv},
+		{"base64 raw url", []byte(base64.RawURLEncoding.EncodeToString(priv))},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx := storeKey(context.Background(), testKeySpec, append([]byte(nil), tc.token...), nil)
+			if _, err := signerConfig().NewSigner(ctx); err == nil {
+				t.Error("NewSigner: got nil error, want the encoding to be rejected")
 			}
 		})
 	}
@@ -386,7 +401,7 @@ func TestConfigInvalidKeys(t *testing.T) {
 		extra any
 	}{
 		{"empty", nil, nil},
-		{"wrong length", []byte(base64.StdEncoding.EncodeToString(countingBytes(48))), nil},
+		{"wrong length", []byte(base64.StdEncoding.EncodeToString(make([]byte, 48))), nil},
 		{"not encoded key material", []byte("this is not a key!"), nil},
 		{"invalid jwk", []byte(`{"kty":"bogus"}`), nil},
 		{"unsupported algorithm", []byte(base64.StdEncoding.EncodeToString(make([]byte, ed25519.PrivateKeySize))),
@@ -611,17 +626,6 @@ func TestCookieValidationTimeSkew(t *testing.T) {
 			t.Errorf("expired by %v: got err %v, want valid=%v", tc.expiredBy, err, tc.valid)
 		}
 	}
-}
-
-// countingBytes returns n bytes with increasing values, ie. material that is
-// neither all zeros nor, when base64 encoded, a valid hex encoding of a key of
-// a different size.
-func countingBytes(n int) []byte {
-	b := make([]byte, n)
-	for i := range b {
-		b[i] = byte(i)
-	}
-	return b
 }
 
 func responseCookie(t *testing.T, rec *httptest.ResponseRecorder, name string) *http.Cookie {
@@ -871,4 +875,109 @@ func newRawKey(t *testing.T) ed25519.PrivateKey {
 		t.Fatalf("failed to generate key: %v", err)
 	}
 	return priv
+}
+
+// TestNewED25519KeyInfo covers the key pairs created for use with the
+// configurations in this package, ie. that the key material they store can be
+// used for both signing and verification.
+func TestNewED25519KeyInfo(t *testing.T) {
+	info, pub, err := jwtutil.NewED25519KeyInfo(testKeyID, testKeyUser)
+	if err != nil {
+		t.Fatalf("NewED25519KeyInfo: %v", err)
+	}
+	if got, want := info.KeySpec(), testKeySpec; got != want {
+		t.Errorf("KeySpec: got %v, want %v", got, want)
+	}
+	var extra jwtutil.KeyExtra
+	if err := info.UnmarshalExtra(&extra); err != nil {
+		t.Fatalf("UnmarshalExtra: %v", err)
+	}
+	if got, want := extra.Algorithm, "EdDSA"; got != want {
+		t.Errorf("algorithm: got %v, want %v", got, want)
+	}
+	if got, want := extra.PublicKey, base64.StdEncoding.EncodeToString(pub); got != want {
+		t.Errorf("public key: got %v, want %v", got, want)
+	}
+
+	// The key is usable for signing and the public key stored with it verifies
+	// what it signs.
+	ctx := keys.ContextWithKey(context.Background(), info)
+	signer, err := jwtutil.SignerForKey(ctx, info.KeySpec())
+	if err != nil {
+		t.Fatalf("SignerForKey: %v", err)
+	}
+	signed, err := signer.Sign(ctx, newConfigToken(t))
+	if err != nil {
+		t.Fatalf("Sign: %v", err)
+	}
+	validator, err := jwtutil.ValidatorForKeys(ctx, info.KeySpec())
+	if err != nil {
+		t.Fatalf("ValidatorForKeys: %v", err)
+	}
+	if _, err := validator.ParseAndValidate(ctx, signed); err != nil {
+		t.Errorf("ParseAndValidate: %v", err)
+	}
+
+	// An Info marshalled to YAML, as it would be when written to a keychain
+	// item, round trips with its extra information intact.
+	buf, err := yaml.Marshal([]keys.Info{info})
+	if err != nil {
+		t.Fatalf("Marshal: %v", err)
+	}
+	store := keys.NewInMemoryKeyStore()
+	if err := yaml.Unmarshal(buf, store); err != nil {
+		t.Fatalf("Unmarshal: %v", err)
+	}
+	rctx := keys.ContextWithKeyStore(context.Background(), store)
+	if _, err := jwtutil.SignerForKey(rctx, info.KeySpec()); err != nil {
+		t.Errorf("SignerForKey after a YAML round trip: %v", err)
+	}
+	validator, err = jwtutil.ValidatorForKeys(rctx, info.KeySpec())
+	if err != nil {
+		t.Fatalf("ValidatorForKeys: %v", err)
+	}
+	if _, err := validator.ParseAndValidate(rctx, signed); err != nil {
+		t.Errorf("ParseAndValidate after a YAML round trip: %v", err)
+	}
+}
+
+// TestKeyLookupByID covers a key spec that does not name a user, which matches
+// a key with the same id belonging to any user provided that it is unambiguous.
+func TestKeyLookupByID(t *testing.T) {
+	info, _, err := jwtutil.NewED25519KeyInfo(testKeyID, testKeyUser)
+	if err != nil {
+		t.Fatalf("NewED25519KeyInfo: %v", err)
+	}
+	ctx := keys.ContextWithKey(context.Background(), info)
+
+	// The user is not named by the spec but the key is the only one with that
+	// id.
+	byID := keys.KeySpec{ID: testKeyID}
+	if _, err := jwtutil.SignerForKey(ctx, byID); err != nil {
+		t.Errorf("SignerForKey: %v", err)
+	}
+	if _, err := jwtutil.ValidatorForKeys(ctx, byID); err != nil {
+		t.Errorf("ValidatorForKeys: %v", err)
+	}
+
+	// A second key with the same id makes the spec ambiguous.
+	other, _, err := jwtutil.NewED25519KeyInfo(testKeyID, "another-user")
+	if err != nil {
+		t.Fatalf("NewED25519KeyInfo: %v", err)
+	}
+	ctx = keys.ContextWithKey(ctx, other)
+	_, err = jwtutil.SignerForKey(ctx, byID)
+	if err == nil || !strings.Contains(err.Error(), "ambiguous") {
+		t.Errorf("SignerForKey: got %v, want an ambiguous key error", err)
+	}
+
+	// A spec naming a user that holds no such key is not found.
+	if _, err := jwtutil.SignerForKey(ctx, keys.KeySpec{ID: testKeyID, User: "nobody"}); !errors.Is(err, jwtutil.ErrKeyNotFound) {
+		t.Errorf("SignerForKey: got %v, want ErrKeyNotFound", err)
+	}
+
+	// No keys at all is an error rather than a validator that accepts nothing.
+	if _, err := jwtutil.ValidatorForKeys(ctx); err == nil {
+		t.Error("ValidatorForKeys: got nil error, want at least one key to be required")
+	}
 }

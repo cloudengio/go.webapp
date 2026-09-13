@@ -8,8 +8,8 @@ import (
 	"bytes"
 	"context"
 	"crypto/ed25519"
+	"crypto/rand"
 	"encoding/base64"
-	"encoding/hex"
 	"errors"
 	"fmt"
 	"slices"
@@ -39,27 +39,67 @@ var (
 //	  algorithm: EdDSA
 //	  public_key: <base64 encoded public key>
 //
-// Both fields are optional. Algorithm names a JWS signature algorithm
-// (EdDSA, RS256, ES256 etc) and defaults to EdDSA, which is the only algorithm
-// for which raw (ie. non-JWK) key material is supported. PublicKey is used by
-// verification keys whose public key cannot be derived from the stored token.
+// All key material is base64 encoded using the standard encoding, or is a JWK
+// in its JSON representation. Both of the fields below are optional. Algorithm
+// names a JWS signature algorithm (EdDSA, RS256, ES256 etc) and defaults to
+// EdDSA, which is the only algorithm for which raw (ie. non-JWK) key material
+// is supported. PublicKey is used by verification keys whose public key cannot
+// be derived from the stored token.
 type KeyExtra struct {
 	Algorithm string `json:"algorithm" yaml:"algorithm"`
 	PublicKey string `json:"public_key" yaml:"public_key"`
 }
 
 // keyInfoFromContext returns the key identified by spec from the key store
-// stored in ctx, see keys.ContextWithKeyStore.
+// stored in ctx, see keys.ContextWithKeyStore. A spec that does not name a user
+// matches a key with the same id belonging to any user, provided that there is
+// exactly one such key.
 func keyInfoFromContext(ctx context.Context, spec keys.KeySpec) (keys.Info, error) {
 	store, ok := keys.KeyStoreFromContext(ctx)
 	if !ok || store == nil {
 		return keys.Info{}, fmt.Errorf("%w: cannot obtain key %v", ErrNoKeyStore, spec)
 	}
-	info, ok := store.Get(spec.User, spec.ID)
-	if !ok {
+	if info, ok := store.Get(spec.User, spec.ID); ok {
+		return info, nil
+	}
+	if spec.User != "" {
 		return keys.Info{}, fmt.Errorf("%w: %v", ErrKeyNotFound, spec)
 	}
-	return info, nil
+	var matches []keys.Info
+	for _, info := range store.Keys() {
+		if info.ID == spec.ID {
+			matches = append(matches, info)
+		}
+	}
+	switch len(matches) {
+	case 0:
+		return keys.Info{}, fmt.Errorf("%w: %v", ErrKeyNotFound, spec)
+	case 1:
+		return matches[0], nil
+	}
+	users := make([]string, 0, len(matches))
+	for _, info := range matches {
+		users = append(users, info.User)
+	}
+	return keys.Info{}, fmt.Errorf("key %v does not name a user and is ambiguous: it is held by users %v", spec, users)
+}
+
+// NewED25519KeyInfo generates an ed25519 key pair and returns it as a keys.Info
+// that can be added to a key store, or written to a keychain item, and used as a
+// JWT signing key, as well as the public key for use as a verification key. The
+// private key is stored as the key's token with the algorithm and public key in
+// its extra information, as described by KeyExtra.
+func NewED25519KeyInfo(id, user string) (keys.Info, ed25519.PublicKey, error) {
+	pub, priv, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		return keys.Info{}, nil, fmt.Errorf("failed to generate an ed25519 key pair: %w", err)
+	}
+	info := keys.NewInfo(id, user, []byte(base64.StdEncoding.EncodeToString(priv)))
+	info.WithExtra(KeyExtra{
+		Algorithm: jwa.EdDSA().String(),
+		PublicKey: base64.StdEncoding.EncodeToString(pub),
+	})
+	return info, pub, nil
 }
 
 // keyExtra returns the KeyExtra stored with info, if any. Missing or
@@ -95,54 +135,13 @@ func signatureAlgorithm(extra KeyExtra) (jwa.SignatureAlgorithm, error) {
 }
 
 // decodeKeyMaterial returns the key material stored in a keys.Info token, which
-// may be base64 (standard, raw or URL) encoded, hex encoded, or the raw bytes
-// themselves. These encodings are not mutually exclusive, a hex string is also
-// valid base64 for example, so the first decoding whose length is one of the
-// supplied sizes is returned. The token is only considered to be raw key
-// material if it is not encoded text, since a hex encoded 32 byte key would
-// otherwise be indistinguishable from 64 raw bytes.
+// must be base64, standard encoding, and decode to one of the supplied sizes.
 func decodeKeyMaterial(raw []byte, sizes ...int) ([]byte, bool) {
-	var candidates [][]byte
-	trimmed := string(bytes.TrimSpace(raw))
-	for _, decode := range []func(string) ([]byte, error){
-		base64.StdEncoding.DecodeString,
-		base64.RawStdEncoding.DecodeString,
-		base64.URLEncoding.DecodeString,
-		base64.RawURLEncoding.DecodeString,
-		hex.DecodeString,
-	} {
-		if decoded, err := decode(trimmed); err == nil {
-			candidates = append(candidates, decoded)
-		}
+	decoded, err := base64.StdEncoding.DecodeString(string(bytes.TrimSpace(raw)))
+	if err != nil || !slices.Contains(sizes, len(decoded)) {
+		return nil, false
 	}
-	if !isEncodedText(raw) {
-		candidates = append(candidates, slices.Clone(raw))
-	}
-	for _, candidate := range candidates {
-		if slices.Contains(sizes, len(candidate)) {
-			return candidate, true
-		}
-	}
-	return nil, false
-}
-
-// isEncodedText returns true if raw consists solely of the characters used by
-// the encodings accepted by decodeKeyMaterial, ie. it cannot be raw key
-// material.
-func isEncodedText(raw []byte) bool {
-	if len(raw) == 0 {
-		return true
-	}
-	for _, c := range raw {
-		switch {
-		case c >= 'a' && c <= 'z', c >= 'A' && c <= 'Z', c >= '0' && c <= '9':
-		case c == '+', c == '/', c == '-', c == '_', c == '=':
-		case c == ' ', c == '\t', c == '\r', c == '\n':
-		default:
-			return false
-		}
-	}
-	return true
+	return decoded, true
 }
 
 // jwkFromToken returns the key parsed from token if it contains a JWK, ie. a
@@ -172,7 +171,8 @@ func jwkAlgorithm(key jwk.Key, extra KeyExtra) (jwa.SignatureAlgorithm, error) {
 
 // signingKey returns the private key to sign with and the algorithm to use for
 // the key material in info, see KeyExtra for the storage conventions used.
-// Raw key material is interpreted as an ed25519 private key (or its seed).
+// Base64 encoded key material is interpreted as an ed25519 private key (or its
+// seed).
 func signingKey(info keys.Info) (jwk.Key, jwa.SignatureAlgorithm, error) {
 	var zero jwa.SignatureAlgorithm
 	extra := keyExtra(info)
@@ -195,7 +195,7 @@ func signingKey(info keys.Info) (jwk.Key, jwa.SignatureAlgorithm, error) {
 	}
 	raw, ok := decodeKeyMaterial(tok.Value(), ed25519.PrivateKeySize, ed25519.SeedSize)
 	if !ok {
-		return nil, zero, fmt.Errorf("key %v: expected an ed25519 private key of %v bytes, or its %v byte seed",
+		return nil, zero, fmt.Errorf("key %v: expected a base64 encoded ed25519 private key of %v bytes, or its %v byte seed",
 			info.KeySpec(), ed25519.PrivateKeySize, ed25519.SeedSize)
 	}
 	priv := ed25519.PrivateKey(raw)
@@ -271,7 +271,7 @@ func ed25519PublicKey(info keys.Info, extra KeyExtra) (ed25519.PublicKey, error)
 	if extra.PublicKey != "" {
 		raw, ok := decodeKeyMaterial([]byte(extra.PublicKey), ed25519.PublicKeySize)
 		if !ok {
-			return nil, fmt.Errorf("key %v: public_key is not an ed25519 public key of %v bytes",
+			return nil, fmt.Errorf("key %v: public_key is not a base64 encoded ed25519 public key of %v bytes",
 				info.KeySpec(), ed25519.PublicKeySize)
 		}
 		return ed25519.PublicKey(raw), nil
@@ -280,7 +280,7 @@ func ed25519PublicKey(info keys.Info, extra KeyExtra) (ed25519.PublicKey, error)
 	defer tok.Clear()
 	raw, ok := decodeKeyMaterial(tok.Value(), ed25519.PrivateKeySize, ed25519.PublicKeySize)
 	if !ok {
-		return nil, fmt.Errorf("key %v: expected an ed25519 public key of %v bytes, or a private key of %v bytes",
+		return nil, fmt.Errorf("key %v: expected a base64 encoded ed25519 public key of %v bytes, or a private key of %v bytes",
 			info.KeySpec(), ed25519.PublicKeySize, ed25519.PrivateKeySize)
 	}
 	if len(raw) == ed25519.PrivateKeySize {

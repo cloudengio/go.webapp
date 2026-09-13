@@ -23,7 +23,15 @@ func (c JWTSignerConfig) NewSigner(ctx context.Context) (Signer, error) {
 	if err := c.Validate(); err != nil {
 		return nil, err
 	}
-	info, err := keyInfoFromContext(ctx, c.SigningKey)
+	return SignerForKey(ctx, c.SigningKey)
+}
+
+// SignerForKey returns a Signer for the key identified by spec, which is read
+// from the keys.InMemoryKeyStore stored in ctx (see keys.ContextWithKeyStore)
+// and interpreted as described by KeyExtra. ErrNoKeyStore or ErrKeyNotFound are
+// returned if the key is not available.
+func SignerForKey(ctx context.Context, spec keys.KeySpec) (Signer, error) {
+	info, err := keyInfoFromContext(ctx, spec)
 	if err != nil {
 		return nil, err
 	}
@@ -31,7 +39,7 @@ func (c JWTSignerConfig) NewSigner(ctx context.Context) (Signer, error) {
 	if err != nil {
 		return nil, err
 	}
-	return NewSigner(key, c.SigningKey.ID, algo)
+	return NewSigner(key, spec.ID, algo)
 }
 
 // Builder returns a jwt.Builder with the issued at, issuer and audience claims
@@ -59,13 +67,23 @@ func (c JWTSignerConfig) VerifierConfig() JWTVerifierConfig {
 }
 
 // NewValidator returns a Validator for the verification keys named by the
-// configuration. The keys are read from the keys.InMemoryKeyStore stored in ctx
-// (see keys.ContextWithKeyStore) and are interpreted as described by KeyExtra.
-// The returned Validator will verify the signature of any token signed by one
-// of those keys but, unlike the Verifier returned by NewVerifier, it does not
-// itself check the issuer or audience claims.
+// configuration, as per ValidatorForKeys. Unlike the Verifier returned by
+// NewVerifier it does not check the issuer or audience claims.
 func (c JWTVerifierConfig) NewValidator(ctx context.Context) (Validator, error) {
 	set, err := c.keySet(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return NewValidator(set), nil
+}
+
+// ValidatorForKeys returns a Validator that verifies the signature of any token
+// signed by one of the keys identified by specs, which are read from the
+// keys.InMemoryKeyStore stored in ctx (see keys.ContextWithKeyStore) and
+// interpreted as described by KeyExtra. Unlike the Verifier returned by
+// JWTVerifierConfig.NewVerifier it does not check the issuer or audience claims.
+func ValidatorForKeys(ctx context.Context, specs ...keys.KeySpec) (Validator, error) {
+	set, err := keySetForKeys(ctx, specs)
 	if err != nil {
 		return nil, err
 	}
@@ -78,8 +96,18 @@ func (c JWTVerifierConfig) keySet(ctx context.Context) (jwk.Set, error) {
 	if err := c.Validate(); err != nil {
 		return nil, err
 	}
+	return keySetForKeys(ctx, c.VerificationKeys)
+}
+
+// keySetForKeys returns the jwk.Set containing the public halves of the keys
+// identified by specs, each with the key id, algorithm and usage required to
+// verify a token signed by the corresponding Signer.
+func keySetForKeys(ctx context.Context, specs []keys.KeySpec) (jwk.Set, error) {
+	if len(specs) == 0 {
+		return nil, fmt.Errorf("at least one verification key is required")
+	}
 	set := jwk.NewSet()
-	for _, spec := range c.VerificationKeys {
+	for _, spec := range specs {
 		info, err := keyInfoFromContext(ctx, spec)
 		if err != nil {
 			return nil, err

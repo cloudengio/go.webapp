@@ -63,6 +63,16 @@ func JWTIssuerMust(signer Signer, opts ...JWTIssuerOption) http.Handler
 ```
 JWTIssuerMust creates a new JWTIssuer handler or panics on error.
 
+### Func NewED25519KeyInfo
+```go
+func NewED25519KeyInfo(id, user string) (keys.Info, ed25519.PublicKey, error)
+```
+NewED25519KeyInfo generates an ed25519 key pair and returns it as a
+keys.Info that can be added to a key store, or written to a keychain item,
+and used as a JWT signing key, as well as the public key for use as a
+verification key. The private key is stored as the key's token with the
+algorithm and public key in its extra information, as described by KeyExtra.
+
 ### Func NewJWTIssuer
 ```go
 func NewJWTIssuer(signer Signer, opts ...JWTIssuerOption) (http.Handler, error)
@@ -492,11 +502,8 @@ specified to allow for key rotation.
 func (c JWTVerifierConfig) NewValidator(ctx context.Context) (Validator, error)
 ```
 NewValidator returns a Validator for the verification keys named by the
-configuration. The keys are read from the keys.InMemoryKeyStore stored
-in ctx (see keys.ContextWithKeyStore) and are interpreted as described
-by KeyExtra. The returned Validator will verify the signature of any
-token signed by one of those keys but, unlike the Verifier returned by
-NewVerifier, it does not itself check the issuer or audience claims.
+configuration, as per ValidatorForKeys. Unlike the Verifier returned by
+NewVerifier it does not check the issuer or audience claims.
 
 
 ```go
@@ -537,10 +544,12 @@ field of a keys.Info alongside the key material itself, ie.:
       algorithm: EdDSA
       public_key: <base64 encoded public key>
 
-Both fields are optional. Algorithm names a JWS signature algorithm (EdDSA,
-RS256, ES256 etc) and defaults to EdDSA, which is the only algorithm for
-which raw (ie. non-JWK) key material is supported. PublicKey is used by
-verification keys whose public key cannot be derived from the stored token.
+All key material is base64 encoded using the standard encoding, or is a JWK
+in its JSON representation. Both of the fields below are optional. Algorithm
+names a JWS signature algorithm (EdDSA, RS256, ES256 etc) and defaults to
+EdDSA, which is the only algorithm for which raw (ie. non-JWK) key material
+is supported. PublicKey is used by verification keys whose public key cannot
+be derived from the stored token.
 
 
 ### Type Signer
@@ -569,6 +578,15 @@ NewSigner creates a new Signer instance with the given private key and key
 ID.
 
 
+```go
+func SignerForKey(ctx context.Context, spec keys.KeySpec) (Signer, error)
+```
+SignerForKey returns a Signer for the key identified by spec, which is read
+from the keys.InMemoryKeyStore stored in ctx (see keys.ContextWithKeyStore)
+and interpreted as described by KeyExtra. ErrNoKeyStore or ErrKeyNotFound
+are returned if the key is not available.
+
+
 
 
 ### Type Validator
@@ -587,6 +605,17 @@ Validator is an interface for validating JWTs.
 func NewValidator(set jwk.Set) Validator
 ```
 NewValidator creates a new Validator instance with the given key set.
+
+
+```go
+func ValidatorForKeys(ctx context.Context, specs ...keys.KeySpec) (Validator, error)
+```
+ValidatorForKeys returns a Validator that verifies the signature of any
+token signed by one of the keys identified by specs, which are read from
+the keys.InMemoryKeyStore stored in ctx (see keys.ContextWithKeyStore)
+and interpreted as described by KeyExtra. Unlike the Verifier returned
+by JWTVerifierConfig.NewVerifier it does not check the issuer or audience
+claims.
 
 
 
