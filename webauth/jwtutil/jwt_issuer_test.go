@@ -5,8 +5,7 @@
 package jwtutil_test
 
 import (
-	"crypto/ed25519"
-	"crypto/rand"
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -19,13 +18,13 @@ import (
 
 func newTestSigner(t *testing.T) jwtutil.Signer {
 	t.Helper()
-	_, priv, err := ed25519.GenerateKey(rand.Reader)
+	info, err := jwtutil.NewED25519KeyInfo("test-issuer-key", "")
 	if err != nil {
-		t.Fatalf("failed to generate ed25519 key: %v", err)
+		t.Fatalf("NewED25519KeyInfo: %v", err)
 	}
-	signer, err := jwtutil.NewED25519Signer(priv, "test-issuer-key")
+	signer, err := jwtutil.NewSignerFromKeyInfo(context.Background(), info)
 	if err != nil {
-		t.Fatalf("failed to create signer: %v", err)
+		t.Fatalf("NewSignerFromKeyInfo: %v", err)
 	}
 	return signer
 }

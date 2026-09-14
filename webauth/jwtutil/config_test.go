@@ -8,10 +8,8 @@ import (
 	"context"
 	"crypto/ed25519"
 	"crypto/rand"
-	"crypto/rsa"
 	"encoding/base64"
 	"encoding/hex"
-	"encoding/json"
 	"errors"
 	"net/http"
 	"net/http/httptest"
@@ -23,7 +21,7 @@ import (
 	"cloudeng.io/cmdutil/keys"
 	"cloudeng.io/webapp/cookies"
 	"cloudeng.io/webapp/webauth/jwtutil"
-	"github.com/lestrrat-go/jwx/v3/jwk"
+	"github.com/lestrrat-go/jwx/v3/jwa"
 	"github.com/lestrrat-go/jwx/v3/jwt"
 	"gopkg.in/yaml.v3"
 )
@@ -36,8 +34,15 @@ const (
 
 var testKeySpec = keys.KeySpec{ID: testKeyID, User: testKeyUser}
 
+// ed25519Algorithm is the algorithm name that NewED25519KeyInfo records in a
+// key's extra information, and hence the name that an ED25519 key must be
+// registered under for algoImpl to find it.
+var ed25519Algorithm = jwa.EdDSAEd25519().String()
+
 // storeKey returns a context containing a key store holding a single key with
-// the supplied token and extra information.
+// the supplied token and extra information. extra, if not nil, must be a
+// jwtutil.KeyExtra: keys.Info.WithExtra only unmarshals into a value of the
+// same concrete type it was given.
 func storeKey(ctx context.Context, spec keys.KeySpec, token []byte, extra any) context.Context {
 	info := keys.NewInfo(spec.ID, spec.User, token)
 	if extra != nil {
@@ -46,21 +51,24 @@ func storeKey(ctx context.Context, spec keys.KeySpec, token []byte, extra any) c
 	return keys.ContextWithKey(ctx, info)
 }
 
-// newED25519Key returns a key pair and the context containing it, encoded as
-// 'jwt create' stores it, ie. a base64 encoded private key with the algorithm
-// and public key recorded in the extra information.
+// newED25519Key generates an ed25519 key pair via NewED25519KeyInfo, ie. as
+// 'jwt create' would, stores it in a context and returns the context and the
+// public key.
 func newED25519Key(t *testing.T) (context.Context, ed25519.PublicKey) {
 	t.Helper()
-	pub, priv, err := ed25519.GenerateKey(rand.Reader)
+	info, err := jwtutil.NewED25519KeyInfo(testKeyID, testKeyUser)
 	if err != nil {
-		t.Fatalf("failed to generate key: %v", err)
+		t.Fatalf("NewED25519KeyInfo: %v", err)
 	}
-	extra := map[string]any{
-		"algorithm":  "EdDSA",
-		"public_key": base64.StdEncoding.EncodeToString(pub),
+	var extra jwtutil.KeyExtra
+	if err := info.UnmarshalExtra(&extra); err != nil {
+		t.Fatalf("UnmarshalExtra: %v", err)
 	}
-	token := []byte(base64.StdEncoding.EncodeToString(priv))
-	return storeKey(context.Background(), testKeySpec, token, extra), pub
+	pub, err := base64.StdEncoding.DecodeString(extra.PublicKey)
+	if err != nil {
+		t.Fatalf("decoding public key: %v", err)
+	}
+	return keys.ContextWithKey(context.Background(), info), ed25519.PublicKey(pub)
 }
 
 func signerConfig() jwtutil.JWTSignerConfig {
@@ -69,6 +77,15 @@ func signerConfig() jwtutil.JWTSignerConfig {
 		Audience:   []string{"test-audience"},
 		SigningKey: testKeySpec,
 	}
+}
+
+func newConfigToken(t *testing.T) jwt.Token {
+	t.Helper()
+	tok, err := signerConfig().Builder(time.Hour).Subject("subject").Build()
+	if err != nil {
+		t.Fatalf("Build: %v", err)
+	}
+	return tok
 }
 
 // TestConfigSignAndVerify covers the round trip from a signer created from a
@@ -110,8 +127,8 @@ func TestConfigSignAndVerify(t *testing.T) {
 }
 
 // TestConfigVerifyPublicKeyOnly verifies that a verification key need not hold
-// any private key material, covering both the extra public_key field and a
-// token holding the public key alone.
+// any private key material: the public key recorded in its extra information
+// is enough.
 func TestConfigVerifyPublicKeyOnly(t *testing.T) {
 	ctx, pub := newED25519Key(t)
 	signer, err := signerConfig().NewSigner(ctx)
@@ -123,136 +140,98 @@ func TestConfigVerifyPublicKeyOnly(t *testing.T) {
 		t.Fatalf("Sign: %v", err)
 	}
 
-	for _, tc := range []struct {
-		name  string
-		token []byte
-		extra any
-	}{
-		{"public key in token", []byte(base64.StdEncoding.EncodeToString(pub)), nil},
-		{"public key in extra", nil, map[string]any{"public_key": base64.StdEncoding.EncodeToString(pub)}},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			// The key store contains only the public key, the signed token
-			// must still verify against it.
-			vctx := storeKey(context.Background(), testKeySpec, append([]byte(nil), tc.token...), tc.extra)
-			vc := jwtutil.JWTVerifierConfig{
-				Issuer:           testIssuer,
-				Audience:         []string{"test-audience"},
-				VerificationKeys: []keys.KeySpec{testKeySpec},
-			}
-			verifier, err := vc.NewVerifier(vctx)
-			if err != nil {
-				t.Fatalf("NewVerifier: %v", err)
-			}
-			if _, err := verifier.ParseAndValidate(vctx, signed); err != nil {
-				t.Errorf("ParseAndValidate: %v", err)
-			}
-		})
+	// The key store contains only the public key, the signed token must still
+	// verify against it.
+	vctx := storeKey(context.Background(), testKeySpec, nil, jwtutil.KeyExtra{
+		Algorithm: ed25519Algorithm,
+		PublicKey: base64.StdEncoding.EncodeToString(pub),
+	})
+	vc := jwtutil.JWTVerifierConfig{
+		Issuer:           testIssuer,
+		Audience:         []string{"test-audience"},
+		VerificationKeys: []keys.KeySpec{testKeySpec},
 	}
-}
-
-func newConfigToken(t *testing.T) jwt.Token {
-	t.Helper()
-	tok, err := signerConfig().Builder(time.Hour).Subject("subject").Build()
+	verifier, err := vc.NewVerifier(vctx)
 	if err != nil {
-		t.Fatalf("Build: %v", err)
+		t.Fatalf("NewVerifier: %v", err)
 	}
-	return tok
+	if _, err := verifier.ParseAndValidate(vctx, signed); err != nil {
+		t.Errorf("ParseAndValidate: %v", err)
+	}
 }
 
-// TestConfigSigningKeyEncoding covers the key material accepted for an ed25519
-// signing key, namely the base64, standard encoding, of either the private key
-// or its seed.
+// TestConfigVerifyRequiresPublicKey verifies that a verification key without a
+// public_key in its extra information is rejected up front, even when its
+// token holds key material of the right size.
+func TestConfigVerifyRequiresPublicKey(t *testing.T) {
+	vctx := storeKey(context.Background(), testKeySpec,
+		[]byte(base64.StdEncoding.EncodeToString(make([]byte, ed25519.PublicKeySize))),
+		jwtutil.KeyExtra{Algorithm: ed25519Algorithm})
+	vc := jwtutil.JWTVerifierConfig{
+		Issuer:           testIssuer,
+		Audience:         []string{"test-audience"},
+		VerificationKeys: []keys.KeySpec{testKeySpec},
+	}
+	if _, err := vc.NewVerifier(vctx); err == nil {
+		t.Error("NewVerifier: got nil error, want the missing public_key to be rejected")
+	}
+}
+
+// TestConfigSigningKeyEncoding covers the key material accepted for an
+// ed25519 signing key: the base64, standard encoding, of the 64 byte private
+// key. Neither its 32 byte seed nor any other encoding is accepted.
 func TestConfigSigningKeyEncoding(t *testing.T) {
 	_, priv, err := ed25519.GenerateKey(rand.Reader)
 	if err != nil {
 		t.Fatalf("failed to generate key: %v", err)
 	}
-	for _, tc := range []struct {
-		name  string
-		token []byte
-	}{
-		{"private key", []byte(base64.StdEncoding.EncodeToString(priv))},
-		{"seed", []byte(base64.StdEncoding.EncodeToString(priv.Seed()))},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			ctx := storeKey(context.Background(), testKeySpec, append([]byte(nil), tc.token...), nil)
-			sc := signerConfig()
-			signer, err := sc.NewSigner(ctx)
-			if err != nil {
-				t.Fatalf("NewSigner: %v", err)
-			}
-
-			signed, err := signer.Sign(ctx, newConfigToken(t))
-			if err != nil {
-				t.Fatalf("Sign: %v", err)
-			}
-			// All encodings must yield the same key, so a verifier built from
-			// the base64 form of the same key accepts the token.
-			vctx := storeKey(context.Background(), testKeySpec,
-				[]byte(base64.StdEncoding.EncodeToString(priv)), nil)
-			verifier, err := sc.VerifierConfig().NewVerifier(vctx)
-			if err != nil {
-				t.Fatalf("NewVerifier: %v", err)
-			}
-			if _, err := verifier.ParseAndValidate(vctx, signed); err != nil {
-				t.Errorf("ParseAndValidate: %v", err)
-			}
-		})
+	pub, ok := priv.Public().(ed25519.PublicKey)
+	if !ok {
+		t.Fatal("failed to derive the public key")
 	}
 
-	// Only the standard base64 encoding is accepted.
+	t.Run("valid base64 private key", func(t *testing.T) {
+		extra := jwtutil.KeyExtra{
+			Algorithm: ed25519Algorithm,
+			PublicKey: base64.StdEncoding.EncodeToString(pub),
+		}
+		ctx := storeKey(context.Background(), testKeySpec,
+			[]byte(base64.StdEncoding.EncodeToString(priv)), extra)
+		sc := signerConfig()
+		signer, err := sc.NewSigner(ctx)
+		if err != nil {
+			t.Fatalf("NewSigner: %v", err)
+		}
+		signed, err := signer.Sign(ctx, newConfigToken(t))
+		if err != nil {
+			t.Fatalf("Sign: %v", err)
+		}
+		verifier, err := sc.VerifierConfig().NewVerifier(ctx)
+		if err != nil {
+			t.Fatalf("NewVerifier: %v", err)
+		}
+		if _, err := verifier.ParseAndValidate(ctx, signed); err != nil {
+			t.Errorf("ParseAndValidate: %v", err)
+		}
+	})
+
+	// Only the 64 byte private key, base64 standard encoding, is accepted.
 	for _, tc := range []struct {
 		name  string
 		token []byte
 	}{
+		{"seed", []byte(base64.StdEncoding.EncodeToString(priv.Seed()))},
 		{"hex", []byte(hex.EncodeToString(priv))},
 		{"raw bytes", priv},
 		{"base64 raw url", []byte(base64.RawURLEncoding.EncodeToString(priv))},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			ctx := storeKey(context.Background(), testKeySpec, append([]byte(nil), tc.token...), nil)
+			ctx := storeKey(context.Background(), testKeySpec, append([]byte(nil), tc.token...),
+				jwtutil.KeyExtra{Algorithm: ed25519Algorithm})
 			if _, err := signerConfig().NewSigner(ctx); err == nil {
 				t.Error("NewSigner: got nil error, want the encoding to be rejected")
 			}
 		})
-	}
-}
-
-// TestConfigJWKKey covers key material stored as a JWK, which is the only way
-// to use an algorithm other than EdDSA.
-func TestConfigJWKKey(t *testing.T) {
-	priv, err := rsa.GenerateKey(rand.Reader, 2048)
-	if err != nil {
-		t.Fatalf("failed to generate key: %v", err)
-	}
-	key, err := jwk.Import(priv)
-	if err != nil {
-		t.Fatalf("jwk.Import: %v", err)
-	}
-	token, err := json.Marshal(key)
-	if err != nil {
-		t.Fatalf("marshalling jwk: %v", err)
-	}
-	ctx := storeKey(context.Background(), testKeySpec, append([]byte(nil), token...),
-		map[string]any{"algorithm": "RS256"})
-
-	sc := signerConfig()
-	signer, err := sc.NewSigner(ctx)
-	if err != nil {
-		t.Fatalf("NewSigner: %v", err)
-	}
-	signed, err := signer.Sign(ctx, newConfigToken(t))
-	if err != nil {
-		t.Fatalf("Sign: %v", err)
-	}
-	// The verifier uses the public half of the same JWK.
-	verifier, err := sc.VerifierConfig().NewVerifier(ctx)
-	if err != nil {
-		t.Fatalf("NewVerifier: %v", err)
-	}
-	if _, err := verifier.ParseAndValidate(ctx, signed); err != nil {
-		t.Errorf("ParseAndValidate: %v", err)
 	}
 }
 
@@ -325,11 +304,11 @@ func TestConfigKeyRotation(t *testing.T) {
 	ctx := context.Background()
 	specs := []keys.KeySpec{{ID: "old", User: testKeyUser}, {ID: "new", User: testKeyUser}}
 	for _, spec := range specs {
-		_, priv, err := ed25519.GenerateKey(rand.Reader)
+		info, err := jwtutil.NewED25519KeyInfo(spec.ID, spec.User)
 		if err != nil {
-			t.Fatalf("failed to generate key: %v", err)
+			t.Fatalf("NewED25519KeyInfo: %v", err)
 		}
-		ctx = storeKey(ctx, spec, []byte(base64.StdEncoding.EncodeToString(priv)), nil)
+		ctx = keys.ContextWithKey(ctx, info)
 	}
 	vc := jwtutil.JWTVerifierConfig{
 		Issuer:           testIssuer,
@@ -392,35 +371,27 @@ func TestConfigMissingKeys(t *testing.T) {
 	}
 }
 
-// TestConfigInvalidKeys covers key material that cannot be used for signing or
-// verification.
+// TestConfigInvalidKeys covers key material that cannot be used for signing.
 func TestConfigInvalidKeys(t *testing.T) {
+	validAlgo := jwtutil.KeyExtra{Algorithm: ed25519Algorithm}
 	for _, tc := range []struct {
 		name  string
 		token []byte
 		extra any
 	}{
-		{"empty", nil, nil},
-		{"wrong length", []byte(base64.StdEncoding.EncodeToString(make([]byte, 48))), nil},
-		{"not encoded key material", []byte("this is not a key!"), nil},
-		{"invalid jwk", []byte(`{"kty":"bogus"}`), nil},
+		{"empty", nil, validAlgo},
+		{"wrong length", []byte(base64.StdEncoding.EncodeToString(make([]byte, 48))), validAlgo},
+		{"not base64 encoded", []byte("this is not a key!"), validAlgo},
+		{"no algorithm specified", []byte(base64.StdEncoding.EncodeToString(make([]byte, ed25519.PrivateKeySize))), nil},
 		{"unsupported algorithm", []byte(base64.StdEncoding.EncodeToString(make([]byte, ed25519.PrivateKeySize))),
-			map[string]any{"algorithm": "not-an-algorithm"}},
+			jwtutil.KeyExtra{Algorithm: "not-an-algorithm"}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			ctx := storeKey(context.Background(), testKeySpec, append([]byte(nil), tc.token...), tc.extra)
 			if _, err := signerConfig().NewSigner(ctx); err == nil {
-				t.Errorf("NewSigner: got nil error, want the key to be rejected")
+				t.Error("NewSigner: got nil error, want the key to be rejected")
 			}
 		})
-	}
-	// An unsupported algorithm is only detected for a JWK, raw key material is
-	// always ed25519, so check that a non-ed25519 algorithm is reported there.
-	ctx := storeKey(context.Background(), testKeySpec, []byte(`{"kty":"oct","k":"AAAAAAAAAAAAAAAAAAAAAA"}`),
-		map[string]any{"algorithm": "not-an-algorithm"})
-	if _, err := signerConfig().NewSigner(ctx); err == nil ||
-		!strings.Contains(err.Error(), "unsupported signature algorithm") {
-		t.Errorf("NewSigner: got %v, want an unsupported algorithm error", err)
 	}
 }
 
@@ -561,7 +532,6 @@ func TestCookieVerifier(t *testing.T) {
 	if _, err := cv.ValidateRequest(ctx, httptest.NewRequest("GET", "/", nil)); !errors.Is(err, jwtutil.ErrNoCookie) {
 		t.Errorf("ValidateRequest: got %v, want ErrNoCookie", err)
 	}
-
 }
 
 // TestCookieVerifierClearCookie verifies that clearing the cookie requests its
@@ -637,58 +607,6 @@ func responseCookie(t *testing.T, rec *httptest.ResponseRecorder, name string) *
 	}
 	t.Fatalf("no cookie named %v in %v", name, rec.Result().Header)
 	return nil
-}
-
-// TestConfigJWKAlgorithm covers the algorithm used with a key stored as a JWK
-// when it is not named by the extra information.
-func TestConfigJWKAlgorithm(t *testing.T) {
-	_, priv, err := ed25519.GenerateKey(rand.Reader)
-	if err != nil {
-		t.Fatalf("failed to generate key: %v", err)
-	}
-	key, err := jwk.Import(priv)
-	if err != nil {
-		t.Fatalf("jwk.Import: %v", err)
-	}
-
-	// Without an algorithm in either the JWK or the extra information there is
-	// nothing to sign with.
-	noAlgo, err := json.Marshal(key)
-	if err != nil {
-		t.Fatalf("marshalling jwk: %v", err)
-	}
-	ctx := storeKey(context.Background(), testKeySpec, append([]byte(nil), noAlgo...), nil)
-	if _, err := signerConfig().NewSigner(ctx); err == nil ||
-		!strings.Contains(err.Error(), "no signature algorithm") {
-		t.Errorf("NewSigner: got %v, want a missing algorithm error", err)
-	}
-
-	// The algorithm in the JWK itself is used when the extra information does
-	// not name one.
-	if err := key.Set(jwk.AlgorithmKey, "EdDSA"); err != nil {
-		t.Fatalf("setting alg: %v", err)
-	}
-	withAlgo, err := json.Marshal(key)
-	if err != nil {
-		t.Fatalf("marshalling jwk: %v", err)
-	}
-	ctx = storeKey(context.Background(), testKeySpec, append([]byte(nil), withAlgo...), nil)
-	sc := signerConfig()
-	signer, err := sc.NewSigner(ctx)
-	if err != nil {
-		t.Fatalf("NewSigner: %v", err)
-	}
-	signed, err := signer.Sign(ctx, newConfigToken(t))
-	if err != nil {
-		t.Fatalf("Sign: %v", err)
-	}
-	verifier, err := sc.VerifierConfig().NewVerifier(ctx)
-	if err != nil {
-		t.Fatalf("NewVerifier: %v", err)
-	}
-	if _, err := verifier.ParseAndValidate(ctx, signed); err != nil {
-		t.Errorf("ParseAndValidate: %v", err)
-	}
 }
 
 // TestCookieSignerValidator verifies that a CookieSigner parses and validates
@@ -792,7 +710,6 @@ func TestConfigTokenLifecycle(t *testing.T) {
 	if err := verifier.Validate(ctx, parsed, jwt.WithClaimValue("role", "admin")); err == nil {
 		t.Error("Validate: got nil error, want the role check to fail")
 	}
-
 }
 
 // TestConfigTokenRejection covers the tokens that a Verifier created from a
@@ -851,10 +768,13 @@ func TestConfigTokenRejection(t *testing.T) {
 
 	// A token signed with a key that is not in the key set, ie. with an
 	// unknown key id, is also rejected by Parse.
-	otherCtx, _ := newED25519Key(t)
+	otherInfo, err := jwtutil.NewED25519KeyInfo("other-key", testKeyUser)
+	if err != nil {
+		t.Fatalf("NewED25519KeyInfo: %v", err)
+	}
+	otherCtx := keys.ContextWithKey(context.Background(), otherInfo)
 	otherSC := signerConfig()
-	otherSC.SigningKey = keys.KeySpec{ID: "other-key", User: testKeyUser}
-	otherCtx = storeKey(otherCtx, otherSC.SigningKey, []byte(base64.StdEncoding.EncodeToString(newRawKey(t))), nil)
+	otherSC.SigningKey = otherInfo.KeySpec()
 	otherSigner, err := otherSC.NewSigner(otherCtx)
 	if err != nil {
 		t.Fatalf("NewSigner: %v", err)
@@ -868,20 +788,11 @@ func TestConfigTokenRejection(t *testing.T) {
 	}
 }
 
-func newRawKey(t *testing.T) ed25519.PrivateKey {
-	t.Helper()
-	_, priv, err := ed25519.GenerateKey(rand.Reader)
-	if err != nil {
-		t.Fatalf("failed to generate key: %v", err)
-	}
-	return priv
-}
-
 // TestNewED25519KeyInfo covers the key pairs created for use with the
 // configurations in this package, ie. that the key material they store can be
 // used for both signing and verification.
 func TestNewED25519KeyInfo(t *testing.T) {
-	info, pub, err := jwtutil.NewED25519KeyInfo(testKeyID, testKeyUser)
+	info, err := jwtutil.NewED25519KeyInfo(testKeyID, testKeyUser)
 	if err != nil {
 		t.Fatalf("NewED25519KeyInfo: %v", err)
 	}
@@ -892,11 +803,15 @@ func TestNewED25519KeyInfo(t *testing.T) {
 	if err := info.UnmarshalExtra(&extra); err != nil {
 		t.Fatalf("UnmarshalExtra: %v", err)
 	}
-	if got, want := extra.Algorithm, "EdDSA"; got != want {
+	if got, want := extra.Algorithm, ed25519Algorithm; got != want {
 		t.Errorf("algorithm: got %v, want %v", got, want)
 	}
-	if got, want := extra.PublicKey, base64.StdEncoding.EncodeToString(pub); got != want {
-		t.Errorf("public key: got %v, want %v", got, want)
+	pub, err := base64.StdEncoding.DecodeString(extra.PublicKey)
+	if err != nil {
+		t.Fatalf("decoding public key: %v", err)
+	}
+	if len(pub) != ed25519.PublicKeySize {
+		t.Fatalf("public key: got %v bytes, want %v", len(pub), ed25519.PublicKeySize)
 	}
 
 	// The key is usable for signing and the public key stored with it verifies
@@ -918,8 +833,26 @@ func TestNewED25519KeyInfo(t *testing.T) {
 		t.Errorf("ParseAndValidate: %v", err)
 	}
 
-	// An Info marshalled to YAML, as it would be when written to a keychain
-	// item, round trips with its extra information intact.
+}
+
+// TestNewED25519KeyInfoYAMLRoundTrip verifies that a keys.Info created by
+// NewED25519KeyInfo, once marshalled to YAML as it would be when written to a
+// keychain item and read back, still signs and verifies correctly.
+func TestNewED25519KeyInfoYAMLRoundTrip(t *testing.T) {
+	info, err := jwtutil.NewED25519KeyInfo(testKeyID, testKeyUser)
+	if err != nil {
+		t.Fatalf("NewED25519KeyInfo: %v", err)
+	}
+	ctx := keys.ContextWithKey(context.Background(), info)
+	signer, err := jwtutil.SignerForKey(ctx, info.KeySpec())
+	if err != nil {
+		t.Fatalf("SignerForKey: %v", err)
+	}
+	signed, err := signer.Sign(ctx, newConfigToken(t))
+	if err != nil {
+		t.Fatalf("Sign: %v", err)
+	}
+
 	buf, err := yaml.Marshal([]keys.Info{info})
 	if err != nil {
 		t.Fatalf("Marshal: %v", err)
@@ -932,7 +865,7 @@ func TestNewED25519KeyInfo(t *testing.T) {
 	if _, err := jwtutil.SignerForKey(rctx, info.KeySpec()); err != nil {
 		t.Errorf("SignerForKey after a YAML round trip: %v", err)
 	}
-	validator, err = jwtutil.ValidatorForKeys(rctx, info.KeySpec())
+	validator, err := jwtutil.ValidatorForKeys(rctx, info.KeySpec())
 	if err != nil {
 		t.Fatalf("ValidatorForKeys: %v", err)
 	}
@@ -944,7 +877,7 @@ func TestNewED25519KeyInfo(t *testing.T) {
 // TestKeyLookupByID covers a key spec that does not name a user, which matches
 // a key with the same id belonging to any user provided that it is unambiguous.
 func TestKeyLookupByID(t *testing.T) {
-	info, _, err := jwtutil.NewED25519KeyInfo(testKeyID, testKeyUser)
+	info, err := jwtutil.NewED25519KeyInfo(testKeyID, testKeyUser)
 	if err != nil {
 		t.Fatalf("NewED25519KeyInfo: %v", err)
 	}
@@ -960,15 +893,15 @@ func TestKeyLookupByID(t *testing.T) {
 		t.Errorf("ValidatorForKeys: %v", err)
 	}
 
-	// A second key with the same id makes the spec ambiguous.
-	other, _, err := jwtutil.NewED25519KeyInfo(testKeyID, "another-user")
+	// A second key with the same id makes the spec ambiguous: it is reported
+	// the same way as a key that does not exist at all.
+	other, err := jwtutil.NewED25519KeyInfo(testKeyID, "another-user")
 	if err != nil {
 		t.Fatalf("NewED25519KeyInfo: %v", err)
 	}
 	ctx = keys.ContextWithKey(ctx, other)
-	_, err = jwtutil.SignerForKey(ctx, byID)
-	if err == nil || !strings.Contains(err.Error(), "ambiguous") {
-		t.Errorf("SignerForKey: got %v, want an ambiguous key error", err)
+	if _, err := jwtutil.SignerForKey(ctx, byID); !errors.Is(err, jwtutil.ErrKeyNotFound) {
+		t.Errorf("SignerForKey: got %v, want ErrKeyNotFound (ambiguous id)", err)
 	}
 
 	// A spec naming a user that holds no such key is not found.
@@ -979,5 +912,53 @@ func TestKeyLookupByID(t *testing.T) {
 	// No keys at all is an error rather than a validator that accepts nothing.
 	if _, err := jwtutil.ValidatorForKeys(ctx); err == nil {
 		t.Error("ValidatorForKeys: got nil error, want at least one key to be required")
+	}
+}
+
+// TestUnsupportedAlgorithm covers the error reported when a key names an
+// algorithm that has no registered JWKKey implementation.
+func TestUnsupportedAlgorithm(t *testing.T) {
+	info, err := jwtutil.NewED25519KeyInfo(testKeyID, testKeyUser)
+	if err != nil {
+		t.Fatalf("NewED25519KeyInfo: %v", err)
+	}
+	info.WithExtra(jwtutil.KeyExtra{Algorithm: "RS256"})
+	ctx := keys.ContextWithKey(context.Background(), info)
+
+	_, err = jwtutil.NewSignerFromKeyInfo(ctx, info)
+	if err == nil || !strings.Contains(err.Error(), `unsupported algorithm: "RS256"`) {
+		t.Errorf("NewSignerFromKeyInfo: got %v, want an unsupported algorithm error", err)
+	}
+	if _, err := jwtutil.PublicKeyFromKeyInfo(ctx, info); err == nil {
+		t.Error("PublicKeyFromKeyInfo: got nil error, want an unsupported algorithm error")
+	}
+	if _, err := jwtutil.SignerForKey(ctx, info.KeySpec()); err == nil {
+		t.Error("SignerForKey: got nil error, want an unsupported algorithm error")
+	}
+}
+
+// TestPublicKeyFromKeyInfoErrors covers the malformed public_key values
+// rejected by PublicKeyFromKeyInfo (and hence by the ED25519 JWKKey
+// implementation it dispatches to).
+func TestPublicKeyFromKeyInfoErrors(t *testing.T) {
+	ctx := context.Background()
+	for _, tc := range []struct {
+		name  string
+		extra any
+	}{
+		{"wrong extra type", map[string]any{"algorithm": ed25519Algorithm, "public_key": "x"}},
+		{"public_key not base64", jwtutil.KeyExtra{Algorithm: ed25519Algorithm, PublicKey: "not base64!"}},
+		{"public_key wrong length", jwtutil.KeyExtra{
+			Algorithm: ed25519Algorithm,
+			PublicKey: base64.StdEncoding.EncodeToString(make([]byte, 16)),
+		}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			info := keys.NewInfo(testKeyID, testKeyUser, nil)
+			info.WithExtra(tc.extra)
+			if _, err := jwtutil.PublicKeyFromKeyInfo(ctx, info); err == nil {
+				t.Error("PublicKeyFromKeyInfo: got nil error, want the key to be rejected")
+			}
+		})
 	}
 }

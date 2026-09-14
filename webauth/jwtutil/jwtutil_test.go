@@ -6,8 +6,6 @@ package jwtutil_test
 
 import (
 	"context"
-	"crypto/ed25519"
-	"crypto/rand"
 	"encoding/json"
 	"slices"
 	"testing"
@@ -34,21 +32,25 @@ func newToken(t *testing.T) jwt.Token {
 	return tok
 }
 
-func newKey(t *testing.T) ed25519.PrivateKey {
+// newED25519Signer generates a fresh ed25519 key pair, registered under id,
+// and returns a Signer for it. It does not require a context or key store:
+// NewSignerFromKeyInfo works directly from a keys.Info.
+func newED25519Signer(t *testing.T, id string) jwtutil.Signer {
 	t.Helper()
-	_, priv, err := ed25519.GenerateKey(rand.Reader)
+	info, err := jwtutil.NewED25519KeyInfo(id, "")
 	if err != nil {
-		t.Fatalf("failed to generate ed25519 key pair: %v", err)
+		t.Fatalf("NewED25519KeyInfo: %v", err)
 	}
-	return priv
+	signer, err := jwtutil.NewSignerFromKeyInfo(context.Background(), info)
+	if err != nil {
+		t.Fatalf("NewSignerFromKeyInfo: %v", err)
+	}
+	return signer
 }
 
 func TestSignAndVerifyED25519(t *testing.T) {
 	ctx := t.Context()
-	signer, err := jwtutil.NewED25519Signer(newKey(t), "test-key-001")
-	if err != nil {
-		t.Fatalf("failed to create signer: %v", err)
-	}
+	signer := newED25519Signer(t, "test-key-001")
 	tokenBytes, err := signer.Sign(ctx, newToken(t))
 	if err != nil {
 		t.Fatalf("Sign() failed: %v", err)

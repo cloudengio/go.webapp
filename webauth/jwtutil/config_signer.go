@@ -31,15 +31,7 @@ func (c JWTSignerConfig) NewSigner(ctx context.Context) (Signer, error) {
 // and interpreted as described by KeyExtra. ErrNoKeyStore or ErrKeyNotFound are
 // returned if the key is not available.
 func SignerForKey(ctx context.Context, spec keys.KeySpec) (Signer, error) {
-	info, err := keyInfoFromContext(ctx, spec)
-	if err != nil {
-		return nil, err
-	}
-	key, algo, err := signingKey(info)
-	if err != nil {
-		return nil, err
-	}
-	return NewSigner(key, spec.ID, algo)
+	return NewSignerFromContext(ctx, spec.User, spec.ID)
 }
 
 // Builder returns a jwt.Builder with the issued at, issuer and audience claims
@@ -112,23 +104,14 @@ func keySetForKeys(ctx context.Context, specs []keys.KeySpec) (jwk.Set, error) {
 		if err != nil {
 			return nil, err
 		}
-		key, algo, err := verificationKey(info)
+		key, err := PublicKeyFromKeyInfo(ctx, info)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("key %v: %w", spec, err)
 		}
-		// The key id must match the one set by NewSigner for the key to be
+		// The key id must match the one set by the Signer for the key to be
 		// selected by jwt.WithKeySet when verifying a token.
-		for _, kv := range []struct {
-			k string
-			v any
-		}{
-			{jwk.AlgorithmKey, algo},
-			{jwk.KeyUsageKey, "sig"},
-			{jwk.KeyIDKey, spec.ID},
-		} {
-			if err := key.Set(kv.k, kv.v); err != nil {
-				return nil, fmt.Errorf("key %v: %w", spec, err)
-			}
+		if err := key.Set(jwk.KeyIDKey, spec.ID); err != nil {
+			return nil, fmt.Errorf("key %v: %w", spec, err)
 		}
 		if err := set.AddKey(key); err != nil {
 			return nil, fmt.Errorf("key %v: %w", spec, err)

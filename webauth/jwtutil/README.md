@@ -13,11 +13,10 @@ process to allow for more convenient usage in web applications.
 ### ErrNoKeyStore, ErrKeyNotFound
 ```go
 // ErrNoKeyStore is returned when the context supplied to one of the
-// configuration driven constructors does not contain a
-// keys.InMemoryKeyStore.
+// functions in this package does not contain a keys.InMemoryKeyStore.
 ErrNoKeyStore = errors.New("no key store in context")
-// ErrKeyNotFound is returned when a key named by a configuration is not
-// present in the key store obtained from the context.
+// ErrKeyNotFound is returned when a named key is not present in the key
+// store obtained from the context.
 ErrKeyNotFound = errors.New("key not found")
 
 ```
@@ -65,7 +64,7 @@ JWTIssuerMust creates a new JWTIssuer handler or panics on error.
 
 ### Func NewED25519KeyInfo
 ```go
-func NewED25519KeyInfo(id, user string) (keys.Info, ed25519.PublicKey, error)
+func NewED25519KeyInfo(id, user string) (keys.Info, error)
 ```
 NewED25519KeyInfo generates an ed25519 key pair and returns it as a
 keys.Info that can be added to a key store, or written to a keychain item,
@@ -87,6 +86,17 @@ func NewJWTIssuerMust(signer Signer, opts ...JWTIssuerOption) http.Handler
 ```
 NewJWTIssuerMust creates a new http.Handler that issues JWTs using signer,
 and panics if an error occurs.
+
+### Func PublicKeyFromKeyInfo
+```go
+func PublicKeyFromKeyInfo(ctx context.Context, info keys.Info) (jwk.Key, error)
+```
+PublicKeyFromKeyInfo returns the public key corresponding to the key
+material in info, using the JWKKey implementation registered for the
+algorithm named in its extra information. The returned key carries the
+algorithm and usage required to verify a token signed by the corresponding
+Signer, but not a key id: that depends on how the key is being looked up and
+is the caller's responsibility to set, see keySetForKeys.
 
 ### Func TokenFromContext
 ```go
@@ -221,6 +231,51 @@ the token that it contains. ErrNoCookie is returned if the request does not
 carry the cookie.
 
 
+
+
+### Type ED25519
+```go
+type ED25519 struct{}
+```
+ED25519 is the JWKKey implementation for keys created by NewED25519KeyInfo,
+registered under the jwa.EdDSAEd25519 algorithm name (see KeyExtra). It
+signs and verifies using the classic, widely supported "EdDSA" JWS algorithm
+rather than the JWA name it is registered under, since the two name the same
+Ed25519 signature scheme and "EdDSA" remains the more interoperable choice
+on the wire.
+
+### Methods
+
+```go
+func (e ED25519) PublicKey(info keys.Info) (jwk.Key, error)
+```
+PublicKey implements JWKKey by importing the ed25519 public key stored in
+info's extra information, which must be base64, standard encoding, of the 32
+byte public key.
+
+
+```go
+func (e ED25519) Signer(info keys.Info) (Signer, error)
+```
+Signer implements JWKKey by importing the ed25519 private key stored as
+info's token, which must be base64, standard encoding, of the 64 byte
+private key.
+
+
+
+
+### Type JWKKey
+```go
+type JWKKey interface {
+	Signer(keys.Info) (Signer, error)
+	PublicKey(keys.Info) (jwk.Key, error)
+}
+```
+JWKKey defines the interface that must be implemented by any algorithm
+that can create signers and public keys from key material and associated
+metadata, see KeyExtra. Implementations register themselves under an
+algorithm name using algoRegistry, see NewED25519KeyInfo/ED25519 for the
+pattern to follow when adding another algorithm.
 
 
 ### Type JWTCookieSignerConfig
@@ -541,23 +596,23 @@ field of a keys.Info alongside the key material itself, ie.:
     key_id: jwt-signing-key
     token: <base64 encoded key material>
     extra:
-      algorithm: EdDSA
+      algorithm: Ed25519
       public_key: <base64 encoded public key>
 
-All key material is base64 encoded using the standard encoding, or is a JWK
-in its JSON representation. Both of the fields below are optional. Algorithm
-names a JWS signature algorithm (EdDSA, RS256, ES256 etc) and defaults to
-EdDSA, which is the only algorithm for which raw (ie. non-JWK) key material
-is supported. PublicKey is used by verification keys whose public key cannot
-be derived from the stored token.
+All key material is base64 encoded using the standard encoding. Algorithm
+selects the JWKKey implementation, registered under that name, used to turn
+the key material into a Signer or public jwk.Key; see NewED25519KeyInfo for
+the sole implementation currently provided by this package. PublicKey holds
+the public half of the key, required by a verification key since it is not
+derived from the token.
 
 
 ### Type Signer
 ```go
 type Signer interface {
+	Validator
 	Sign(context.Context, jwt.Token) ([]byte, error)
 	PublicKey() (jwk.Key, error)
-	Validator
 }
 ```
 Signer is an interface for signing and verifying JWTs.
@@ -565,17 +620,27 @@ Signer is an interface for signing and verifying JWTs.
 ### Functions
 
 ```go
-func NewED25519Signer(priv ed25519.PrivateKey, id string) (Signer, error)
-```
-NewED25519Signer creates a new ED25519Signer instance with the given private
-key and key ID.
-
-
-```go
 func NewSigner(jwkKey jwk.Key, id string, algo jwa.SignatureAlgorithm) (Signer, error)
 ```
 NewSigner creates a new Signer instance with the given private key and key
 ID.
+
+
+```go
+func NewSignerFromContext(ctx context.Context, user, id string) (Signer, error)
+```
+NewSignerFromContext returns a Signer for the key identified by user
+and id, which is read from the keys.InMemoryKeyStore stored in ctx (see
+keys.ContextWithKeyStore). ErrNoKeyStore or ErrKeyNotFound are returned if
+the key is not available.
+
+
+```go
+func NewSignerFromKeyInfo(ctx context.Context, info keys.Info) (Signer, error)
+```
+NewSignerFromKeyInfo returns a Signer for the key material in info, using
+the JWKKey implementation registered for the algorithm named in its extra
+information.
 
 
 ```go

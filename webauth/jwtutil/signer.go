@@ -11,7 +11,6 @@ package jwtutil
 
 import (
 	"context"
-	"crypto/ed25519"
 
 	"github.com/lestrrat-go/jwx/v3/jwa"
 	"github.com/lestrrat-go/jwx/v3/jwk"
@@ -20,18 +19,9 @@ import (
 
 // Signer is an interface for signing and verifying JWTs.
 type Signer interface {
+	Validator
 	Sign(context.Context, jwt.Token) ([]byte, error)
 	PublicKey() (jwk.Key, error)
-	Validator
-}
-
-// NewED25519Signer creates a new ED25519Signer instance with the given private key and key ID.
-func NewED25519Signer(priv ed25519.PrivateKey, id string) (Signer, error) {
-	jwkKey, err := jwk.Import(priv)
-	if err != nil {
-		return nil, err
-	}
-	return NewSigner(jwkKey, id, jwa.EdDSA())
 }
 
 type signer struct {

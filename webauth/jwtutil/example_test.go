@@ -7,7 +7,6 @@ package jwtutil_test
 import (
 	"context"
 	"crypto/ed25519"
-	"crypto/rand"
 	"encoding/base64"
 	"errors"
 	"fmt"
@@ -17,13 +16,14 @@ import (
 
 	"cloudeng.io/cmdutil/keys"
 	"cloudeng.io/webapp/webauth/jwtutil"
+	"github.com/lestrrat-go/jwx/v3/jwa"
 	"gopkg.in/yaml.v3"
 )
 
 func ExampleJWTIssuer() {
 	// 1. Setup signing keys.
-	_, priv, _ := ed25519.GenerateKey(nil)
-	signer, _ := jwtutil.NewED25519Signer(priv, "key-1")
+	info, _ := jwtutil.NewED25519KeyInfo("key-1", "")
+	signer, _ := jwtutil.NewSignerFromKeyInfo(context.Background(), info)
 
 	mux := http.NewServeMux()
 
@@ -61,22 +61,33 @@ func ExampleJWTIssuer() {
 // keychain or a configuration file, eg. using keys.InMemoryKeyStore.ReadYAML,
 // and store them in the context using keys.ContextWithKeyStore.
 func exampleKeyStore() (context.Context, ed25519.PublicKey) {
-	pub, priv, err := ed25519.GenerateKey(rand.Reader)
+	info, err := jwtutil.NewED25519KeyInfo("jwt-signing-key", "service")
+	if err != nil {
+		panic(err)
+	}
+	var extra jwtutil.KeyExtra
+	if err := info.UnmarshalExtra(&extra); err != nil {
+		panic(err)
+	}
+	pub, err := base64.StdEncoding.DecodeString(extra.PublicKey)
 	if err != nil {
 		panic(err)
 	}
 	store := keys.NewInMemoryKeyStore()
-	spec := fmt.Sprintf(`
-- key_id: jwt-signing-key
-  user: service
-  token: %v
-  extra:
-    algorithm: EdDSA
-`, base64.StdEncoding.EncodeToString(priv))
-	if err := yaml.Unmarshal([]byte(spec), store); err != nil {
-		panic(err)
-	}
-	return keys.ContextWithKeyStore(context.Background(), store), pub
+	store.Add(info)
+	return keys.ContextWithKeyStore(context.Background(), store), ed25519.PublicKey(pub)
+}
+
+// publicKeyInfo returns a verification-only key holding no private key
+// material, just the public key recorded in its extra information, as
+// described by jwtutil.KeyExtra.
+func publicKeyInfo(id string, pub ed25519.PublicKey) keys.Info {
+	info := keys.NewInfo(id, "", nil)
+	info.WithExtra(jwtutil.KeyExtra{
+		Algorithm: jwa.EdDSAEd25519().String(),
+		PublicKey: base64.StdEncoding.EncodeToString(pub),
+	})
+	return info
 }
 
 // ExampleJWTSignerConfig illustrates creating a signer, and the matching
@@ -173,18 +184,11 @@ func ExampleJWTVerifierConfig() {
 	}
 
 	// The verifying service holds the public key for the current key, and for
-	// the key that it replaced, as the token value.
+	// the key that it replaced. Neither entry carries any private key
+	// material.
 	store := keys.NewInMemoryKeyStore()
-	publicKeys := fmt.Sprintf(`
-- key_id: jwt-signing-key
-  token: %v
-- key_id: retired-signing-key
-  token: %v
-`, base64.StdEncoding.EncodeToString(pub), base64.StdEncoding.EncodeToString(make([]byte, ed25519.PublicKeySize)))
-	if err := yaml.Unmarshal([]byte(publicKeys), store); err != nil {
-		fmt.Println(err)
-		return
-	}
+	store.Add(publicKeyInfo("jwt-signing-key", pub))
+	store.Add(publicKeyInfo("retired-signing-key", make(ed25519.PublicKey, ed25519.PublicKeySize)))
 	ctx := keys.ContextWithKeyStore(context.Background(), store)
 
 	var cfg jwtutil.JWTVerifierConfig
