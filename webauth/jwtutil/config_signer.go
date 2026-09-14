@@ -100,6 +100,9 @@ func keySetForKeys(ctx context.Context, specs []keys.KeySpec) (jwk.Set, error) {
 	}
 	set := jwk.NewSet()
 	for _, spec := range specs {
+		if spec.ID == "" {
+			return nil, fmt.Errorf("verification key ID is required")
+		}
 		info, err := keyInfoFromContext(ctx, spec)
 		if err != nil {
 			return nil, err

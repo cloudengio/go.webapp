@@ -51,6 +51,11 @@ func (c JWTVerifierConfig) Validate() error {
 	if len(c.VerificationKeys) == 0 {
 		return fmt.Errorf("at least one verification key is required")
 	}
+	for _, k := range c.VerificationKeys {
+		if k.ID == "" {
+			return fmt.Errorf("verification key ID is required")
+		}
+	}
 	return nil
 }
 
@@ -65,6 +70,9 @@ type JWTCookieSignerConfig struct {
 func (c JWTCookieSignerConfig) Validate() error {
 	if c.Name == "" {
 		return fmt.Errorf("cookie name is required")
+	}
+	if c.Duration <= 0 {
+		return fmt.Errorf("cookie duration must be greater than 0")
 	}
 	if c.ValidationTimeSkew < 0 {
 		return fmt.Errorf("validation time skew cannot be negative")

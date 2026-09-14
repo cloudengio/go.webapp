@@ -6,8 +6,6 @@ package websec_test
 
 import (
 	"context"
-	"crypto/ed25519"
-	"crypto/rand"
 	"net/http"
 	"net/http/httptest"
 	"slices"
@@ -470,11 +468,11 @@ func setupValidator(t *testing.T, signer jwtutil.Signer) jwtutil.Validator {
 
 func setupSigner(t *testing.T) jwtutil.Signer {
 	t.Helper()
-	_, priv, err := ed25519.GenerateKey(rand.Reader)
+	ki, err := jwtutil.NewED25519KeyInfo("test-key-id", "test-user")
 	if err != nil {
-		t.Fatalf("failed to generate ed25519 key: %v", err)
+		t.Fatalf("failed to create key info: %v", err)
 	}
-	signer, err := jwtutil.NewED25519Signer(priv, "test-key-id")
+	signer, err := jwtutil.ED25519{}.Signer(ki)
 	if err != nil {
 		t.Fatalf("failed to create signer: %v", err)
 	}

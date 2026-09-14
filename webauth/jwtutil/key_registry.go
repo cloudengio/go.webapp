@@ -5,6 +5,7 @@
 package jwtutil
 
 import (
+	"bytes"
 	"context"
 	"encoding/base64"
 	"errors"
@@ -122,6 +123,9 @@ func keyInfoFromContext(ctx context.Context, spec keys.KeySpec) (keys.Info, erro
 // keys.ContextWithKeyStore). ErrNoKeyStore or ErrKeyNotFound are returned if
 // the key is not available.
 func NewSignerFromContext(ctx context.Context, user, id string) (Signer, error) {
+	if id == "" {
+		return nil, fmt.Errorf("key ID is required")
+	}
 	info, err := keyInfoFromContext(ctx, keys.KeySpec{User: user, ID: id})
 	if err != nil {
 		return nil, err
@@ -133,13 +137,14 @@ func NewSignerFromContext(ctx context.Context, user, id string) (Signer, error) 
 // cleanup function that zeroes the decoded bytes; callers should defer it once
 // the decoded key material is no longer needed.
 func decodeBase64(raw []byte) ([]byte, func(), error) {
-	decoded := make([]byte, base64.StdEncoding.DecodedLen(len(raw)))
+	trimmed := bytes.TrimSpace(raw)
+	decoded := make([]byte, base64.StdEncoding.DecodedLen(len(trimmed)))
 	cleanup := func() {
 		for i := range decoded {
 			decoded[i] = 0
 		}
 	}
-	n, err := base64.StdEncoding.Decode(decoded, raw)
+	n, err := base64.StdEncoding.Decode(decoded, trimmed)
 	if err != nil {
 		return nil, cleanup, fmt.Errorf("failed to decode base64: %w", err)
 	}

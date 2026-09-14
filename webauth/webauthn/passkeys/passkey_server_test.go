@@ -7,8 +7,6 @@ package passkeys_test
 
 import (
 	"context"
-	"crypto/ed25519"
-	"crypto/rand"
 	"fmt"
 	"io"
 	"log/slog"
@@ -97,11 +95,11 @@ func TestPasskeysServer(t *testing.T) {
 	var logged strings.Builder
 	logger := slog.New(slog.NewTextHandler(io.MultiWriter(os.Stderr, &logged), nil))
 	db := passkeys.NewRAMUserDatabase()
-	_, privKey, err := ed25519.GenerateKey(rand.Reader)
+	ki, err := jwtutil.NewED25519KeyInfo("pkid", "test-user")
 	if err != nil {
-		t.Fatalf("Failed to generate private key: %v", err)
+		t.Fatalf("Failed to create key info: %v", err)
 	}
-	signer, err := jwtutil.NewED25519Signer(privKey, "pkid")
+	signer, err := jwtutil.ED25519{}.Signer(ki)
 	if err != nil {
 		t.Fatalf("Failed to create signer: %v", err)
 	}

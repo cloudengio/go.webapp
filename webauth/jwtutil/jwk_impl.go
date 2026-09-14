@@ -22,12 +22,12 @@ import (
 // a JWT signing key, as well as the public key for use as a verification key.
 // The private key is stored as the key's token with the algorithm and public
 // key in its extra information, as described by KeyExtra.
-func NewED25519KeyInfo(id, user string) (keys.Info, error) {
+func NewED25519KeyInfo(user, id string) (keys.Info, error) {
 	pub, priv, err := ed25519.GenerateKey(rand.Reader)
 	if err != nil {
 		return keys.Info{}, fmt.Errorf("failed to generate an ed25519 key pair: %w", err)
 	}
-	info := keys.NewInfo(id, user, []byte(base64.StdEncoding.EncodeToString(priv)))
+	info := keys.NewInfo(user, id, []byte(base64.StdEncoding.EncodeToString(priv)))
 	info.WithExtra(KeyExtra{
 		Algorithm: jwa.EdDSAEd25519().String(),
 		PublicKey: base64.StdEncoding.EncodeToString(pub),
@@ -47,7 +47,9 @@ type ED25519 struct{}
 // info's token, which must be base64, standard encoding, of the 64 byte
 // private key.
 func (e ED25519) Signer(info keys.Info) (Signer, error) {
-	decoded, cleanup, err := decodeBase64(info.Token().Value())
+	tok := info.Token()
+	defer tok.Clear()
+	decoded, cleanup, err := decodeBase64(tok.Value())
 	defer cleanup()
 	if err != nil {
 		return nil, fmt.Errorf("key %v: %w", info.KeySpec(), err)
@@ -108,7 +110,9 @@ func (e ED25519) PublicKey(info keys.Info) (jwk.Key, error) {
 }
 
 func init() {
-	algoRegistry.Register(jwa.EdDSAEd25519().String(), func(context.Context, ...any) (JWKKey, error) {
+	factory := func(context.Context, ...any) (JWKKey, error) {
 		return ED25519{}, nil
-	})
+	}
+	algoRegistry.Register(jwa.EdDSAEd25519().String(), factory)
+	algoRegistry.Register(jwa.EdDSA().String(), factory)
 }

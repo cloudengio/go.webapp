@@ -35,6 +35,7 @@ func (c JWTCookieSignerConfig) NewCookieSigner(ctx context.Context) (*CookieSign
 	if err := c.Validate(); err != nil {
 		return nil, err
 	}
+	c.ScopeAndDuration = c.SetDefaults("", "/", 0)
 	signer, err := c.NewSigner(ctx)
 	if err != nil {
 		return nil, err
@@ -59,7 +60,7 @@ func (c JWTCookieSignerConfig) VerifierConfig() JWTCookieVerifierConfig {
 	return JWTCookieVerifierConfig{
 		Name:               c.Name,
 		ValidationTimeSkew: c.ValidationTimeSkew,
-		ScopeAndDuration:   c.ScopeAndDuration,
+		ScopeAndDuration:   c.SetDefaults("", "/", 0),
 		JWTVerifierConfig:  c.JWTSignerConfig.VerifierConfig(),
 	}
 }
@@ -147,6 +148,7 @@ func (c JWTCookieVerifierConfig) NewCookieVerifier(ctx context.Context) (*Cookie
 	if err := c.Validate(); err != nil {
 		return nil, err
 	}
+	c.ScopeAndDuration = c.SetDefaults("", "/", 0)
 	verifier, err := c.newVerifier(ctx, c.ValidationTimeSkew)
 	if err != nil {
 		return nil, err

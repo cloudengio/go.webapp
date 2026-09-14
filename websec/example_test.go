@@ -6,7 +6,6 @@ package websec_test
 
 import (
 	"context"
-	"crypto/ed25519"
 	"fmt"
 	"net/http"
 	"time"
@@ -19,8 +18,8 @@ import (
 
 func ExampleNewLocalhostHandler() {
 	// 1. Setup signing & verification keys
-	_, priv, _ := ed25519.GenerateKey(nil)
-	signer, _ := jwtutil.NewED25519Signer(priv, "key-1")
+	ki, _ := jwtutil.NewED25519KeyInfo("key", "user")
+	signer, _ := jwtutil.ED25519{}.Signer(ki)
 	pubKey, _ := signer.PublicKey()
 	keys := jwk.NewSet()
 	_ = keys.AddKey(pubKey)

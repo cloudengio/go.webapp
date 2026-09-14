@@ -414,15 +414,20 @@ func TestConfigValidate(t *testing.T) {
 	vc := valid.VerifierConfig()
 	noVerificationKeys := vc
 	noVerificationKeys.VerificationKeys = nil
-	if _, err := noVerificationKeys.NewValidator(ctx); err == nil {
-		t.Error("NewValidator: got nil error, want an invalid configuration")
+	emptyKeyID := vc
+	emptyKeyID.VerificationKeys = []keys.KeySpec{{User: "test-user", ID: ""}}
+	for _, cfg := range []jwtutil.JWTVerifierConfig{noVerificationKeys, emptyKeyID} {
+		if _, err := cfg.NewValidator(ctx); err == nil {
+			t.Errorf("%#v: got nil error, want an invalid configuration", cfg)
+		}
 	}
 
 	csc := cookieSignerConfig()
-	noName, negativeSkew := csc, csc
+	noName, negativeSkew, zeroDuration := csc, csc, csc
 	noName.Name = ""
 	negativeSkew.ValidationTimeSkew = -time.Second
-	for _, cfg := range []jwtutil.JWTCookieSignerConfig{noName, negativeSkew} {
+	zeroDuration.Duration = 0
+	for _, cfg := range []jwtutil.JWTCookieSignerConfig{noName, negativeSkew, zeroDuration} {
 		if _, err := cfg.NewCookieSigner(ctx); err == nil {
 			t.Errorf("%#v: got nil error, want an invalid configuration", cfg)
 		}
@@ -960,5 +965,98 @@ func TestPublicKeyFromKeyInfoErrors(t *testing.T) {
 				t.Error("PublicKeyFromKeyInfo: got nil error, want the key to be rejected")
 			}
 		})
+	}
+}
+
+// TestDecodeBase64Whitespace verifies that key material containing whitespace or
+// newlines (e.g. from YAML block scalars) decodes properly.
+func TestDecodeBase64Whitespace(t *testing.T) {
+	_, priv, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatalf("failed to generate key: %v", err)
+	}
+	pub, ok := priv.Public().(ed25519.PublicKey)
+	if !ok {
+		t.Fatal("failed to derive public key")
+	}
+	info := keys.NewInfo(testKeyID, testKeyUser, []byte(" \n\t"+base64.StdEncoding.EncodeToString(priv)+"\n\r "))
+	info.WithExtra(jwtutil.KeyExtra{
+		Algorithm: ed25519Algorithm,
+		PublicKey: " \n" + base64.StdEncoding.EncodeToString(pub) + " \n",
+	})
+	ctx := keys.ContextWithKey(context.Background(), info)
+
+	signer, err := jwtutil.SignerForKey(ctx, info.KeySpec())
+	if err != nil {
+		t.Fatalf("SignerForKey: %v", err)
+	}
+	signed, err := signer.Sign(ctx, newConfigToken(t))
+	if err != nil {
+		t.Fatalf("Sign: %v", err)
+	}
+	validator, err := jwtutil.ValidatorForKeys(ctx, info.KeySpec())
+	if err != nil {
+		t.Fatalf("ValidatorForKeys: %v", err)
+	}
+	if _, err := validator.ParseAndValidate(ctx, signed); err != nil {
+		t.Errorf("ParseAndValidate: %v", err)
+	}
+}
+
+// TestEdDSAAlgorithmAlias verifies that algorithm name "EdDSA" is recognized by
+// algoRegistry as an alias for ED25519.
+func TestEdDSAAlgorithmAlias(t *testing.T) {
+	info, err := jwtutil.NewED25519KeyInfo(testKeyID, testKeyUser)
+	if err != nil {
+		t.Fatalf("NewED25519KeyInfo: %v", err)
+	}
+	info.WithExtra(jwtutil.KeyExtra{
+		Algorithm: "EdDSA",
+		PublicKey: base64.StdEncoding.EncodeToString(make([]byte, ed25519.PublicKeySize)),
+	})
+	ctx := keys.ContextWithKey(context.Background(), info)
+	if _, err := jwtutil.PublicKeyFromKeyInfo(ctx, info); err != nil {
+		t.Errorf("PublicKeyFromKeyInfo with EdDSA: %v", err)
+	}
+}
+
+// TestKeySetForKeysEmptyID verifies that empty key IDs in KeySpec are rejected.
+func TestKeySetForKeysEmptyID(t *testing.T) {
+	ctx := context.Background()
+	if _, err := jwtutil.ValidatorForKeys(ctx, keys.KeySpec{User: "user", ID: ""}); err == nil {
+		t.Error("ValidatorForKeys: got nil error, want empty key ID to be rejected")
+	}
+	if _, err := jwtutil.NewSignerFromContext(ctx, "user", ""); err == nil {
+		t.Error("NewSignerFromContext: got nil error, want empty key ID to be rejected")
+	}
+}
+
+// TestCookieDefaultPath verifies that cookie Path defaults to "/" when omitted.
+func TestCookieDefaultPath(t *testing.T) {
+	ctx, _ := newED25519Key(t)
+	csc := cookieSignerConfig()
+	csc.Path = ""
+	cs, err := csc.NewCookieSigner(ctx)
+	if err != nil {
+		t.Fatalf("NewCookieSigner: %v", err)
+	}
+	rec := httptest.NewRecorder()
+	if err := cs.Issue(ctx, rec, "subject", nil); err != nil {
+		t.Fatalf("Issue: %v", err)
+	}
+	cookie := responseCookie(t, rec, "jwt")
+	if cookie.Path != "/" {
+		t.Errorf("cookie default path: got %q, want /", cookie.Path)
+	}
+
+	cv, err := csc.VerifierConfig().NewCookieVerifier(ctx)
+	if err != nil {
+		t.Fatalf("NewCookieVerifier: %v", err)
+	}
+	recClear := httptest.NewRecorder()
+	cv.ClearCookie(recClear)
+	cleared := responseCookie(t, recClear, "jwt")
+	if cleared.Path != "/" {
+		t.Errorf("cleared cookie default path: got %q, want /", cleared.Path)
 	}
 }
