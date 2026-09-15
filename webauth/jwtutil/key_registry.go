@@ -10,6 +10,7 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
+	"unicode"
 
 	"cloudeng.io/cmdutil/keys"
 	"cloudeng.io/cmdutil/registry"
@@ -137,7 +138,12 @@ func NewSignerFromContext(ctx context.Context, user, id string) (Signer, error) 
 // cleanup function that zeroes the decoded bytes; callers should defer it once
 // the decoded key material is no longer needed.
 func decodeBase64(raw []byte) ([]byte, func(), error) {
-	trimmed := bytes.TrimSpace(raw)
+	trimmed := bytes.Map(func(r rune) rune {
+		if unicode.IsSpace(r) {
+			return -1
+		}
+		return r
+	}, raw)
 	decoded := make([]byte, base64.StdEncoding.DecodedLen(len(trimmed)))
 	cleanup := func() {
 		for i := range decoded {

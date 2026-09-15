@@ -1018,7 +1018,7 @@ func TestPublicKeyFromKeyInfoErrors(t *testing.T) {
 		}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			info := keys.NewInfo(testKeyID, testKeyUser, nil)
+			info := keys.NewInfo(testKeyUser, testKeyID, nil)
 			info.WithExtra(tc.extra)
 			if _, err := jwtutil.PublicKeyFromKeyInfo(ctx, info); err == nil {
 				t.Error("PublicKeyFromKeyInfo: got nil error, want the key to be rejected")
@@ -1038,7 +1038,9 @@ func TestDecodeBase64Whitespace(t *testing.T) {
 	if !ok {
 		t.Fatal("failed to derive public key")
 	}
-	info := keys.NewInfo(testKeyID, testKeyUser, []byte(" \n\t"+base64.StdEncoding.EncodeToString(priv)+"\n\r "))
+	encodedPriv := base64.StdEncoding.EncodeToString(priv)
+	wrappedPriv := encodedPriv[:len(encodedPriv)/2] + "\n" + encodedPriv[len(encodedPriv)/2:]
+	info := keys.NewInfo(testKeyID, testKeyUser, []byte(" \n\t"+wrappedPriv+"\n\r "))
 	info.WithExtra(jwtutil.KeyExtra{
 		Algorithm: ed25519Algorithm,
 		PublicKey: " \n" + base64.StdEncoding.EncodeToString(pub) + " \n",

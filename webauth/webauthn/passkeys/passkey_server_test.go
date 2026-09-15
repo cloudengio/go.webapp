@@ -95,7 +95,7 @@ func TestPasskeysServer(t *testing.T) {
 	var logged strings.Builder
 	logger := slog.New(slog.NewTextHandler(io.MultiWriter(os.Stderr, &logged), nil))
 	db := passkeys.NewRAMUserDatabase()
-	ki, err := jwtutil.NewED25519KeyInfo("pkid", "test-user")
+	ki, err := jwtutil.NewED25519KeyInfo("test-user", "pkid")
 	if err != nil {
 		t.Fatalf("Failed to create key info: %v", err)
 	}

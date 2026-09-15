@@ -468,7 +468,7 @@ func setupValidator(t *testing.T, signer jwtutil.Signer) jwtutil.Validator {
 
 func setupSigner(t *testing.T) jwtutil.Signer {
 	t.Helper()
-	ki, err := jwtutil.NewED25519KeyInfo("test-key-id", "test-user")
+	ki, err := jwtutil.NewED25519KeyInfo("test-user", "test-key-id")
 	if err != nil {
 		t.Fatalf("failed to create key info: %v", err)
 	}

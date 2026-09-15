@@ -8,8 +8,6 @@ package main
 
 import (
 	"context"
-	"crypto/ed25519"
-	"crypto/rand"
 	"fmt"
 	"log/slog"
 	"mime"
@@ -77,12 +75,16 @@ func main() {
 	}
 
 	db := passkeys.NewRAMUserDatabase()
-	pubKey, privKey, err := ed25519.GenerateKey(rand.Reader)
+	ki, err := jwtutil.NewED25519KeyInfo("user", "key")
 	if err != nil {
-		fmt.Printf("Failed to generate private key: %v", err)
+		fmt.Printf("Failed to create JWT key info: %v", err)
 		return
 	}
-	signer := jwtutil.NewED25519Signer(pubKey, privKey, "pkid")
+	signer, err := jwtutil.ED25519{}.Signer(ki)
+	if err != nil {
+		fmt.Printf("Failed to create JWT signer: %v", err)
+		return
+	}
 	mw := passkeys.NewJWTCookieLoginManager(signer, "pktest", cookies.ScopeAndDuration{
 		Path:     "/",
 		Domain:   serverURL.Hostname(),
@@ -126,7 +128,7 @@ func main() {
 		return
 	}
 	fmt.Printf("Starting TLS server at %s\n", serverURL.Host)
-	ln, srv, err := webapp.NewTLSServer(serverURL.Host, mux, cfg)
+	ln, srv, err := webapp.NewTLSServer(ctx, serverURL.Host, mux, cfg)
 	if err != nil {
 		fmt.Printf("Failed to create TLS server: %v", err)
 		return

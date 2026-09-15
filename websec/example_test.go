@@ -18,7 +18,7 @@ import (
 
 func ExampleNewLocalhostHandler() {
 	// 1. Setup signing & verification keys
-	ki, _ := jwtutil.NewED25519KeyInfo("key", "user")
+	ki, _ := jwtutil.NewED25519KeyInfo("user", "key")
 	signer, _ := jwtutil.ED25519{}.Signer(ki)
 	pubKey, _ := signer.PublicKey()
 	keys := jwk.NewSet()
