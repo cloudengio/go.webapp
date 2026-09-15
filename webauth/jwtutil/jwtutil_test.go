@@ -37,7 +37,7 @@ func newToken(t *testing.T) jwt.Token {
 // NewSignerFromKeyInfo works directly from a keys.Info.
 func newED25519Signer(t *testing.T, id string) jwtutil.Signer {
 	t.Helper()
-	info, err := jwtutil.NewED25519KeyInfo(id, "")
+	info, err := jwtutil.NewED25519KeyInfo("", id)
 	if err != nil {
 		t.Fatalf("NewED25519KeyInfo: %v", err)
 	}

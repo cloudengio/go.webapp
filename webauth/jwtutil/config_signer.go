@@ -39,7 +39,7 @@ func SignerForKey(ctx context.Context, spec keys.KeySpec) (Signer, error) {
 // if it is positive.
 func (c JWTSignerConfig) Builder(expiresIn time.Duration) *jwt.Builder {
 	now := time.Now()
-	builder := jwt.NewBuilder().IssuedAt(now).Issuer(c.Issuer).Audience(c.Audience)
+	builder := jwt.NewBuilder().IssuedAt(now).Issuer(c.Issuer).Audience(slices.Clone(c.Audience))
 	if expiresIn > 0 {
 		builder.Expiration(now.Add(expiresIn))
 	}
@@ -99,10 +99,15 @@ func keySetForKeys(ctx context.Context, specs []keys.KeySpec) (jwk.Set, error) {
 		return nil, fmt.Errorf("at least one verification key is required")
 	}
 	set := jwk.NewSet()
+	seen := make(map[string]bool, len(specs))
 	for _, spec := range specs {
 		if spec.ID == "" {
 			return nil, fmt.Errorf("verification key ID is required")
 		}
+		if seen[spec.ID] {
+			return nil, fmt.Errorf("duplicate verification key ID: %q", spec.ID)
+		}
+		seen[spec.ID] = true
 		info, err := keyInfoFromContext(ctx, spec)
 		if err != nil {
 			return nil, err
@@ -161,7 +166,6 @@ func audienceValidator(audience []string) jwt.Validator {
 // by the configuration it was created from, as well as any allowance for clock
 // skew, in addition to verifying the signature of a token.
 type Verifier struct {
-	Validator
 	set  jwk.Set
 	opts []jwt.ValidateOption
 }
@@ -183,7 +187,11 @@ func (c JWTVerifierConfig) newVerifier(ctx context.Context, skew time.Duration) 
 	if skew > 0 {
 		opts = append(opts, jwt.WithAcceptableSkew(skew))
 	}
-	return &Verifier{Validator: NewValidator(set), set: set, opts: opts}, nil
+	return newVerifier(set, opts), nil
+}
+
+func newVerifier(set jwk.Set, opts []jwt.ValidateOption) *Verifier {
+	return &Verifier{set: set, opts: opts}
 }
 
 // Parse verifies the signature of token and returns it without validating any
@@ -195,8 +203,8 @@ func (v *Verifier) Parse(_ context.Context, token []byte) (jwt.Token, error) {
 
 // Validate validates token using the configured issuer, audience and clock skew
 // followed by any additional validators supplied.
-func (v *Verifier) Validate(ctx context.Context, token jwt.Token, validators ...jwt.ValidateOption) error {
-	return v.Validator.Validate(ctx, token, v.validateOptions(validators)...)
+func (v *Verifier) Validate(_ context.Context, token jwt.Token, validators ...jwt.ValidateOption) error {
+	return jwt.Validate(token, v.validateOptions(validators)...)
 }
 
 // ParseAndValidate parses and validates token as per Parse and Validate.

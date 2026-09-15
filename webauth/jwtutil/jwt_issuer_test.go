@@ -7,6 +7,7 @@ package jwtutil_test
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -18,7 +19,7 @@ import (
 
 func newTestSigner(t *testing.T) jwtutil.Signer {
 	t.Helper()
-	info, err := jwtutil.NewED25519KeyInfo("test-issuer-key", "")
+	info, err := jwtutil.NewED25519KeyInfo("", "test-issuer-key")
 	if err != nil {
 		t.Fatalf("NewED25519KeyInfo: %v", err)
 	}
@@ -584,6 +585,56 @@ func TestJWTIssuerCacheControl(t *testing.T) {
 			if got, want := w.Header().Get("Cache-Control"), "no-store"; got != want {
 				t.Errorf("got Cache-Control %q, want %q", got, want)
 			}
+		})
+	}
+}
+
+func TestJWTIssuerReservedClaims(t *testing.T) {
+	signer := newTestSigner(t)
+
+	reservedKeys := []string{
+		jwt.IssuerKey,
+		jwt.SubjectKey,
+		jwt.AudienceKey,
+		jwt.ExpirationKey,
+		jwt.NotBeforeKey,
+		jwt.IssuedAtKey,
+		jwt.JwtIDKey,
+	}
+
+	for _, key := range reservedKeys {
+		t.Run("WithClaim/"+key, func(t *testing.T) {
+			_, err := jwtutil.NewJWTIssuer(signer, jwtutil.WithClaim(key, "val"))
+			if err == nil {
+				t.Fatalf("expected error for reserved claim %q, got nil", key)
+			}
+			if !errors.Is(err, jwtutil.ErrReservedClaim) {
+				t.Errorf("expected ErrReservedClaim, got %v", err)
+			}
+			defer func() {
+				r := recover()
+				if r == nil {
+					t.Errorf("expected panic for WithClaim with reserved key %q", key)
+				}
+			}()
+			_ = jwtutil.NewJWTIssuerMust(signer, jwtutil.WithClaim(key, "val"))
+		})
+
+		t.Run("WithClaims/"+key, func(t *testing.T) {
+			_, err := jwtutil.NewJWTIssuer(signer, jwtutil.WithClaims(map[string]any{key: "val"}))
+			if err == nil {
+				t.Fatalf("expected error for reserved claim in WithClaims %q, got nil", key)
+			}
+			if !errors.Is(err, jwtutil.ErrReservedClaim) {
+				t.Errorf("expected ErrReservedClaim, got %v", err)
+			}
+			defer func() {
+				r := recover()
+				if r == nil {
+					t.Errorf("expected panic for WithClaims with reserved key %q", key)
+				}
+			}()
+			_ = jwtutil.NewJWTIssuerMust(signer, jwtutil.WithClaims(map[string]any{key: "val"}))
 		})
 	}
 }

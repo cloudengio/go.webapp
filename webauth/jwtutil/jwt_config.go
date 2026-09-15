@@ -51,10 +51,15 @@ func (c JWTVerifierConfig) Validate() error {
 	if len(c.VerificationKeys) == 0 {
 		return fmt.Errorf("at least one verification key is required")
 	}
+	seen := make(map[string]bool, len(c.VerificationKeys))
 	for _, k := range c.VerificationKeys {
 		if k.ID == "" {
 			return fmt.Errorf("verification key ID is required")
 		}
+		if seen[k.ID] {
+			return fmt.Errorf("duplicate verification key ID: %q", k.ID)
+		}
+		seen[k.ID] = true
 	}
 	return nil
 }

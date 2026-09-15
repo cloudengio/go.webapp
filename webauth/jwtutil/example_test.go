@@ -22,7 +22,7 @@ import (
 
 func ExampleJWTIssuer() {
 	// 1. Setup signing keys.
-	info, _ := jwtutil.NewED25519KeyInfo("key-1", "")
+	info, _ := jwtutil.NewED25519KeyInfo("", "key-1")
 	signer, _ := jwtutil.NewSignerFromKeyInfo(context.Background(), info)
 
 	mux := http.NewServeMux()
@@ -61,7 +61,7 @@ func ExampleJWTIssuer() {
 // keychain or a configuration file, eg. using keys.InMemoryKeyStore.ReadYAML,
 // and store them in the context using keys.ContextWithKeyStore.
 func exampleKeyStore() (context.Context, ed25519.PublicKey) {
-	info, err := jwtutil.NewED25519KeyInfo("jwt-signing-key", "service")
+	info, err := jwtutil.NewED25519KeyInfo("service", "jwt-signing-key")
 	if err != nil {
 		panic(err)
 	}
@@ -82,7 +82,7 @@ func exampleKeyStore() (context.Context, ed25519.PublicKey) {
 // material, just the public key recorded in its extra information, as
 // described by jwtutil.KeyExtra.
 func publicKeyInfo(id string, pub ed25519.PublicKey) keys.Info {
-	info := keys.NewInfo(id, "", nil)
+	info := keys.NewInfo("", id, nil)
 	info.WithExtra(jwtutil.KeyExtra{
 		Algorithm: jwa.EdDSAEd25519().String(),
 		PublicKey: base64.StdEncoding.EncodeToString(pub),

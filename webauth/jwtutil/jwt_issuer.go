@@ -99,14 +99,18 @@ func WithNotBefore(offset time.Duration) JWTIssuerOption {
 	}
 }
 
-// WithClaim adds or replaces a custom claim in issued tokens.
+// WithClaim adds or replaces a custom claim in issued tokens. If key is a
+// reserved standard JWT claim (iss, sub, aud, exp, nbf, iat, jti), NewJWTIssuer
+// returns ErrReservedClaim.
 func WithClaim(key string, value any) JWTIssuerOption {
 	return func(o *jwtIssuerOptions) {
 		o.claims[key] = value
 	}
 }
 
-// WithClaims adds or replaces multiple custom claims in issued tokens.
+// WithClaims adds or replaces multiple custom claims in issued tokens. If any
+// key is a reserved standard JWT claim (iss, sub, aud, exp, nbf, iat, jti),
+// NewJWTIssuer returns ErrReservedClaim.
 func WithClaims(claims map[string]any) JWTIssuerOption {
 	return func(o *jwtIssuerOptions) {
 		maps.Copy(o.claims, claims)
@@ -241,8 +245,9 @@ func JWTIssuerMust(signer Signer, opts ...JWTIssuerOption) http.Handler {
 }
 
 // NewJWTIssuer creates a new http.Handler that issues JWTs using signer according
-// to the configured options. It returns an error if signer is nil or if more than
-// one cookie option is specified.
+// to the configured options. It returns an error if signer is nil, if more than
+// one cookie option is specified, or if any custom claims match reserved standard
+// JWT claims (iss, sub, aud, exp, nbf, iat, jti).
 func NewJWTIssuer(signer Signer, opts ...JWTIssuerOption) (http.Handler, error) {
 	if signer == nil {
 		return nil, fmt.Errorf("jwtutil.NewJWTIssuer: signer cannot be nil")
@@ -256,6 +261,11 @@ func NewJWTIssuer(signer Signer, opts ...JWTIssuerOption) (http.Handler, error) 
 			return nil, fmt.Errorf("jwtutil.NewJWTIssuer: cannot specify both secure and insecure cookie options")
 		}
 		return nil, fmt.Errorf("jwtutil.NewJWTIssuer: only one cookie option may be specified (found %d)", o.cookieCount)
+	}
+	for k := range o.claims {
+		if isReservedClaim(k) {
+			return nil, fmt.Errorf("%w: claim %q cannot be overridden via WithClaim/WithClaims", ErrReservedClaim, k)
+		}
 	}
 	if !o.directSet && o.cookieName == "" {
 		o.direct = true

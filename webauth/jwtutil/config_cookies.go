@@ -12,12 +12,26 @@ import (
 	"time"
 
 	"cloudeng.io/webapp/cookies"
+	"github.com/lestrrat-go/jwx/v3/jwk"
 	"github.com/lestrrat-go/jwx/v3/jwt"
 )
 
 // ErrNoCookie is returned when a request does not carry the cookie named by a
 // JWTCookieVerifierConfig.
 var ErrNoCookie = errors.New("no such cookie")
+
+// ErrReservedClaim is returned when a caller attempts to set a reserved JWT claim.
+var ErrReservedClaim = errors.New("reserved claim")
+
+func isReservedClaim(key string) bool {
+	switch key {
+	case jwt.AudienceKey, jwt.ExpirationKey, jwt.IssuedAtKey, jwt.IssuerKey,
+		jwt.JwtIDKey, jwt.NotBeforeKey, jwt.SubjectKey:
+		return true
+	default:
+		return false
+	}
+}
 
 // CookieSigner issues JWTs carried in a named, secure, cookie as specified by a
 // JWTCookieSignerConfig. It is also a Validator for the tokens that it issues,
@@ -40,13 +54,21 @@ func (c JWTCookieSignerConfig) NewCookieSigner(ctx context.Context) (*CookieSign
 	if err != nil {
 		return nil, err
 	}
-	verifier, err := c.JWTSignerConfig.VerifierConfig().newVerifier(ctx, c.ValidationTimeSkew)
+	pub, err := signer.PublicKey()
 	if err != nil {
 		return nil, err
 	}
+	set := jwk.NewSet()
+	if err := set.AddKey(pub); err != nil {
+		return nil, err
+	}
+	opts := c.JWTSignerConfig.VerifierConfig().ValidateOptions()
+	if c.ValidationTimeSkew > 0 {
+		opts = append(opts, jwt.WithAcceptableSkew(c.ValidationTimeSkew))
+	}
 	return &CookieSigner{
 		Signer:   signer,
-		verifier: verifier,
+		verifier: newVerifier(set, opts),
 		cfg:      c,
 	}, nil
 }
@@ -72,7 +94,14 @@ func (cs *CookieSigner) Name() string {
 
 // NewToken returns a token for subject with the issuer, audience and duration
 // specified by the configuration along with any additional claims supplied.
+// If claims contains any reserved standard JWT claims (iss, sub, aud, exp, nbf,
+// iat, jti), ErrReservedClaim is returned.
 func (cs *CookieSigner) NewToken(subject string, claims map[string]any) (jwt.Token, error) {
+	for k := range claims {
+		if isReservedClaim(k) {
+			return nil, fmt.Errorf("%w: %q cannot be overridden", ErrReservedClaim, k)
+		}
+	}
 	builder := cs.cfg.Builder(cs.cfg.Duration)
 	if subject != "" {
 		builder.Subject(subject)

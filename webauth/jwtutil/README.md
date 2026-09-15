@@ -9,6 +9,15 @@ Package jwtutil provides support for creating and verifying JSON Web Tokens
 package provides simplified wrappers around the JWT signing and verification
 process to allow for more convenient usage in web applications.
 
+## Constants
+### DefaultVerificationURLValidity
+```go
+DefaultVerificationURLValidity = 5 * time.Minute
+
+```
+
+
+
 ## Variables
 ### ErrNoKeyStore, ErrKeyNotFound
 ```go
@@ -29,6 +38,14 @@ ErrNoCookie = errors.New("no such cookie")
 ErrNoCookie is returned when a request does not carry the cookie named by a
 JWTCookieVerifierConfig.
 
+### ErrReservedClaim
+```go
+ErrReservedClaim = errors.New("reserved claim")
+
+```
+ErrReservedClaim is returned when a caller attempts to set a reserved JWT
+claim.
+
 
 
 ## Functions
@@ -44,9 +61,8 @@ the existing tokens are preserved and the token for key is added or updated.
 ```go
 func CreateVerificationToken(ctx context.Context, s Signer, subject, claimKey string, claimValue any, expiresIn time.Duration, issuer, audience string) ([]byte, error)
 ```
-CreateVerificationToken creates a compacted JWT containing the specified
-claim to be verified along with an expiration time, subject, issuer,
-and audience.
+CreateVerificationToken creates a compact JWT containing the specified claim
+to be verified along with an expiration time, subject, issuer, and audience.
 
 ### Func JWTIssuer
 ```go
@@ -64,7 +80,7 @@ JWTIssuerMust creates a new JWTIssuer handler or panics on error.
 
 ### Func NewED25519KeyInfo
 ```go
-func NewED25519KeyInfo(id, user string) (keys.Info, error)
+func NewED25519KeyInfo(user, id string) (keys.Info, error)
 ```
 NewED25519KeyInfo generates an ed25519 key pair and returns it as a
 keys.Info that can be added to a key store, or written to a keychain item,
@@ -77,8 +93,9 @@ algorithm and public key in its extra information, as described by KeyExtra.
 func NewJWTIssuer(signer Signer, opts ...JWTIssuerOption) (http.Handler, error)
 ```
 NewJWTIssuer creates a new http.Handler that issues JWTs using signer
-according to the configured options. It returns an error if signer is nil or
-if more than one cookie option is specified.
+according to the configured options. It returns an error if signer is nil,
+if more than one cookie option is specified, or if any custom claims match
+reserved standard JWT claims (iss, sub, aud, exp, nbf, iat, jti).
 
 ### Func NewJWTIssuerMust
 ```go
@@ -125,7 +142,9 @@ func VerificationURL(baseURL string, tokenBytes []byte) (string, error)
 ```
 VerificationURL generates a verification URL by appending the signed
 verification token as a query parameter ("token") to the provided baseURL.
-The URL will encode any existing query parameters gracefully.
+The URL will encode any existing query parameters gracefully. A URL so
+generated should and its token should have a very short expiration time and
+ideally be used only once.
 
 
 
@@ -169,6 +188,8 @@ func (cs *CookieSigner) NewToken(subject string, claims map[string]any) (jwt.Tok
 ```
 NewToken returns a token for subject with the issuer, audience and duration
 specified by the configuration along with any additional claims supplied.
+If claims contains any reserved standard JWT claims (iss, sub, aud, exp,
+nbf, iat, jti), ErrReservedClaim is returned.
 
 
 ```go
@@ -368,13 +389,17 @@ WithAudience sets the "aud" claim of issued tokens.
 ```go
 func WithClaim(key string, value any) JWTIssuerOption
 ```
-WithClaim adds or replaces a custom claim in issued tokens.
+WithClaim adds or replaces a custom claim in issued tokens. If key is
+a reserved standard JWT claim (iss, sub, aud, exp, nbf, iat, jti),
+NewJWTIssuer returns ErrReservedClaim.
 
 
 ```go
 func WithClaims(claims map[string]any) JWTIssuerOption
 ```
 WithClaims adds or replaces multiple custom claims in issued tokens.
+If any key is a reserved standard JWT claim (iss, sub, aud, exp, nbf, iat,
+jti), NewJWTIssuer returns ErrReservedClaim.
 
 
 ```go
@@ -688,7 +713,6 @@ claims.
 ### Type Verifier
 ```go
 type Verifier struct {
-	Validator
 	// contains filtered or unexported fields
 }
 ```
@@ -713,7 +737,7 @@ ParseAndValidate parses and validates token as per Parse and Validate.
 
 
 ```go
-func (v *Verifier) Validate(ctx context.Context, token jwt.Token, validators ...jwt.ValidateOption) error
+func (v *Verifier) Validate(_ context.Context, token jwt.Token, validators ...jwt.ValidateOption) error
 ```
 Validate validates token using the configured issuer, audience and clock
 skew followed by any additional validators supplied.

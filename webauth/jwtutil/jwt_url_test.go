@@ -17,7 +17,7 @@ import (
 func newEd25519SignerValidator(t *testing.T, keyID string) (jwtutil.Signer, jwtutil.Validator) {
 	t.Helper()
 
-	info, err := jwtutil.NewED25519KeyInfo(keyID, "")
+	info, err := jwtutil.NewED25519KeyInfo("", keyID)
 	if err != nil {
 		t.Fatalf("NewED25519KeyInfo: %v", err)
 	}

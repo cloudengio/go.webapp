@@ -44,7 +44,7 @@ var ed25519Algorithm = jwa.EdDSAEd25519().String()
 // jwtutil.KeyExtra: keys.Info.WithExtra only unmarshals into a value of the
 // same concrete type it was given.
 func storeKey(ctx context.Context, spec keys.KeySpec, token []byte, extra any) context.Context {
-	info := keys.NewInfo(spec.ID, spec.User, token)
+	info := keys.NewInfo(spec.User, spec.ID, token)
 	if extra != nil {
 		info.WithExtra(extra)
 	}
@@ -56,7 +56,7 @@ func storeKey(ctx context.Context, spec keys.KeySpec, token []byte, extra any) c
 // public key.
 func newED25519Key(t *testing.T) (context.Context, ed25519.PublicKey) {
 	t.Helper()
-	info, err := jwtutil.NewED25519KeyInfo(testKeyID, testKeyUser)
+	info, err := jwtutil.NewED25519KeyInfo(testKeyUser, testKeyID)
 	if err != nil {
 		t.Fatalf("NewED25519KeyInfo: %v", err)
 	}
@@ -304,7 +304,7 @@ func TestConfigKeyRotation(t *testing.T) {
 	ctx := context.Background()
 	specs := []keys.KeySpec{{ID: "old", User: testKeyUser}, {ID: "new", User: testKeyUser}}
 	for _, spec := range specs {
-		info, err := jwtutil.NewED25519KeyInfo(spec.ID, spec.User)
+		info, err := jwtutil.NewED25519KeyInfo(spec.User, spec.ID)
 		if err != nil {
 			t.Fatalf("NewED25519KeyInfo: %v", err)
 		}
@@ -416,7 +416,12 @@ func TestConfigValidate(t *testing.T) {
 	noVerificationKeys.VerificationKeys = nil
 	emptyKeyID := vc
 	emptyKeyID.VerificationKeys = []keys.KeySpec{{User: "test-user", ID: ""}}
-	for _, cfg := range []jwtutil.JWTVerifierConfig{noVerificationKeys, emptyKeyID} {
+	duplicateKeyID := vc
+	duplicateKeyID.VerificationKeys = []keys.KeySpec{
+		{User: "user1", ID: "dup-key"},
+		{User: "user2", ID: "dup-key"},
+	}
+	for _, cfg := range []jwtutil.JWTVerifierConfig{noVerificationKeys, emptyKeyID, duplicateKeyID} {
 		if _, err := cfg.NewValidator(ctx); err == nil {
 			t.Errorf("%#v: got nil error, want an invalid configuration", cfg)
 		}
@@ -658,6 +663,60 @@ func TestCookieSignerValidator(t *testing.T) {
 	}
 }
 
+// TestCookieSignerReservedClaims verifies that CookieSigner.NewToken and Issue
+// reject attempts to overwrite standard reserved claims (iss, sub, aud, exp, nbf, iat, jti).
+func TestCookieSignerReservedClaims(t *testing.T) {
+	ctx, _ := newED25519Key(t)
+	csc := cookieSignerConfig()
+	cs, err := csc.NewCookieSigner(ctx)
+	if err != nil {
+		t.Fatalf("NewCookieSigner: %v", err)
+	}
+
+	reservedClaims := []string{
+		jwt.IssuerKey,
+		jwt.SubjectKey,
+		jwt.AudienceKey,
+		jwt.ExpirationKey,
+		jwt.NotBeforeKey,
+		jwt.IssuedAtKey,
+		jwt.JwtIDKey,
+	}
+
+	for _, claim := range reservedClaims {
+		t.Run("NewToken/"+claim, func(t *testing.T) {
+			_, err := cs.NewToken("subject", map[string]any{claim: "override"})
+			if err == nil {
+				t.Errorf("NewToken: got nil error, want ErrReservedClaim for %q", claim)
+			}
+			if !errors.Is(err, jwtutil.ErrReservedClaim) {
+				t.Errorf("NewToken: got error %v, want ErrReservedClaim", err)
+			}
+		})
+
+		t.Run("Issue/"+claim, func(t *testing.T) {
+			rec := httptest.NewRecorder()
+			err := cs.Issue(ctx, rec, "subject", map[string]any{claim: "override"})
+			if err == nil {
+				t.Errorf("Issue: got nil error, want ErrReservedClaim for %q", claim)
+			}
+			if !errors.Is(err, jwtutil.ErrReservedClaim) {
+				t.Errorf("Issue: got error %v, want ErrReservedClaim", err)
+			}
+		})
+	}
+
+	// Custom claims that are not reserved should succeed.
+	tok, err := cs.NewToken("subject", map[string]any{"custom": "value", "role": "admin"})
+	if err != nil {
+		t.Fatalf("NewToken with custom claims: %v", err)
+	}
+	var customVal any
+	if err := tok.Get("custom", &customVal); err != nil || customVal != "value" {
+		t.Errorf("custom claim: got %v, want value", customVal)
+	}
+}
+
 // TestConfigTokenLifecycle covers the claims set on a token created via
 // JWTSignerConfig.Builder and the conditions under which the corresponding
 // Verifier rejects it.
@@ -773,7 +832,7 @@ func TestConfigTokenRejection(t *testing.T) {
 
 	// A token signed with a key that is not in the key set, ie. with an
 	// unknown key id, is also rejected by Parse.
-	otherInfo, err := jwtutil.NewED25519KeyInfo("other-key", testKeyUser)
+	otherInfo, err := jwtutil.NewED25519KeyInfo(testKeyUser, "other-key")
 	if err != nil {
 		t.Fatalf("NewED25519KeyInfo: %v", err)
 	}
@@ -797,7 +856,7 @@ func TestConfigTokenRejection(t *testing.T) {
 // configurations in this package, ie. that the key material they store can be
 // used for both signing and verification.
 func TestNewED25519KeyInfo(t *testing.T) {
-	info, err := jwtutil.NewED25519KeyInfo(testKeyID, testKeyUser)
+	info, err := jwtutil.NewED25519KeyInfo(testKeyUser, testKeyID)
 	if err != nil {
 		t.Fatalf("NewED25519KeyInfo: %v", err)
 	}
@@ -844,7 +903,7 @@ func TestNewED25519KeyInfo(t *testing.T) {
 // NewED25519KeyInfo, once marshalled to YAML as it would be when written to a
 // keychain item and read back, still signs and verifies correctly.
 func TestNewED25519KeyInfoYAMLRoundTrip(t *testing.T) {
-	info, err := jwtutil.NewED25519KeyInfo(testKeyID, testKeyUser)
+	info, err := jwtutil.NewED25519KeyInfo(testKeyUser, testKeyID)
 	if err != nil {
 		t.Fatalf("NewED25519KeyInfo: %v", err)
 	}
@@ -882,7 +941,7 @@ func TestNewED25519KeyInfoYAMLRoundTrip(t *testing.T) {
 // TestKeyLookupByID covers a key spec that does not name a user, which matches
 // a key with the same id belonging to any user provided that it is unambiguous.
 func TestKeyLookupByID(t *testing.T) {
-	info, err := jwtutil.NewED25519KeyInfo(testKeyID, testKeyUser)
+	info, err := jwtutil.NewED25519KeyInfo(testKeyUser, testKeyID)
 	if err != nil {
 		t.Fatalf("NewED25519KeyInfo: %v", err)
 	}
@@ -900,7 +959,7 @@ func TestKeyLookupByID(t *testing.T) {
 
 	// A second key with the same id makes the spec ambiguous: it is reported
 	// the same way as a key that does not exist at all.
-	other, err := jwtutil.NewED25519KeyInfo(testKeyID, "another-user")
+	other, err := jwtutil.NewED25519KeyInfo("another-user", testKeyID)
 	if err != nil {
 		t.Fatalf("NewED25519KeyInfo: %v", err)
 	}
@@ -923,7 +982,7 @@ func TestKeyLookupByID(t *testing.T) {
 // TestUnsupportedAlgorithm covers the error reported when a key names an
 // algorithm that has no registered JWKKey implementation.
 func TestUnsupportedAlgorithm(t *testing.T) {
-	info, err := jwtutil.NewED25519KeyInfo(testKeyID, testKeyUser)
+	info, err := jwtutil.NewED25519KeyInfo(testKeyUser, testKeyID)
 	if err != nil {
 		t.Fatalf("NewED25519KeyInfo: %v", err)
 	}
@@ -1006,7 +1065,7 @@ func TestDecodeBase64Whitespace(t *testing.T) {
 // TestEdDSAAlgorithmAlias verifies that algorithm name "EdDSA" is recognized by
 // algoRegistry as an alias for ED25519.
 func TestEdDSAAlgorithmAlias(t *testing.T) {
-	info, err := jwtutil.NewED25519KeyInfo(testKeyID, testKeyUser)
+	info, err := jwtutil.NewED25519KeyInfo(testKeyUser, testKeyID)
 	if err != nil {
 		t.Fatalf("NewED25519KeyInfo: %v", err)
 	}
@@ -1028,6 +1087,18 @@ func TestKeySetForKeysEmptyID(t *testing.T) {
 	}
 	if _, err := jwtutil.NewSignerFromContext(ctx, "user", ""); err == nil {
 		t.Error("NewSignerFromContext: got nil error, want empty key ID to be rejected")
+	}
+}
+
+// TestKeySetForKeysDuplicateID verifies that duplicate key IDs in KeySpec are rejected.
+func TestKeySetForKeysDuplicateID(t *testing.T) {
+	ctx := context.Background()
+	specs := []keys.KeySpec{
+		{User: "user1", ID: "same-key-id"},
+		{User: "user2", ID: "same-key-id"},
+	}
+	if _, err := jwtutil.ValidatorForKeys(ctx, specs...); err == nil {
+		t.Error("ValidatorForKeys: got nil error, want duplicate key ID to be rejected")
 	}
 }
 
