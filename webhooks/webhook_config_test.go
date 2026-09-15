@@ -116,8 +116,8 @@ func TestTokensFromContext(t *testing.T) {
 	}
 
 	t.Run("AllFound", func(t *testing.T) {
-		ctx := keys.ContextWithKey(context.Background(), keys.NewInfo("key1", "user1", []byte("secret1")))
-		ctx = keys.ContextWithKey(ctx, keys.NewInfo("key2", "user2", []byte("secret2")))
+		ctx := keys.ContextWithKey(context.Background(), keys.NewInfo("user1", "key1", []byte("secret1")))
+		ctx = keys.ContextWithKey(ctx, keys.NewInfo("user2", "key2", []byte("secret2")))
 
 		toks, err := sc.TokensFromContext(ctx)
 		if err != nil {
@@ -143,7 +143,7 @@ func TestTokensFromContext(t *testing.T) {
 	t.Run("ClearsOnError", func(t *testing.T) {
 		// Only key1 is in context; key2 is absent so the error path triggers
 		// after key1 has already been collected and must be cleared.
-		ctx := keys.ContextWithKey(context.Background(), keys.NewInfo("key1", "user1", []byte("secret1")))
+		ctx := keys.ContextWithKey(context.Background(), keys.NewInfo("user1", "key1", []byte("secret1")))
 
 		toks, err := sc.TokensFromContext(ctx)
 		if err == nil {
