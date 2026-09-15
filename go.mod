@@ -3,18 +3,18 @@ module cloudeng.io/webapp
 go 1.27.0
 
 require (
-	cloudeng.io/cicd v0.0.0-20260909165456-ddaa2de546a0
-	cloudeng.io/cmdutil v0.0.0-20260909165456-ddaa2de546a0
+	cloudeng.io/cicd v0.0.0-20260914180154-c85eb1cb5201
+	cloudeng.io/cmdutil v0.0.0-20260914180154-c85eb1cb5201
 	cloudeng.io/errors v0.0.14-0.20260312171538-61fcde6ce278
-	cloudeng.io/file v0.0.0-20260909165456-ddaa2de546a0
-	cloudeng.io/io v0.0.0-20260909165456-ddaa2de546a0
-	cloudeng.io/logging v0.0.0-20260909165456-ddaa2de546a0
-	cloudeng.io/net v0.0.0-20260909165456-ddaa2de546a0
-	cloudeng.io/os v0.0.0-20260909165456-ddaa2de546a0
+	cloudeng.io/file v0.0.0-20260914180154-c85eb1cb5201
+	cloudeng.io/io v0.0.0-20260914180154-c85eb1cb5201
+	cloudeng.io/logging v0.0.0-20260914180154-c85eb1cb5201
+	cloudeng.io/net v0.0.0-20260914180154-c85eb1cb5201
+	cloudeng.io/os v0.0.0-20260914180154-c85eb1cb5201
 	cloudeng.io/sync v0.0.12-0.20260804222138-e9281ed260ba
 	cloudeng.io/text v0.0.16-0.20260624171915-da98fe9dec2b
-	cloudeng.io/webapi/operations v0.0.0-20260826235630-e76ef9cbd50a
-	github.com/chromedp/cdproto v0.0.0-20260804232424-e85f50dbfd32
+	cloudeng.io/webapi/operations v0.0.0-20260914220715-614066f9ca28
+	github.com/chromedp/cdproto v0.0.0-20260912003405-686a5c723acc
 	github.com/cloudengio/chromedp v0.0.0-20260611181948-3cd91754d426
 	github.com/gaissmai/bart v0.29.0
 	github.com/go-json-experiment/json v0.0.0-20260820222146-c27c302e5fc3
@@ -27,12 +27,12 @@ require (
 )
 
 require (
-	cloudeng.io/algo v0.0.0-20260909165456-ddaa2de546a0 // indirect
-	cloudeng.io/sys v0.0.0-20260909165456-ddaa2de546a0 // indirect
-	cloudeng.io/types v0.0.0-20260909165456-ddaa2de546a0 // indirect
+	cloudeng.io/algo v0.0.0-20260914180154-c85eb1cb5201 // indirect
+	cloudeng.io/sys v0.0.0-20260914180154-c85eb1cb5201 // indirect
+	cloudeng.io/types v0.0.0-20260914180154-c85eb1cb5201 // indirect
 	github.com/chromedp/sysutil v1.1.0 // indirect
 	github.com/decred/dcrd/dcrec/secp256k1/v4 v4.4.1 // indirect
-	github.com/fxamacker/cbor/v2 v2.9.3 // indirect
+	github.com/fxamacker/cbor/v2 v2.9.4 // indirect
 	github.com/go-viper/mapstructure/v2 v2.5.0 // indirect
 	github.com/go-webauthn/x v0.3.1 // indirect
 	github.com/gobwas/httphead v0.1.0 // indirect
