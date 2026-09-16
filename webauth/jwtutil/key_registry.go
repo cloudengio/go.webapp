@@ -156,3 +156,9 @@ func decodeBase64(raw []byte) ([]byte, func(), error) {
 	}
 	return decoded[:n], cleanup, nil
 }
+
+// CloneKeyInfoForPublicKey returns a copy of the key info without the private key
+// material, suitable for use as a public key.
+func CloneKeyInfoForPublicKey(info keys.Info) keys.Info {
+	return info.CloneNoToken()
+}
