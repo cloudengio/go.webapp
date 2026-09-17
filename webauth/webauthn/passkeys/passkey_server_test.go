@@ -108,7 +108,10 @@ func TestPasskeysServer(t *testing.T) {
 		Path:     "/",
 		Duration: 10 * time.Minute,
 	}
-	mw := passkeys.NewJWTCookieLoginManager(signer, "localhost", scopeAndDuration)
+	mw, err := passkeys.NewJWTCookieLoginManager(signer, "localhost", scopeAndDuration)
+	if err != nil {
+		t.Fatalf("Failed to create login manager: %v", err)
+	}
 	requireResidentKey := true
 	w := passkeys.NewHandler(wa, db, db, mw,
 		passkeys.WithLogger(logger),

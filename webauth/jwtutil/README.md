@@ -36,7 +36,7 @@ ErrNoCookie = errors.New("no such cookie")
 
 ```
 ErrNoCookie is returned when a request does not carry the cookie named by a
-JWTCookieVerifierConfig.
+JWTCookieValidatorConfig.
 
 ### ErrReservedClaim
 ```go
@@ -84,6 +84,13 @@ any client that accesses it.
 func JWTIssuerMust(signer Signer, opts ...JWTIssuerOption) http.Handler
 ```
 JWTIssuerMust creates a new JWTIssuer handler or panics on error.
+
+### Func KeySetForKeys
+```go
+func KeySetForKeys(ctx context.Context, keys ...keys.Info) (jwk.Set, error)
+```
+KeySetForKeys returns a jwk.KeySet containing the public halves of the keys
+provided.
 
 ### Func NewED25519KeyInfo
 ```go
@@ -163,10 +170,10 @@ type CookieSigner struct {
 	// contains filtered or unexported fields
 }
 ```
-CookieSigner issues JWTs carried in a named, secure, cookie as specified
-by a JWTCookieSignerConfig. It is also a Validator for the tokens that it
-issues, applying the same issuer, audience and clock skew checks as the
-CookieVerifier created from VerifierConfig.
+CookieSigner issues JWTs carried in a named cookie as specified by a
+JWTCookieSignerConfig. It only signs; a service that also needs to verify
+the cookies it issues should build a separate CookieVerifier from the
+matching JWTCookieValidatorConfig (see VerifierConfig).
 
 ### Methods
 
@@ -202,29 +209,9 @@ jti), ErrReservedClaim is returned.
 
 
 ```go
-func (cs *CookieSigner) Parse(ctx context.Context, token []byte) (jwt.Token, error)
-```
-Parse verifies the signature of token and returns it without validating any
-of its claims, as per Verifier.Parse.
-
-
-```go
-func (cs *CookieSigner) ParseAndValidate(ctx context.Context, token []byte, validators ...jwt.ValidateOption) (jwt.Token, error)
-```
-ParseAndValidate parses and validates token as per Parse and Validate.
-
-
-```go
 func (cs *CookieSigner) SetCookie(ctx context.Context, rw http.ResponseWriter, token jwt.Token) error
 ```
 SetCookie signs token and sets the resulting cookie on rw.
-
-
-```go
-func (cs *CookieSigner) Validate(ctx context.Context, token jwt.Token, validators ...jwt.ValidateOption) error
-```
-Validate validates token using the issuer, audience and clock skew specified
-by the configuration followed by any additional validators supplied.
 
 
 
@@ -232,12 +219,11 @@ by the configuration followed by any additional validators supplied.
 ### Type CookieVerifier
 ```go
 type CookieVerifier struct {
-	*Verifier
 	// contains filtered or unexported fields
 }
 ```
 CookieVerifier verifies JWTs carried in a named cookie as specified by a
-JWTCookieVerifierConfig.
+JWTCookieValidatorConfig.
 
 ### Methods
 
@@ -251,6 +237,27 @@ ClearCookie requests the removal of the cookie by the client.
 func (cv *CookieVerifier) Name() string
 ```
 Name returns the name of the cookie that tokens are read from.
+
+
+```go
+func (cv *CookieVerifier) Parse(_ context.Context, token []byte) (jwt.Token, error)
+```
+Parse verifies the signature of token and returns it without validating any
+of its claims, which is left to Validate so that the options implied by the
+configuration, including any allowance for clock skew, are applied.
+
+
+```go
+func (cv *CookieVerifier) ParseAndValidate(ctx context.Context, token []byte, validators ...jwt.ValidateOption) (jwt.Token, error)
+```
+ParseAndValidate parses and validates token as per Parse and Validate.
+
+
+```go
+func (cv *CookieVerifier) Validate(_ context.Context, token jwt.Token, validators ...jwt.ValidateOption) error
+```
+Validate validates token using the configured issuer, audience and clock
+skew followed by any additional validators supplied.
 
 
 ```go
@@ -338,10 +345,10 @@ JWTCookieSignerConfig provides configuration for a cookie storing a JWT.
 ### Methods
 
 ```go
-func (c JWTCookieSignerConfig) NewCookieSigner(ctx context.Context) (*CookieSigner, error)
+func (c JWTCookieSignerConfig) NewCookieSigner(ctx context.Context, spec keys.KeySpec) (*CookieSigner, error)
 ```
-NewCookieSigner returns a CookieSigner for the signing key named by the
-configuration. The key is obtained as per JWTSignerConfig.NewSigner.
+NewCookieSigner returns a CookieSigner that signs with the key identified by
+spec, obtained as per SignerForKey.
 
 
 ```go
@@ -350,42 +357,42 @@ func (c JWTCookieSignerConfig) Validate() error
 
 
 ```go
-func (c JWTCookieSignerConfig) VerifierConfig() JWTCookieVerifierConfig
+func (c JWTCookieSignerConfig) VerifierConfig() JWTCookieValidatorConfig
 ```
-VerifierConfig returns the cookie verifier configuration implied by the
-cookie signer configuration, ie. the same cookie name, scope, duration,
-insecure setting, issuer and audience with the signing key as the sole
-verification key. Its ValidationTimeSkew is left at zero: a signer
-validating tokens that it issued itself has no need to allow for clock drift
-between machines. It is intended for use by a service that both issues and
-verifies its own cookies.
+VerifierConfig returns the cookie validator configuration implied
+by the cookie signer configuration, ie. the same cookie name, scope,
+duration, insecure setting, issuer, audience, subject and claims.
+Its ValidationTimeSkew is left at zero: a signer validating tokens that it
+issued itself has no need to allow for clock drift between machines. It is
+intended for use by a service that both issues and verifies its own cookies;
+the verification key(s) must still be supplied separately when constructing
+the CookieVerifier, since neither config carries key material.
 
 
 
 
-### Type JWTCookieVerifierConfig
+### Type JWTCookieValidatorConfig
 ```go
-type JWTCookieVerifierConfig struct {
+type JWTCookieValidatorConfig struct {
 	JWTCookieConfig    `yaml:"cookie" doc:"jwt cookie config"`
 	ValidationTimeSkew time.Duration `yaml:"validation_time_skew" doc:"allowed time skew for cookie and token validation"`
-	JWTVerifierConfig  `yaml:",inline" doc:"jwt info"`
+	JWTValidatorConfig `yaml:",inline" doc:"jwt info"`
 }
 ```
-JWTCookieVerifierConfig provides configuration for verifying a JWT stored in
-a cookie.
+JWTCookieValidatorConfig provides configuration for verifying a JWT stored
+in a cookie.
 
 ### Methods
 
 ```go
-func (c JWTCookieVerifierConfig) NewCookieVerifier(ctx context.Context) (*CookieVerifier, error)
+func (c JWTCookieValidatorConfig) NewCookieVerifier(ctx context.Context, verificationKeys ...keys.Info) (*CookieVerifier, error)
 ```
-NewCookieVerifier returns a CookieVerifier for the verification
-keys named by the configuration. The keys are obtained as per
-JWTVerifierConfig.NewValidator.
+NewCookieVerifier returns a CookieVerifier that verifies tokens against
+verificationKeys, obtained as per KeySetForKeys.
 
 
 ```go
-func (c JWTCookieVerifierConfig) Validate() error
+func (c JWTCookieValidatorConfig) Validate() error
 ```
 
 
@@ -519,12 +526,11 @@ WithSubject sets the "sub" claim of issued tokens.
 ### Type JWTSignerConfig
 ```go
 type JWTSignerConfig struct {
-	Issuer     string            `yaml:"jwt_issuer" doc:"jwt issuer"`
-	Audience   []string          `yaml:"jwt_audience" doc:"jwt audience"`
-	Duration   time.Duration     `yaml:"jwt_duration" doc:"duration,24h,validity duration of the issued JWT"`
-	Subject    string            `yaml:"jwt_subject" doc:"jwt subject, always included as 'sub' claim if provided"`
-	Claims     map[string]string `yaml:"jwt_claims" doc:"additional claims to include in issued JWTs"`
-	SigningKey keys.KeySpec      `yaml:"jwt_signing_key" doc:"jwt signing key spec"`
+	Issuer   string            `yaml:"jwt_issuer" doc:"jwt issuer"`
+	Audience []string          `yaml:"jwt_audience" doc:"jwt audience"`
+	Duration time.Duration     `yaml:"jwt_duration" doc:"duration,24h,validity duration of the issued JWT"`
+	Subject  string            `yaml:"jwt_subject" doc:"jwt subject, always included as 'sub' claim if provided"`
+	Claims   map[string]string `yaml:"jwt_claims" doc:"additional claims to include in issued JWTs"`
 }
 ```
 JWTSignerConfig provides configuration for signing JSON Web Tokens (JWTs).
@@ -544,68 +550,34 @@ c.Duration is.
 
 
 ```go
-func (c JWTSignerConfig) NewSigner(ctx context.Context) (Signer, error)
-```
-NewSigner returns a Signer for the signing key named by the configuration.
-The key is read from the keys.InMemoryKeyStore stored in ctx (see
-keys.ContextWithKeyStore) and is interpreted as described by KeyExtra.
-ErrNoKeyStore or ErrKeyNotFound are returned if the key is not available.
-
-
-```go
 func (c JWTSignerConfig) Validate() error
 ```
 
 
+
+
+### Type JWTValidatorConfig
 ```go
-func (c JWTSignerConfig) VerifierConfig() JWTVerifierConfig
-```
-VerifierConfig returns the verifier configuration implied by the signer
-configuration, namely the same issuer, audience, subject and claims,
-with the signing key as the sole verification key. It is intended for use by
-a service that both issues and verifies its own tokens.
-
-
-
-
-### Type JWTVerifierConfig
-```go
-type JWTVerifierConfig struct {
-	Issuer           string            `yaml:"jwt_issuer" doc:"jwt issuer"`
-	Audience         []string          `yaml:"jwt_audience" doc:"jwt audience"`
-	Subject          string            `yaml:"jwt_subject" doc:"jwt subject, always expected as 'sub' claim if provided"`
-	Claims           map[string]string `yaml:"jwt_claims" doc:"additional claims to expect in the JWT"`
-	VerificationKeys []keys.KeySpec    `yaml:"jwt_verification_keys" doc:"jwt verification key specs"`
+type JWTValidatorConfig struct {
+	Issuer   string            `yaml:"jwt_issuer" doc:"jwt issuer"`
+	Audience []string          `yaml:"jwt_audience" doc:"jwt audience"`
+	Subject  string            `yaml:"jwt_subject" doc:"jwt subject, always expected as 'sub' claim if provided"`
+	Claims   map[string]string `yaml:"jwt_claims" doc:"additional claims to expect in the JWT"`
 }
 ```
-JWTVerifierConfig provides configuration for verifying JSON Web Tokens
+JWTValidatorConfig provides configuration for verifying JSON Web Tokens
 (JWTs) for a given issuer and audience. Multiple verification keys can be
 specified to allow for key rotation.
 
 ### Methods
 
 ```go
-func (c JWTVerifierConfig) NewValidator(ctx context.Context) (Validator, error)
-```
-NewValidator returns a Validator for the verification keys named by the
-configuration, as per ValidatorForKeys. Unlike the Verifier returned by
-NewVerifier it does not check the issuer or audience claims.
-
-
-```go
-func (c JWTVerifierConfig) NewVerifier(ctx context.Context) (*Verifier, error)
-```
-NewVerifier returns a Verifier for the keys, issuer and audience named by
-the configuration. The keys are obtained as per NewValidator.
-
-
-```go
-func (c JWTVerifierConfig) Validate() error
+func (c JWTValidatorConfig) Validate() error
 ```
 
 
 ```go
-func (c JWTVerifierConfig) ValidateOptions() []jwt.ValidateOption
+func (c JWTValidatorConfig) ValidateOptions() []jwt.ValidateOption
 ```
 ValidateOptions returns the validation options implied by the configuration,
 namely that a token must have been issued by the configured issuer and must
@@ -646,7 +618,6 @@ derived from the token.
 ### Type Signer
 ```go
 type Signer interface {
-	Validator
 	Sign(context.Context, jwt.Token) ([]byte, error)
 	PublicKey() (jwk.Key, error)
 }
@@ -709,49 +680,10 @@ NewValidator creates a new Validator instance with the given key set.
 
 
 ```go
-func ValidatorForKeys(ctx context.Context, specs ...keys.KeySpec) (Validator, error)
+func ValidatorForKeys(ctx context.Context, keys ...keys.Info) (Validator, error)
 ```
 ValidatorForKeys returns a Validator that verifies the signature of any
-token signed by one of the keys identified by specs, which are read from
-the keys.InMemoryKeyStore stored in ctx (see keys.ContextWithKeyStore)
-and interpreted as described by KeyExtra. Unlike the Verifier returned
-by JWTVerifierConfig.NewVerifier it does not check the issuer or audience
-claims.
-
-
-
-
-### Type Verifier
-```go
-type Verifier struct {
-	// contains filtered or unexported fields
-}
-```
-Verifier is a Validator that applies the issuer and audience checks implied
-by the configuration it was created from, as well as any allowance for clock
-skew, in addition to verifying the signature of a token.
-
-### Methods
-
-```go
-func (v *Verifier) Parse(_ context.Context, token []byte) (jwt.Token, error)
-```
-Parse verifies the signature of token and returns it without validating any
-of its claims, which is left to Validate so that the options implied by the
-configuration are applied.
-
-
-```go
-func (v *Verifier) ParseAndValidate(ctx context.Context, token []byte, validators ...jwt.ValidateOption) (jwt.Token, error)
-```
-ParseAndValidate parses and validates token as per Parse and Validate.
-
-
-```go
-func (v *Verifier) Validate(_ context.Context, token jwt.Token, validators ...jwt.ValidateOption) error
-```
-Validate validates token using the configured issuer, audience and clock
-skew followed by any additional validators supplied.
+token signed by one of the provided keys.
 
 
 
@@ -767,12 +699,12 @@ validating it on a subsequent request.
 
 ### [ExampleJWTSignerConfig](https://pkg.go.dev/cloudeng.io/webapp/webauth/jwtutil?tab=doc#example-JWTSignerConfig)
 ExampleJWTSignerConfig illustrates creating a signer, and the matching
-verifier, from a YAML configuration and a key store held in a context.
+validator, from a YAML configuration and a key store held in a context.
 
-### [ExampleJWTVerifierConfig](https://pkg.go.dev/cloudeng.io/webapp/webauth/jwtutil?tab=doc#example-JWTVerifierConfig)
-ExampleJWTVerifierConfig illustrates a service that verifies tokens issued
+### [ExampleJWTValidatorConfig](https://pkg.go.dev/cloudeng.io/webapp/webauth/jwtutil?tab=doc#example-JWTValidatorConfig)
+ExampleJWTValidatorConfig illustrates a service that verifies tokens issued
 elsewhere and hence holds public keys only. Multiple verification keys can
-be configured to allow for key rotation.
+be supplied to allow for key rotation.
 
 
 

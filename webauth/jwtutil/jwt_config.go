@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"time"
 
-	"cloudeng.io/cmdutil/keys"
 	"cloudeng.io/webapp/cookies"
 )
 
@@ -36,12 +35,11 @@ func (c JWTCookieConfig) Validate() error {
 
 // JWTSignerConfig provides configuration for signing JSON Web Tokens (JWTs).
 type JWTSignerConfig struct {
-	Issuer     string            `yaml:"jwt_issuer" doc:"jwt issuer"`
-	Audience   []string          `yaml:"jwt_audience" doc:"jwt audience"`
-	Duration   time.Duration     `yaml:"jwt_duration" doc:"duration,24h,validity duration of the issued JWT"`
-	Subject    string            `yaml:"jwt_subject" doc:"jwt subject, always included as 'sub' claim if provided"`
-	Claims     map[string]string `yaml:"jwt_claims" doc:"additional claims to include in issued JWTs"`
-	SigningKey keys.KeySpec      `yaml:"jwt_signing_key" doc:"jwt signing key spec"`
+	Issuer   string            `yaml:"jwt_issuer" doc:"jwt issuer"`
+	Audience []string          `yaml:"jwt_audience" doc:"jwt audience"`
+	Duration time.Duration     `yaml:"jwt_duration" doc:"duration,24h,validity duration of the issued JWT"`
+	Subject  string            `yaml:"jwt_subject" doc:"jwt subject, always included as 'sub' claim if provided"`
+	Claims   map[string]string `yaml:"jwt_claims" doc:"additional claims to include in issued JWTs"`
 }
 
 func (c JWTSignerConfig) Validate() error {
@@ -51,9 +49,6 @@ func (c JWTSignerConfig) Validate() error {
 	if len(c.Audience) == 0 {
 		return fmt.Errorf("audience is required")
 	}
-	if c.SigningKey.ID == "" {
-		return fmt.Errorf("signing key is required")
-	}
 	for k := range c.Claims {
 		if isReservedClaim(k) {
 			return fmt.Errorf("%w: %q cannot be set via Claims", ErrReservedClaim, k)
@@ -62,36 +57,22 @@ func (c JWTSignerConfig) Validate() error {
 	return nil
 }
 
-// JWTVerifierConfig provides configuration for verifying JSON Web Tokens (JWTs)
+// JWTValidatorConfig provides configuration for verifying JSON Web Tokens (JWTs)
 // for a given issuer and audience. Multiple verification keys can be specified
 // to allow for key rotation.
-type JWTVerifierConfig struct {
-	Issuer           string            `yaml:"jwt_issuer" doc:"jwt issuer"`
-	Audience         []string          `yaml:"jwt_audience" doc:"jwt audience"`
-	Subject          string            `yaml:"jwt_subject" doc:"jwt subject, always expected as 'sub' claim if provided"`
-	Claims           map[string]string `yaml:"jwt_claims" doc:"additional claims to expect in the JWT"`
-	VerificationKeys []keys.KeySpec    `yaml:"jwt_verification_keys" doc:"jwt verification key specs"`
+type JWTValidatorConfig struct {
+	Issuer   string            `yaml:"jwt_issuer" doc:"jwt issuer"`
+	Audience []string          `yaml:"jwt_audience" doc:"jwt audience"`
+	Subject  string            `yaml:"jwt_subject" doc:"jwt subject, always expected as 'sub' claim if provided"`
+	Claims   map[string]string `yaml:"jwt_claims" doc:"additional claims to expect in the JWT"`
 }
 
-func (c JWTVerifierConfig) Validate() error {
+func (c JWTValidatorConfig) Validate() error {
 	if c.Issuer == "" {
 		return fmt.Errorf("issuer is required")
 	}
 	if len(c.Audience) == 0 {
 		return fmt.Errorf("audience is required")
-	}
-	if len(c.VerificationKeys) == 0 {
-		return fmt.Errorf("at least one verification key is required")
-	}
-	seen := make(map[string]bool, len(c.VerificationKeys))
-	for _, k := range c.VerificationKeys {
-		if k.ID == "" {
-			return fmt.Errorf("verification key ID is required")
-		}
-		if seen[k.ID] {
-			return fmt.Errorf("duplicate verification key ID: %q", k.ID)
-		}
-		seen[k.ID] = true
 	}
 	for k := range c.Claims {
 		if isReservedClaim(k) {
@@ -120,20 +101,20 @@ func (c JWTCookieSignerConfig) Validate() error {
 	return c.JWTSignerConfig.Validate()
 }
 
-// JWTCookieVerifierConfig provides configuration for verifying a JWT stored in a
+// JWTCookieValidatorConfig provides configuration for verifying a JWT stored in a
 // cookie.
-type JWTCookieVerifierConfig struct {
+type JWTCookieValidatorConfig struct {
 	JWTCookieConfig    `yaml:"cookie" doc:"jwt cookie config"`
 	ValidationTimeSkew time.Duration `yaml:"validation_time_skew" doc:"allowed time skew for cookie and token validation"`
-	JWTVerifierConfig  `yaml:",inline" doc:"jwt info"`
+	JWTValidatorConfig `yaml:",inline" doc:"jwt info"`
 }
 
-func (c JWTCookieVerifierConfig) Validate() error {
+func (c JWTCookieValidatorConfig) Validate() error {
 	if c.Name == "" {
 		return fmt.Errorf("cookie name is required")
 	}
 	if c.ValidationTimeSkew < 0 {
 		return fmt.Errorf("validation time skew cannot be negative")
 	}
-	return c.JWTVerifierConfig.Validate()
+	return c.JWTValidatorConfig.Validate()
 }

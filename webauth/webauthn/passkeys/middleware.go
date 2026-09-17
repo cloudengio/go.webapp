@@ -13,6 +13,7 @@ import (
 	"cloudeng.io/logging/ctxlog"
 	"cloudeng.io/webapp/cookies"
 	"cloudeng.io/webapp/webauth/jwtutil"
+	"github.com/lestrrat-go/jwx/v3/jwk"
 	"github.com/lestrrat-go/jwx/v3/jwt"
 )
 
@@ -32,9 +33,10 @@ type LoginManager interface {
 
 // JWTCookieLoginManager implements the LoginManager interface using JWTs stored in cookies.
 type JWTCookieLoginManager struct {
-	signer   jwtutil.Signer
-	issuer   string
-	audience []string
+	signer    jwtutil.Signer
+	validator jwtutil.Validator
+	issuer    string
+	audience  []string
 
 	loginCookie cookies.ScopeAndDuration
 	// LoginCookie is set when the user has successfully logged in using
@@ -43,16 +45,27 @@ type JWTCookieLoginManager struct {
 	LoginCookie cookies.Secure // initialized as cookies.T("webauthn_login")
 }
 
-// NewJWTCookieLoginManager creates a new JWTCookieLoginManager instance.
-func NewJWTCookieLoginManager(signer jwtutil.Signer, issuer string, cookie cookies.ScopeAndDuration) JWTCookieLoginManager {
+// NewJWTCookieLoginManager creates a new JWTCookieLoginManager instance. Since
+// signer only signs, the Validator used to verify the tokens it issues (see
+// AuthenticateUser) is built here from its public key.
+func NewJWTCookieLoginManager(signer jwtutil.Signer, issuer string, cookie cookies.ScopeAndDuration) (JWTCookieLoginManager, error) {
+	pub, err := signer.PublicKey()
+	if err != nil {
+		return JWTCookieLoginManager{}, fmt.Errorf("failed to get signer public key: %w", err)
+	}
+	set := jwk.NewSet()
+	if err := set.AddKey(pub); err != nil {
+		return JWTCookieLoginManager{}, fmt.Errorf("failed to build verification key set: %w", err)
+	}
 	m := JWTCookieLoginManager{
 		signer:      signer,
+		validator:   jwtutil.NewValidator(set),
 		loginCookie: cookie.SetDefaults("", "/", 10*time.Minute),
 		issuer:      issuer,
 		audience:    []string{"webauthn"},
 		LoginCookie: cookies.Secure("webauthn_login"),
 	}
-	return m
+	return m, nil
 }
 
 func (m JWTCookieLoginManager) UserAuthenticated(r *http.Request, rw http.ResponseWriter, user UserID) error {
@@ -88,7 +101,7 @@ func (m JWTCookieLoginManager) AuthenticateUser(r *http.Request) (UserID, error)
 	for _, aud := range m.audience {
 		validationOptions = append(validationOptions, jwt.WithAudience(aud))
 	}
-	token, err := m.signer.ParseAndValidate(r.Context(), []byte(tokenString), validationOptions...)
+	token, err := m.validator.ParseAndValidate(r.Context(), []byte(tokenString), validationOptions...)
 	if err != nil {
 		return nil, err
 	}

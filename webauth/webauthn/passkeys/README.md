@@ -211,9 +211,11 @@ stored in cookies.
 ### Functions
 
 ```go
-func NewJWTCookieLoginManager(signer jwtutil.Signer, issuer string, cookie cookies.ScopeAndDuration) JWTCookieLoginManager
+func NewJWTCookieLoginManager(signer jwtutil.Signer, issuer string, cookie cookies.ScopeAndDuration) (JWTCookieLoginManager, error)
 ```
 NewJWTCookieLoginManager creates a new JWTCookieLoginManager instance.
+Since signer only signs, the Validator used to verify the tokens it issues
+(see AuthenticateUser) is built here from its public key.
 
 
 

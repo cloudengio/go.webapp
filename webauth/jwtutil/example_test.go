@@ -92,25 +92,23 @@ func publicKeyInfo(id string, pub ed25519.PublicKey) keys.Info {
 }
 
 // ExampleJWTSignerConfig illustrates creating a signer, and the matching
-// verifier, from a YAML configuration and a key store held in a context.
+// validator, from a YAML configuration and a key store held in a context.
 func ExampleJWTSignerConfig() {
-	ctx, _ := exampleKeyStore()
+	ctx, pub := exampleKeyStore()
+	signingKey := keys.KeySpec{ID: "jwt-signing-key", User: "service"}
 
 	var cfg jwtutil.JWTSignerConfig
 	if err := yaml.Unmarshal([]byte(`
 jwt_issuer: auth.example.com
 jwt_audience:
   - api.example.com
-jwt_signing_key:
-  key_id: jwt-signing-key
-  user: service
 `), &cfg); err != nil {
 		fmt.Println(err)
 		return
 	}
 
 	// The signing key is read from the key store in the context.
-	signer, err := cfg.NewSigner(ctx)
+	signer, err := jwtutil.SignerForKey(ctx, signingKey)
 	if err != nil {
 		fmt.Println(err)
 		return
@@ -130,15 +128,16 @@ jwt_signing_key:
 		return
 	}
 
-	// A service that issues and verifies its own tokens can derive the
-	// verifier configuration from the signer configuration. The Verifier
-	// checks the issuer and audience in addition to the signature.
-	verifier, err := cfg.VerifierConfig().NewVerifier(ctx)
+	// A service that issues and verifies its own tokens configures a matching
+	// JWTValidatorConfig and builds a Validator directly from the signing
+	// key's public half; neither config carries any key material itself.
+	vc := jwtutil.JWTValidatorConfig{Issuer: cfg.Issuer, Audience: cfg.Audience}
+	validator, err := jwtutil.ValidatorForKeys(ctx, publicKeyInfo(signingKey.ID, pub))
 	if err != nil {
 		fmt.Println(err)
 		return
 	}
-	parsed, err := verifier.ParseAndValidate(ctx, signed)
+	parsed, err := validator.ParseAndValidate(ctx, signed, vc.ValidateOptions()...)
 	if err != nil {
 		fmt.Println(err)
 		return
@@ -157,18 +156,18 @@ jwt_signing_key:
 	// auth.example.com [api.example.com] service-account reader
 }
 
-// ExampleJWTVerifierConfig illustrates a service that verifies tokens issued
+// ExampleJWTValidatorConfig illustrates a service that verifies tokens issued
 // elsewhere and hence holds public keys only. Multiple verification keys can be
-// configured to allow for key rotation.
-func ExampleJWTVerifierConfig() {
+// supplied to allow for key rotation.
+func ExampleJWTValidatorConfig() {
 	// The issuing service signs a token.
 	signerCtx, pub := exampleKeyStore()
+	signingKey := keys.KeySpec{ID: "jwt-signing-key", User: "service"}
 	signerCfg := jwtutil.JWTSignerConfig{
-		Issuer:     "auth.example.com",
-		Audience:   []string{"api.example.com"},
-		SigningKey: keys.KeySpec{ID: "jwt-signing-key", User: "service"},
+		Issuer:   "auth.example.com",
+		Audience: []string{"api.example.com"},
 	}
-	signer, err := signerCfg.NewSigner(signerCtx)
+	signer, err := jwtutil.SignerForKey(signerCtx, signingKey)
 	if err != nil {
 		fmt.Println(err)
 		return
@@ -186,30 +185,29 @@ func ExampleJWTVerifierConfig() {
 
 	// The verifying service holds the public key for the current key, and for
 	// the key that it replaced. Neither entry carries any private key
-	// material.
-	store := keys.NewInMemoryKeyStore()
-	store.Add(publicKeyInfo("jwt-signing-key", pub))
-	store.Add(publicKeyInfo("retired-signing-key", make(ed25519.PublicKey, ed25519.PublicKeySize)))
-	ctx := keys.ContextWithKeyStore(context.Background(), store)
+	// material, and neither is looked up from a context-based store: they are
+	// supplied directly to ValidatorForKeys.
+	verificationKeys := []keys.Info{
+		publicKeyInfo("jwt-signing-key", pub),
+		publicKeyInfo("retired-signing-key", make(ed25519.PublicKey, ed25519.PublicKeySize)),
+	}
 
-	var cfg jwtutil.JWTVerifierConfig
+	var vc jwtutil.JWTValidatorConfig
 	if err := yaml.Unmarshal([]byte(`
 jwt_issuer: auth.example.com
 jwt_audience:
   - api.example.com
-jwt_verification_keys:
-  - key_id: jwt-signing-key
-  - key_id: retired-signing-key
-`), &cfg); err != nil {
+`), &vc); err != nil {
 		fmt.Println(err)
 		return
 	}
-	verifier, err := cfg.NewVerifier(ctx)
+	ctx := context.Background()
+	validator, err := jwtutil.ValidatorForKeys(ctx, verificationKeys...)
 	if err != nil {
 		fmt.Println(err)
 		return
 	}
-	parsed, err := verifier.ParseAndValidate(ctx, signed)
+	parsed, err := validator.ParseAndValidate(ctx, signed, vc.ValidateOptions()...)
 	if err != nil {
 		fmt.Println(err)
 		return
@@ -231,7 +229,7 @@ jwt_verification_keys:
 		fmt.Println(err)
 		return
 	}
-	if _, err := verifier.ParseAndValidate(ctx, otherSigned); err != nil {
+	if _, err := validator.ParseAndValidate(ctx, otherSigned, vc.ValidateOptions()...); err != nil {
 		fmt.Println("rejected: wrong audience")
 	}
 
@@ -243,27 +241,25 @@ jwt_verification_keys:
 // ExampleJWTCookieSignerConfig illustrates issuing a JWT in a cookie and
 // validating it on a subsequent request.
 func ExampleJWTCookieSignerConfig() {
-	ctx, _ := exampleKeyStore()
+	ctx, pub := exampleKeyStore()
+	signingKey := keys.KeySpec{ID: "jwt-signing-key", User: "service"}
 
 	var cfg jwtutil.JWTCookieSignerConfig
 	if err := yaml.Unmarshal([]byte(`
-name: session_token
-validation_time_skew: 30s
-domain: app.example.com
-path: /
-duration: 8h
+cookie:
+  name: session_token
+  domain: app.example.com
+  path: /
+  duration: 8h
 jwt_issuer: auth.example.com
 jwt_audience:
   - app.example.com
-jwt_signing_key:
-  key_id: jwt-signing-key
-  user: service
 `), &cfg); err != nil {
 		fmt.Println(err)
 		return
 	}
 
-	signer, err := cfg.NewCookieSigner(ctx)
+	signer, err := cfg.NewCookieSigner(ctx, signingKey)
 	if err != nil {
 		fmt.Println(err)
 		return
@@ -284,8 +280,9 @@ jwt_signing_key:
 		cookie.Name, cookie.Path, cookie.Domain, cookie.Secure, cookie.HttpOnly, cookie.MaxAge)
 
 	// The client returns the cookie on its next request, which the verifier
-	// created from the same configuration validates.
-	verifier, err := cfg.VerifierConfig().NewCookieVerifier(ctx)
+	// created from the same configuration validates against the signing
+	// key's public half.
+	verifier, err := cfg.VerifierConfig().NewCookieVerifier(ctx, publicKeyInfo(signingKey.ID, pub))
 	if err != nil {
 		fmt.Println(err)
 		return

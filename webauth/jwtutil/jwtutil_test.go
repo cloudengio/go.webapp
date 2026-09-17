@@ -65,8 +65,20 @@ func TestSignAndVerifyED25519(t *testing.T) {
 		jwt.WithClaimValue("scope", "a,b"),
 	}
 
+	// Signer only signs; verification always goes through a separate
+	// Validator built from its public key.
+	publicKey, err := signer.PublicKey()
+	if err != nil {
+		t.Fatalf("failed to get public key: %v", err)
+	}
+	set := jwk.NewSet()
+	if err := set.AddKey(publicKey); err != nil {
+		t.Fatalf("failed to add key to set: %v", err)
+	}
+	validator := jwtutil.NewValidator(set)
+
 	t.Run("ValidToken", func(t *testing.T) {
-		parsed, err := signer.ParseAndValidate(ctx, tokenBytes, validationOptions...)
+		parsed, err := validator.ParseAndValidate(ctx, tokenBytes, validationOptions...)
 		if err != nil {
 			t.Fatalf("ParseAndValidate() failed: %v", err)
 		}
@@ -79,17 +91,13 @@ func TestSignAndVerifyED25519(t *testing.T) {
 	t.Run("CorruptedToken", func(t *testing.T) {
 		corrupted := slices.Clone(tokenBytes)
 		corrupted[4] = 0xff
-		_, err := signer.ParseAndValidate(ctx, corrupted, validationOptions...)
+		_, err := validator.ParseAndValidate(ctx, corrupted, validationOptions...)
 		if err == nil {
 			t.Fatal("ParseAndValidate() should have failed for corrupted token")
 		}
 	})
 
-	t.Run("SeparateValidator", func(t *testing.T) {
-		publicKey, err := signer.PublicKey()
-		if err != nil {
-			t.Fatalf("failed to get public key: %v", err)
-		}
+	t.Run("MarshaledKeySet", func(t *testing.T) {
 		jwks, err := marshalKeySet(publicKey)
 		if err != nil {
 			t.Fatalf("failed to marshal/unmarshal key set: %v", err)

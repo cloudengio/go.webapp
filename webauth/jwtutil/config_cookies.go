@@ -8,16 +8,19 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
 	"net/http"
+	"slices"
 	"time"
 
+	"cloudeng.io/cmdutil/keys"
 	"cloudeng.io/webapp/cookies"
 	"github.com/lestrrat-go/jwx/v3/jwk"
 	"github.com/lestrrat-go/jwx/v3/jwt"
 )
 
 // ErrNoCookie is returned when a request does not carry the cookie named by a
-// JWTCookieVerifierConfig.
+// JWTCookieValidatorConfig.
 var ErrNoCookie = errors.New("no such cookie")
 
 // ErrReservedClaim is returned when a caller attempts to set a reserved JWT claim.
@@ -59,54 +62,49 @@ func readNamedCookie(r *http.Request, name string, insecure bool) (string, bool)
 	return cookies.Secure(name).Read(r)
 }
 
-// CookieSigner issues JWTs carried in a named, secure, cookie as specified by a
-// JWTCookieSignerConfig. It is also a Validator for the tokens that it issues,
-// applying the same issuer, audience and clock skew checks as the
-// CookieVerifier created from VerifierConfig.
+// CookieSigner issues JWTs carried in a named cookie as specified by a
+// JWTCookieSignerConfig. It only signs; a service that also needs to verify
+// the cookies it issues should build a separate CookieVerifier from the
+// matching JWTCookieValidatorConfig (see VerifierConfig).
 type CookieSigner struct {
 	Signer
-	verifier *Verifier
-	cfg      JWTCookieSignerConfig
+	cfg JWTCookieSignerConfig
 }
 
-// NewCookieSigner returns a CookieSigner for the signing key named by the
-// configuration. The key is obtained as per JWTSignerConfig.NewSigner.
-func (c JWTCookieSignerConfig) NewCookieSigner(ctx context.Context) (*CookieSigner, error) {
+// NewCookieSigner returns a CookieSigner that signs with the key identified
+// by spec, obtained as per SignerForKey.
+func (c JWTCookieSignerConfig) NewCookieSigner(ctx context.Context, spec keys.KeySpec) (*CookieSigner, error) {
 	if err := c.Validate(); err != nil {
 		return nil, err
 	}
 	c.ScopeAndDuration = c.SetDefaults("", "/", 0)
-	signer, err := c.NewSigner(ctx)
+	signer, err := SignerForKey(ctx, spec)
 	if err != nil {
 		return nil, err
 	}
-	pub, err := signer.PublicKey()
-	if err != nil {
-		return nil, err
-	}
-	set := jwk.NewSet()
-	if err := set.AddKey(pub); err != nil {
-		return nil, err
-	}
-	opts := c.JWTSignerConfig.VerifierConfig().ValidateOptions()
 	return &CookieSigner{
-		Signer:   signer,
-		verifier: newVerifier(set, opts),
-		cfg:      c,
+		Signer: signer,
+		cfg:    c,
 	}, nil
 }
 
-// VerifierConfig returns the cookie verifier configuration implied by the
+// VerifierConfig returns the cookie validator configuration implied by the
 // cookie signer configuration, ie. the same cookie name, scope, duration,
-// insecure setting, issuer and audience with the signing key as the sole
-// verification key. Its ValidationTimeSkew is left at zero: a signer
-// validating tokens that it issued itself has no need to allow for clock
-// drift between machines. It is intended for use by a service that both
-// issues and verifies its own cookies.
-func (c JWTCookieSignerConfig) VerifierConfig() JWTCookieVerifierConfig {
-	return JWTCookieVerifierConfig{
-		JWTCookieConfig:   c.JWTCookieConfig,
-		JWTVerifierConfig: c.JWTSignerConfig.VerifierConfig(),
+// insecure setting, issuer, audience, subject and claims. Its
+// ValidationTimeSkew is left at zero: a signer validating tokens that it
+// issued itself has no need to allow for clock drift between machines. It is
+// intended for use by a service that both issues and verifies its own
+// cookies; the verification key(s) must still be supplied separately when
+// constructing the CookieVerifier, since neither config carries key material.
+func (c JWTCookieSignerConfig) VerifierConfig() JWTCookieValidatorConfig {
+	return JWTCookieValidatorConfig{
+		JWTCookieConfig: c.JWTCookieConfig,
+		JWTValidatorConfig: JWTValidatorConfig{
+			Issuer:   c.Issuer,
+			Audience: slices.Clone(c.Audience),
+			Subject:  c.Subject,
+			Claims:   maps.Clone(c.Claims),
+		},
 	}
 }
 
@@ -178,50 +176,64 @@ func (cs *CookieSigner) Issue(ctx context.Context, rw http.ResponseWriter, subje
 	return cs.SetCookie(ctx, rw, token)
 }
 
-// Parse verifies the signature of token and returns it without validating any
-// of its claims, as per Verifier.Parse.
-func (cs *CookieSigner) Parse(ctx context.Context, token []byte) (jwt.Token, error) {
-	return cs.verifier.Parse(ctx, token)
-}
-
-// Validate validates token using the issuer, audience and clock skew specified
-// by the configuration followed by any additional validators supplied.
-func (cs *CookieSigner) Validate(ctx context.Context, token jwt.Token, validators ...jwt.ValidateOption) error {
-	return cs.verifier.Validate(ctx, token, validators...)
-}
-
-// ParseAndValidate parses and validates token as per Parse and Validate.
-func (cs *CookieSigner) ParseAndValidate(ctx context.Context, token []byte, validators ...jwt.ValidateOption) (jwt.Token, error) {
-	return cs.verifier.ParseAndValidate(ctx, token, validators...)
-}
-
 // CookieVerifier verifies JWTs carried in a named cookie as specified by a
-// JWTCookieVerifierConfig.
+// JWTCookieValidatorConfig.
 type CookieVerifier struct {
-	*Verifier
-	cfg JWTCookieVerifierConfig
+	set  jwk.Set
+	opts []jwt.ValidateOption
+	cfg  JWTCookieValidatorConfig
 }
 
-// NewCookieVerifier returns a CookieVerifier for the verification keys named by
-// the configuration. The keys are obtained as per JWTVerifierConfig.NewValidator.
-func (c JWTCookieVerifierConfig) NewCookieVerifier(ctx context.Context) (*CookieVerifier, error) {
+// NewCookieVerifier returns a CookieVerifier that verifies tokens against
+// verificationKeys, obtained as per KeySetForKeys.
+func (c JWTCookieValidatorConfig) NewCookieVerifier(ctx context.Context, verificationKeys ...keys.Info) (*CookieVerifier, error) {
 	if err := c.Validate(); err != nil {
 		return nil, err
 	}
 	c.ScopeAndDuration = c.SetDefaults("", "/", 0)
-	verifier, err := c.newVerifier(ctx, c.ValidationTimeSkew)
+	set, err := KeySetForKeys(ctx, verificationKeys...)
 	if err != nil {
 		return nil, err
 	}
+	opts := c.ValidateOptions()
+	if c.ValidationTimeSkew > 0 {
+		opts = append(opts, jwt.WithAcceptableSkew(c.ValidationTimeSkew))
+	}
 	return &CookieVerifier{
-		Verifier: verifier,
-		cfg:      c,
+		set:  set,
+		opts: opts,
+		cfg:  c,
 	}, nil
 }
 
 // Name returns the name of the cookie that tokens are read from.
 func (cv *CookieVerifier) Name() string {
 	return cv.cfg.Name
+}
+
+// Parse verifies the signature of token and returns it without validating any
+// of its claims, which is left to Validate so that the options implied by the
+// configuration, including any allowance for clock skew, are applied.
+func (cv *CookieVerifier) Parse(_ context.Context, token []byte) (jwt.Token, error) {
+	return jwt.Parse(token, jwt.WithKeySet(cv.set), jwt.WithValidate(false))
+}
+
+// Validate validates token using the configured issuer, audience and clock
+// skew followed by any additional validators supplied.
+func (cv *CookieVerifier) Validate(_ context.Context, token jwt.Token, validators ...jwt.ValidateOption) error {
+	return jwt.Validate(token, append(slices.Clone(cv.opts), validators...)...)
+}
+
+// ParseAndValidate parses and validates token as per Parse and Validate.
+func (cv *CookieVerifier) ParseAndValidate(ctx context.Context, token []byte, validators ...jwt.ValidateOption) (jwt.Token, error) {
+	parsed, err := cv.Parse(ctx, token)
+	if err != nil {
+		return nil, err
+	}
+	if err := cv.Validate(ctx, parsed, validators...); err != nil {
+		return nil, err
+	}
+	return parsed, nil
 }
 
 // ValidateRequest reads the configured cookie from r and parses and validates

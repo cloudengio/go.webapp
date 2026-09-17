@@ -19,7 +19,6 @@ import (
 
 // Signer is an interface for signing and verifying JWTs.
 type Signer interface {
-	Validator
 	Sign(context.Context, jwt.Token) ([]byte, error)
 	PublicKey() (jwk.Key, error)
 }
@@ -28,7 +27,6 @@ type signer struct {
 	opt  jwt.SignOption
 	pk   jwk.Key
 	algo jwa.SignatureAlgorithm
-	validator
 }
 
 // NewSigner creates a new Signer instance with the given private key and key ID.
@@ -49,15 +47,9 @@ func NewSigner(jwkKey jwk.Key, id string, algo jwa.SignatureAlgorithm) (Signer, 
 	if err != nil {
 		return nil, err
 	}
-
-	set := jwk.NewSet()
-	if err := set.AddKey(jwkKey); err != nil {
-		return nil, err
-	}
 	return signer{
 		pk:   pk,
 		opt:  jwt.WithKey(algo, jwkKey),
-		set:  set,
 		algo: algo,
 	}, nil
 

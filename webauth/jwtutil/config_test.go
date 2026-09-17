@@ -11,6 +11,7 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"errors"
+	"maps"
 	"net/http"
 	"net/http/httptest"
 	"slices"
@@ -22,6 +23,7 @@ import (
 	"cloudeng.io/webapp/cookies"
 	"cloudeng.io/webapp/webauth/jwtutil"
 	"github.com/lestrrat-go/jwx/v3/jwa"
+	"github.com/lestrrat-go/jwx/v3/jwk"
 	"github.com/lestrrat-go/jwx/v3/jwt"
 	"gopkg.in/yaml.v3"
 )
@@ -39,43 +41,57 @@ var testKeySpec = keys.KeySpec{ID: testKeyID, User: testKeyUser}
 // registered under for algoImpl to find it.
 var ed25519Algorithm = jwa.EdDSAEd25519().String()
 
-// storeKey returns a context containing a key store holding a single key with
-// the supplied token and extra information. extra, if not nil, must be a
-// jwtutil.KeyExtra: keys.Info.WithExtra only unmarshals into a value of the
-// same concrete type it was given.
-func storeKey(ctx context.Context, spec keys.KeySpec, token []byte, extra any) context.Context {
+// newKeyInfo returns a keys.Info for spec holding token and extra. extra, if
+// not nil, must be a jwtutil.KeyExtra: keys.Info.WithExtra only unmarshals
+// into a value of the same concrete type it was given.
+func newKeyInfo(spec keys.KeySpec, token []byte, extra any) keys.Info {
 	info := keys.NewInfo(spec.User, spec.ID, token)
 	if extra != nil {
 		info.WithExtra(extra)
 	}
-	return keys.ContextWithKey(ctx, info)
+	return info
+}
+
+// storeKey returns a context containing a key store holding a single key with
+// the supplied token and extra information.
+func storeKey(ctx context.Context, spec keys.KeySpec, token []byte, extra any) context.Context {
+	return keys.ContextWithKey(ctx, newKeyInfo(spec, token, extra))
 }
 
 // newED25519Key generates an ed25519 key pair via NewED25519KeyInfo, ie. as
-// 'jwt create' would, stores it in a context and returns the context and the
-// public key.
-func newED25519Key(t *testing.T) (context.Context, ed25519.PublicKey) {
+// 'jwt create' would, stores it (with its private key material) in a context
+// for signing, and returns that context along with the public-only keys.Info
+// for verification: ValidatorForKeys takes keys directly rather than looking
+// them up from a context-based store, so no context is needed on the
+// verification side.
+func newED25519Key(t *testing.T) (context.Context, keys.Info) {
 	t.Helper()
 	info, err := jwtutil.NewED25519KeyInfo(testKeyUser, testKeyID)
 	if err != nil {
 		t.Fatalf("NewED25519KeyInfo: %v", err)
 	}
-	var extra jwtutil.KeyExtra
-	if err := info.UnmarshalExtra(&extra); err != nil {
-		t.Fatalf("UnmarshalExtra: %v", err)
-	}
-	pub, err := base64.StdEncoding.DecodeString(extra.PublicKey)
-	if err != nil {
-		t.Fatalf("decoding public key: %v", err)
-	}
-	return keys.ContextWithKey(context.Background(), info), ed25519.PublicKey(pub)
+	ctx := keys.ContextWithKey(context.Background(), info)
+	return ctx, jwtutil.CloneKeyInfoForPublicKey(info)
 }
 
 func signerConfig() jwtutil.JWTSignerConfig {
 	return jwtutil.JWTSignerConfig{
-		Issuer:     testIssuer,
-		Audience:   []string{"test-audience"},
-		SigningKey: testKeySpec,
+		Issuer:   testIssuer,
+		Audience: []string{"test-audience"},
+	}
+}
+
+// verifierConfigFor returns the validator configuration matching sc, namely
+// the same issuer, audience, subject and claims. Neither JWTSignerConfig nor
+// JWTValidatorConfig carries key material, so this is purely a claims-shape
+// derivation; the matching keys must still be supplied separately wherever a
+// Validator is constructed.
+func verifierConfigFor(sc jwtutil.JWTSignerConfig) jwtutil.JWTValidatorConfig {
+	return jwtutil.JWTValidatorConfig{
+		Issuer:   sc.Issuer,
+		Audience: slices.Clone(sc.Audience),
+		Subject:  sc.Subject,
+		Claims:   maps.Clone(sc.Claims),
 	}
 }
 
@@ -88,15 +104,54 @@ func newConfigToken(t *testing.T) jwt.Token {
 	return tok
 }
 
-// TestConfigSignAndVerify covers the round trip from a signer created from a
-// JWTSignerConfig to a verifier created from the corresponding
-// JWTVerifierConfig.
-func TestConfigSignAndVerify(t *testing.T) {
-	ctx, _ := newED25519Key(t)
-	sc := signerConfig()
-	signer, err := sc.NewSigner(ctx)
+// testVerifier pairs a Validator with the jwt.ValidateOptions implied by a
+// JWTValidatorConfig. JWTValidatorConfig has no NewVerifier of its own, since
+// it carries no keys (see config_cookies.go's CookieVerifier, which is built
+// the same way internally), so tests that need both the signature check and
+// the issuer/audience/subject/claims checks build one this way.
+type testVerifier struct {
+	set  jwk.Set
+	opts []jwt.ValidateOption
+}
+
+func newTestVerifier(ctx context.Context, vc jwtutil.JWTValidatorConfig, verificationKeys ...keys.Info) (*testVerifier, error) {
+	set, err := jwtutil.KeySetForKeys(ctx, verificationKeys...)
 	if err != nil {
-		t.Fatalf("NewSigner: %v", err)
+		return nil, err
+	}
+	return &testVerifier{set: set, opts: vc.ValidateOptions()}, nil
+}
+
+// Parse verifies the signature of token and returns it without validating any
+// of its claims, which is left to Validate so that opts (including any
+// allowance for clock skew) are applied instead of jwt.Parse's own defaults.
+func (v *testVerifier) Parse(_ context.Context, token []byte) (jwt.Token, error) {
+	return jwt.Parse(token, jwt.WithKeySet(v.set), jwt.WithValidate(false))
+}
+
+func (v *testVerifier) Validate(_ context.Context, token jwt.Token, validators ...jwt.ValidateOption) error {
+	return jwt.Validate(token, append(slices.Clone(v.opts), validators...)...)
+}
+
+func (v *testVerifier) ParseAndValidate(ctx context.Context, token []byte, validators ...jwt.ValidateOption) (jwt.Token, error) {
+	parsed, err := v.Parse(ctx, token)
+	if err != nil {
+		return nil, err
+	}
+	if err := v.Validate(ctx, parsed, validators...); err != nil {
+		return nil, err
+	}
+	return parsed, nil
+}
+
+// TestConfigSignAndVerify covers the round trip from a signer created for a
+// key to a verifier created from the matching JWTValidatorConfig.
+func TestConfigSignAndVerify(t *testing.T) {
+	ctx, pubInfo := newED25519Key(t)
+	sc := signerConfig()
+	signer, err := jwtutil.SignerForKey(ctx, testKeySpec)
+	if err != nil {
+		t.Fatalf("SignerForKey: %v", err)
 	}
 	tok, err := sc.Builder(time.Hour).Subject("subject").Build()
 	if err != nil {
@@ -107,9 +162,9 @@ func TestConfigSignAndVerify(t *testing.T) {
 		t.Fatalf("Sign: %v", err)
 	}
 
-	verifier, err := sc.VerifierConfig().NewVerifier(ctx)
+	verifier, err := newTestVerifier(ctx, verifierConfigFor(sc), pubInfo)
 	if err != nil {
-		t.Fatalf("NewVerifier: %v", err)
+		t.Fatalf("newTestVerifier: %v", err)
 	}
 	parsed, err := verifier.ParseAndValidate(ctx, signed)
 	if err != nil {
@@ -127,35 +182,28 @@ func TestConfigSignAndVerify(t *testing.T) {
 }
 
 // TestConfigVerifyPublicKeyOnly verifies that a verification key need not hold
-// any private key material: the public key recorded in its extra information
-// is enough.
+// any private key material: the public-only keys.Info returned by
+// newED25519Key is enough.
 func TestConfigVerifyPublicKeyOnly(t *testing.T) {
-	ctx, pub := newED25519Key(t)
-	signer, err := signerConfig().NewSigner(ctx)
+	ctx, pubInfo := newED25519Key(t)
+	signer, err := jwtutil.SignerForKey(ctx, testKeySpec)
 	if err != nil {
-		t.Fatalf("NewSigner: %v", err)
+		t.Fatalf("SignerForKey: %v", err)
 	}
 	signed, err := signer.Sign(ctx, newConfigToken(t))
 	if err != nil {
 		t.Fatalf("Sign: %v", err)
 	}
 
-	// The key store contains only the public key, the signed token must still
-	// verify against it.
-	vctx := storeKey(context.Background(), testKeySpec, nil, jwtutil.KeyExtra{
-		Algorithm: ed25519Algorithm,
-		PublicKey: base64.StdEncoding.EncodeToString(pub),
-	})
-	vc := jwtutil.JWTVerifierConfig{
-		Issuer:           testIssuer,
-		Audience:         []string{"test-audience"},
-		VerificationKeys: []keys.KeySpec{testKeySpec},
+	vc := jwtutil.JWTValidatorConfig{
+		Issuer:   testIssuer,
+		Audience: []string{"test-audience"},
 	}
-	verifier, err := vc.NewVerifier(vctx)
+	verifier, err := newTestVerifier(context.Background(), vc, pubInfo)
 	if err != nil {
-		t.Fatalf("NewVerifier: %v", err)
+		t.Fatalf("newTestVerifier: %v", err)
 	}
-	if _, err := verifier.ParseAndValidate(vctx, signed); err != nil {
+	if _, err := verifier.ParseAndValidate(context.Background(), signed); err != nil {
 		t.Errorf("ParseAndValidate: %v", err)
 	}
 }
@@ -164,16 +212,12 @@ func TestConfigVerifyPublicKeyOnly(t *testing.T) {
 // public_key in its extra information is rejected up front, even when its
 // token holds key material of the right size.
 func TestConfigVerifyRequiresPublicKey(t *testing.T) {
-	vctx := storeKey(context.Background(), testKeySpec,
+	info := newKeyInfo(testKeySpec,
 		[]byte(base64.StdEncoding.EncodeToString(make([]byte, ed25519.PublicKeySize))),
 		jwtutil.KeyExtra{Algorithm: ed25519Algorithm})
-	vc := jwtutil.JWTVerifierConfig{
-		Issuer:           testIssuer,
-		Audience:         []string{"test-audience"},
-		VerificationKeys: []keys.KeySpec{testKeySpec},
-	}
-	if _, err := vc.NewVerifier(vctx); err == nil {
-		t.Error("NewVerifier: got nil error, want the missing public_key to be rejected")
+	vc := jwtutil.JWTValidatorConfig{Issuer: testIssuer, Audience: []string{"test-audience"}}
+	if _, err := newTestVerifier(context.Background(), vc, info); err == nil {
+		t.Error("newTestVerifier: got nil error, want the missing public_key to be rejected")
 	}
 }
 
@@ -198,17 +242,18 @@ func TestConfigSigningKeyEncoding(t *testing.T) {
 		ctx := storeKey(context.Background(), testKeySpec,
 			[]byte(base64.StdEncoding.EncodeToString(priv)), extra)
 		sc := signerConfig()
-		signer, err := sc.NewSigner(ctx)
+		signer, err := jwtutil.SignerForKey(ctx, testKeySpec)
 		if err != nil {
-			t.Fatalf("NewSigner: %v", err)
+			t.Fatalf("SignerForKey: %v", err)
 		}
 		signed, err := signer.Sign(ctx, newConfigToken(t))
 		if err != nil {
 			t.Fatalf("Sign: %v", err)
 		}
-		verifier, err := sc.VerifierConfig().NewVerifier(ctx)
+		verifyInfo := newKeyInfo(testKeySpec, nil, extra)
+		verifier, err := newTestVerifier(ctx, verifierConfigFor(sc), verifyInfo)
 		if err != nil {
-			t.Fatalf("NewVerifier: %v", err)
+			t.Fatalf("newTestVerifier: %v", err)
 		}
 		if _, err := verifier.ParseAndValidate(ctx, signed); err != nil {
 			t.Errorf("ParseAndValidate: %v", err)
@@ -228,8 +273,8 @@ func TestConfigSigningKeyEncoding(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			ctx := storeKey(context.Background(), testKeySpec, append([]byte(nil), tc.token...),
 				jwtutil.KeyExtra{Algorithm: ed25519Algorithm})
-			if _, err := signerConfig().NewSigner(ctx); err == nil {
-				t.Error("NewSigner: got nil error, want the encoding to be rejected")
+			if _, err := jwtutil.SignerForKey(ctx, testKeySpec); err == nil {
+				t.Error("SignerForKey: got nil error, want the encoding to be rejected")
 			}
 		})
 	}
@@ -239,10 +284,10 @@ func TestConfigSigningKeyEncoding(t *testing.T) {
 // audience matches any one of the configured audiences and rejects tokens from
 // another issuer or for another audience.
 func TestConfigAudienceAndIssuer(t *testing.T) {
-	ctx, _ := newED25519Key(t)
-	signer, err := signerConfig().NewSigner(ctx)
+	ctx, pubInfo := newED25519Key(t)
+	signer, err := jwtutil.SignerForKey(ctx, testKeySpec)
 	if err != nil {
-		t.Fatalf("NewSigner: %v", err)
+		t.Fatalf("SignerForKey: %v", err)
 	}
 	sign := func(t *testing.T, issuer string, audience []string) []byte {
 		t.Helper()
@@ -259,14 +304,13 @@ func TestConfigAudienceAndIssuer(t *testing.T) {
 		return signed
 	}
 
-	vc := jwtutil.JWTVerifierConfig{
-		Issuer:           testIssuer,
-		Audience:         []string{"first", "second"},
-		VerificationKeys: []keys.KeySpec{testKeySpec},
+	vc := jwtutil.JWTValidatorConfig{
+		Issuer:   testIssuer,
+		Audience: []string{"first", "second"},
 	}
-	verifier, err := vc.NewVerifier(ctx)
+	verifier, err := newTestVerifier(ctx, vc, pubInfo)
 	if err != nil {
-		t.Fatalf("NewVerifier: %v", err)
+		t.Fatalf("newTestVerifier: %v", err)
 	}
 
 	for _, audience := range [][]string{{"first"}, {"second"}, {"second", "other"}} {
@@ -288,13 +332,13 @@ func TestConfigAudienceAndIssuer(t *testing.T) {
 		}
 	}
 
-	// The Validator returned by NewValidator verifies the signature alone.
-	validator, err := vc.NewValidator(ctx)
+	// The Validator returned by ValidatorForKeys verifies the signature alone.
+	validator, err := jwtutil.ValidatorForKeys(ctx, pubInfo)
 	if err != nil {
-		t.Fatalf("NewValidator: %v", err)
+		t.Fatalf("ValidatorForKeys: %v", err)
 	}
 	if _, err := validator.ParseAndValidate(ctx, sign(t, "other-issuer", []string{"other"})); err != nil {
-		t.Errorf("NewValidator: %v", err)
+		t.Errorf("ValidatorForKeys: %v", err)
 	}
 }
 
@@ -303,28 +347,27 @@ func TestConfigAudienceAndIssuer(t *testing.T) {
 func TestConfigKeyRotation(t *testing.T) {
 	ctx := context.Background()
 	specs := []keys.KeySpec{{ID: "old", User: testKeyUser}, {ID: "new", User: testKeyUser}}
+	var pubInfos []keys.Info
 	for _, spec := range specs {
 		info, err := jwtutil.NewED25519KeyInfo(spec.User, spec.ID)
 		if err != nil {
 			t.Fatalf("NewED25519KeyInfo: %v", err)
 		}
 		ctx = keys.ContextWithKey(ctx, info)
+		pubInfos = append(pubInfos, jwtutil.CloneKeyInfoForPublicKey(info))
 	}
-	vc := jwtutil.JWTVerifierConfig{
-		Issuer:           testIssuer,
-		Audience:         []string{"test-audience"},
-		VerificationKeys: specs,
+	vc := jwtutil.JWTValidatorConfig{
+		Issuer:   testIssuer,
+		Audience: []string{"test-audience"},
 	}
-	verifier, err := vc.NewVerifier(ctx)
+	verifier, err := newTestVerifier(ctx, vc, pubInfos...)
 	if err != nil {
-		t.Fatalf("NewVerifier: %v", err)
+		t.Fatalf("newTestVerifier: %v", err)
 	}
 	for _, spec := range specs {
-		sc := signerConfig()
-		sc.SigningKey = spec
-		signer, err := sc.NewSigner(ctx)
+		signer, err := jwtutil.SignerForKey(ctx, spec)
 		if err != nil {
-			t.Fatalf("NewSigner: %v", err)
+			t.Fatalf("SignerForKey: %v", err)
 		}
 		signed, err := signer.Sign(ctx, newConfigToken(t))
 		if err != nil {
@@ -336,38 +379,36 @@ func TestConfigKeyRotation(t *testing.T) {
 	}
 }
 
-// TestConfigMissingKeys covers the errors reported when the keys named by a
-// configuration are not available from the context.
+// TestConfigMissingKeys covers the errors reported when a signing key named
+// by a context-based key store is not available. JWTSignerConfig no longer
+// names a key at all, and a JWTValidatorConfig's verification keys are
+// supplied directly rather than looked up this way, so neither has an
+// equivalent lookup failure mode.
 func TestConfigMissingKeys(t *testing.T) {
-	sc := signerConfig()
-	vc := sc.VerifierConfig()
+	if _, err := jwtutil.SignerForKey(context.Background(), testKeySpec); !errors.Is(err, jwtutil.ErrNoKeyStore) {
+		t.Errorf("SignerForKey: got %v, want ErrNoKeyStore", err)
+	}
 	csc := cookieSignerConfig()
-
-	if _, err := sc.NewSigner(context.Background()); !errors.Is(err, jwtutil.ErrNoKeyStore) {
-		t.Errorf("NewSigner: got %v, want ErrNoKeyStore", err)
-	}
-	if _, err := vc.NewValidator(context.Background()); !errors.Is(err, jwtutil.ErrNoKeyStore) {
-		t.Errorf("NewValidator: got %v, want ErrNoKeyStore", err)
-	}
-	if _, err := csc.NewCookieSigner(context.Background()); !errors.Is(err, jwtutil.ErrNoKeyStore) {
+	if _, err := csc.NewCookieSigner(context.Background(), testKeySpec); !errors.Is(err, jwtutil.ErrNoKeyStore) {
 		t.Errorf("NewCookieSigner: got %v, want ErrNoKeyStore", err)
-	}
-	if _, err := csc.VerifierConfig().NewCookieVerifier(context.Background()); !errors.Is(err, jwtutil.ErrNoKeyStore) {
-		t.Errorf("NewCookieVerifier: got %v, want ErrNoKeyStore", err)
 	}
 
 	// A key store that does not contain the configured key.
 	ctx := keys.ContextWithKeyStore(context.Background(), keys.NewInMemoryKeyStore())
-	if _, err := sc.NewSigner(ctx); !errors.Is(err, jwtutil.ErrKeyNotFound) {
-		t.Errorf("NewSigner: got %v, want ErrKeyNotFound", err)
-	}
-	if _, err := vc.NewValidator(ctx); !errors.Is(err, jwtutil.ErrKeyNotFound) {
-		t.Errorf("NewValidator: got %v, want ErrKeyNotFound", err)
+	if _, err := jwtutil.SignerForKey(ctx, testKeySpec); !errors.Is(err, jwtutil.ErrKeyNotFound) {
+		t.Errorf("SignerForKey: got %v, want ErrKeyNotFound", err)
 	}
 
 	// An empty key store stored as a nil pointer must not panic.
-	if _, err := sc.NewSigner(keys.ContextWithoutKeyStore(context.Background())); !errors.Is(err, jwtutil.ErrNoKeyStore) {
-		t.Errorf("NewSigner: got %v, want ErrNoKeyStore", err)
+	if _, err := jwtutil.SignerForKey(keys.ContextWithoutKeyStore(context.Background()), testKeySpec); !errors.Is(err, jwtutil.ErrNoKeyStore) {
+		t.Errorf("SignerForKey: got %v, want ErrNoKeyStore", err)
+	}
+
+	// NewCookieVerifier's verification keys are supplied directly rather than
+	// looked up from a context store, so calling it with none is simply "no
+	// keys supplied", not ErrNoKeyStore.
+	if _, err := csc.VerifierConfig().NewCookieVerifier(context.Background()); err == nil {
+		t.Error("NewCookieVerifier: got nil error, want at least one verification key to be required")
 	}
 }
 
@@ -388,41 +429,25 @@ func TestConfigInvalidKeys(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			ctx := storeKey(context.Background(), testKeySpec, append([]byte(nil), tc.token...), tc.extra)
-			if _, err := signerConfig().NewSigner(ctx); err == nil {
-				t.Error("NewSigner: got nil error, want the key to be rejected")
+			if _, err := jwtutil.SignerForKey(ctx, testKeySpec); err == nil {
+				t.Error("SignerForKey: got nil error, want the key to be rejected")
 			}
 		})
 	}
 }
 
-// TestConfigValidate covers the validation of incomplete configurations, which
-// the constructors perform before reading any keys.
+// TestConfigValidate covers the validation of incomplete configurations.
+// Neither JWTSignerConfig nor JWTValidatorConfig carries key material, so
+// this covers only their claims-related fields directly via Validate, without
+// needing any key machinery at all.
 func TestConfigValidate(t *testing.T) {
-	ctx, _ := newED25519Key(t)
 	valid := signerConfig()
 
-	noIssuer, noAudience, noKey := valid, valid, valid
+	noIssuer, noAudience := valid, valid
 	noIssuer.Issuer = ""
 	noAudience.Audience = nil
-	noKey.SigningKey = keys.KeySpec{}
-	for _, cfg := range []jwtutil.JWTSignerConfig{noIssuer, noAudience, noKey} {
-		if _, err := cfg.NewSigner(ctx); err == nil {
-			t.Errorf("%#v: got nil error, want an invalid configuration", cfg)
-		}
-	}
-
-	vc := valid.VerifierConfig()
-	noVerificationKeys := vc
-	noVerificationKeys.VerificationKeys = nil
-	emptyKeyID := vc
-	emptyKeyID.VerificationKeys = []keys.KeySpec{{User: "test-user", ID: ""}}
-	duplicateKeyID := vc
-	duplicateKeyID.VerificationKeys = []keys.KeySpec{
-		{User: "user1", ID: "dup-key"},
-		{User: "user2", ID: "dup-key"},
-	}
-	for _, cfg := range []jwtutil.JWTVerifierConfig{noVerificationKeys, emptyKeyID, duplicateKeyID} {
-		if _, err := cfg.NewValidator(ctx); err == nil {
+	for _, cfg := range []jwtutil.JWTSignerConfig{noIssuer, noAudience} {
+		if err := cfg.Validate(); err == nil {
 			t.Errorf("%#v: got nil error, want an invalid configuration", cfg)
 		}
 	}
@@ -431,11 +456,11 @@ func TestConfigValidate(t *testing.T) {
 	noName, zeroDuration := csc, csc
 	noName.Name = ""
 	// JWTCookieConfig.Duration must be named explicitly here: JWTSignerConfig
-	// now has its own, shallower Duration, which an unqualified
+	// has its own, shallower Duration, which an unqualified
 	// zeroDuration.Duration would resolve to instead.
 	zeroDuration.JWTCookieConfig.Duration = 0
 	for _, cfg := range []jwtutil.JWTCookieSignerConfig{noName, zeroDuration} {
-		if _, err := cfg.NewCookieSigner(ctx); err == nil {
+		if err := cfg.Validate(); err == nil {
 			t.Errorf("%#v: got nil error, want an invalid configuration", cfg)
 		}
 	}
@@ -444,8 +469,8 @@ func TestConfigValidate(t *testing.T) {
 	noVerifierName, negativeSkew := cvc, cvc
 	noVerifierName.Name = ""
 	negativeSkew.ValidationTimeSkew = -time.Second
-	for _, cfg := range []jwtutil.JWTCookieVerifierConfig{noVerifierName, negativeSkew} {
-		if _, err := cfg.NewCookieVerifier(ctx); err == nil {
+	for _, cfg := range []jwtutil.JWTCookieValidatorConfig{noVerifierName, negativeSkew} {
+		if err := cfg.Validate(); err == nil {
 			t.Errorf("%#v: got nil error, want an invalid configuration", cfg)
 		}
 	}
@@ -481,7 +506,7 @@ func TestJWTCookieConfigValidate(t *testing.T) {
 func cookieSignerConfig() jwtutil.JWTCookieSignerConfig {
 	// The JWT's own validity (JWTSignerConfig.Duration) is set to match the
 	// cookie's lifetime (JWTCookieConfig.Duration) here, though the two are
-	// independent: see TestCookieSignerAndVerifier's MaxAge assertion versus
+	// independent: see TestCookieSigner's MaxAge assertion versus
 	// TestCookieVerifier's expiration assertion for tests that pin each down
 	// separately.
 	sc := signerConfig()
@@ -499,12 +524,12 @@ func cookieSignerConfig() jwtutil.JWTCookieSignerConfig {
 	}
 }
 
-// TestCookieSignerAndVerifier covers issuing a cookie containing a JWT and
-// validating it from a request.
-func TestCookieSignerAndVerifier(t *testing.T) {
+// TestCookieSigner covers issuing a cookie containing a JWT. CookieSigner only
+// signs; see TestCookieVerifier for validating the cookie it issues.
+func TestCookieSigner(t *testing.T) {
 	ctx, _ := newED25519Key(t)
 	csc := cookieSignerConfig()
-	cs, err := csc.NewCookieSigner(ctx)
+	cs, err := csc.NewCookieSigner(ctx, testKeySpec)
 	if err != nil {
 		t.Fatalf("NewCookieSigner: %v", err)
 	}
@@ -527,11 +552,6 @@ func TestCookieSignerAndVerifier(t *testing.T) {
 	if got, want := cookie.MaxAge, int(time.Hour.Seconds()); got != want {
 		t.Errorf("cookie MaxAge: got %v, want %v", got, want)
 	}
-
-	// The signer validates the cookies that it issues itself.
-	if _, err := cs.ParseAndValidate(ctx, []byte(cookie.Value)); err != nil {
-		t.Errorf("CookieSigner.ParseAndValidate: %v", err)
-	}
 }
 
 // TestCookieInsecure covers Insecure: unlike the secure-by-default case, the
@@ -539,10 +559,10 @@ func TestCookieSignerAndVerifier(t *testing.T) {
 // request carrying it (set without those attributes, as a real insecure
 // client would receive it) still validates.
 func TestCookieInsecure(t *testing.T) {
-	ctx, _ := newED25519Key(t)
+	ctx, pubInfo := newED25519Key(t)
 	csc := cookieSignerConfig()
 	csc.Insecure = true
-	cs, err := csc.NewCookieSigner(ctx)
+	cs, err := csc.NewCookieSigner(ctx, testKeySpec)
 	if err != nil {
 		t.Fatalf("NewCookieSigner: %v", err)
 	}
@@ -560,7 +580,7 @@ func TestCookieInsecure(t *testing.T) {
 	}
 
 	cvc := csc.VerifierConfig()
-	cv, err := cvc.NewCookieVerifier(ctx)
+	cv, err := cvc.NewCookieVerifier(ctx, pubInfo)
 	if err != nil {
 		t.Fatalf("NewCookieVerifier: %v", err)
 	}
@@ -574,9 +594,9 @@ func TestCookieInsecure(t *testing.T) {
 // TestCookieVerifier covers validating a cookie issued by a CookieSigner from a
 // request, and requesting its removal.
 func TestCookieVerifier(t *testing.T) {
-	ctx, _ := newED25519Key(t)
+	ctx, pubInfo := newED25519Key(t)
 	csc := cookieSignerConfig()
-	cs, err := csc.NewCookieSigner(ctx)
+	cs, err := csc.NewCookieSigner(ctx, testKeySpec)
 	if err != nil {
 		t.Fatalf("NewCookieSigner: %v", err)
 	}
@@ -587,7 +607,7 @@ func TestCookieVerifier(t *testing.T) {
 	cookie := responseCookie(t, rec, "jwt")
 
 	cvc := csc.VerifierConfig()
-	cv, err := cvc.NewCookieVerifier(ctx)
+	cv, err := cvc.NewCookieVerifier(ctx, pubInfo)
 	if err != nil {
 		t.Fatalf("NewCookieVerifier: %v", err)
 	}
@@ -626,8 +646,8 @@ func TestCookieVerifier(t *testing.T) {
 // TestCookieVerifierClearCookie verifies that clearing the cookie requests its
 // removal, keeping its scope so that the client removes the cookie that was set.
 func TestCookieVerifierClearCookie(t *testing.T) {
-	ctx, _ := newED25519Key(t)
-	cv, err := cookieSignerConfig().VerifierConfig().NewCookieVerifier(ctx)
+	ctx, pubInfo := newED25519Key(t)
+	cv, err := cookieSignerConfig().VerifierConfig().NewCookieVerifier(ctx, pubInfo)
 	if err != nil {
 		t.Fatalf("NewCookieVerifier: %v", err)
 	}
@@ -645,9 +665,9 @@ func TestCookieVerifierClearCookie(t *testing.T) {
 // TestCookieValidationTimeSkew verifies that the configured time skew is
 // applied when validating a token.
 func TestCookieValidationTimeSkew(t *testing.T) {
-	ctx, _ := newED25519Key(t)
+	ctx, pubInfo := newED25519Key(t)
 	csc := cookieSignerConfig()
-	cs, err := csc.NewCookieSigner(ctx)
+	cs, err := csc.NewCookieSigner(ctx, testKeySpec)
 	if err != nil {
 		t.Fatalf("NewCookieSigner: %v", err)
 	}
@@ -669,7 +689,7 @@ func TestCookieValidationTimeSkew(t *testing.T) {
 
 	cvc := csc.VerifierConfig()
 	cvc.ValidationTimeSkew = time.Minute
-	cv, err := cvc.NewCookieVerifier(ctx)
+	cv, err := cvc.NewCookieVerifier(ctx, pubInfo)
 	if err != nil {
 		t.Fatalf("NewCookieVerifier: %v", err)
 	}
@@ -700,14 +720,20 @@ func responseCookie(t *testing.T, rec *httptest.ResponseRecorder, name string) *
 	return nil
 }
 
-// TestCookieSignerValidator verifies that a CookieSigner parses and validates
-// tokens separately as well as in one step.
-func TestCookieSignerValidator(t *testing.T) {
-	ctx, _ := newED25519Key(t)
+// TestCookieSignAndVerifySeparately verifies that a token signed by a
+// CookieSigner can be parsed and validated separately, in two steps, by a
+// CookieVerifier built from the matching JWTCookieValidatorConfig, as well as
+// in one step via ParseAndValidate.
+func TestCookieSignAndVerifySeparately(t *testing.T) {
+	ctx, pubInfo := newED25519Key(t)
 	csc := cookieSignerConfig()
-	cs, err := csc.NewCookieSigner(ctx)
+	cs, err := csc.NewCookieSigner(ctx, testKeySpec)
 	if err != nil {
 		t.Fatalf("NewCookieSigner: %v", err)
+	}
+	cv, err := csc.VerifierConfig().NewCookieVerifier(ctx, pubInfo)
+	if err != nil {
+		t.Fatalf("NewCookieVerifier: %v", err)
 	}
 	tok, err := cs.NewToken("subject", nil)
 	if err != nil {
@@ -717,29 +743,29 @@ func TestCookieSignerValidator(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Sign: %v", err)
 	}
-	parsed, err := cs.Parse(ctx, signed)
+	parsed, err := cv.Parse(ctx, signed)
 	if err != nil {
 		t.Fatalf("Parse: %v", err)
 	}
-	if err := cs.Validate(ctx, parsed); err != nil {
+	if err := cv.Validate(ctx, parsed); err != nil {
 		t.Errorf("Validate: %v", err)
 	}
 	// The configured issuer and audience are checked, so an additional
 	// validator for another subject must fail.
-	if err := cs.Validate(ctx, parsed, jwt.WithSubject("someone-else")); err == nil {
+	if err := cv.Validate(ctx, parsed, jwt.WithSubject("someone-else")); err == nil {
 		t.Error("Validate: got nil error, want the subject check to fail")
 	}
 	// A token signed by another key is not accepted.
 	other, _ := newED25519Key(t)
-	otherSigner, err := csc.NewCookieSigner(other)
+	otherSigner, err := jwtutil.SignerForKey(other, testKeySpec)
 	if err != nil {
-		t.Fatalf("NewCookieSigner: %v", err)
+		t.Fatalf("SignerForKey: %v", err)
 	}
 	otherSigned, err := otherSigner.Sign(other, tok)
 	if err != nil {
 		t.Fatalf("Sign: %v", err)
 	}
-	if _, err := cs.ParseAndValidate(ctx, otherSigned); err == nil {
+	if _, err := cv.ParseAndValidate(ctx, otherSigned); err == nil {
 		t.Error("ParseAndValidate: got nil error, want the signature check to fail")
 	}
 }
@@ -749,7 +775,7 @@ func TestCookieSignerValidator(t *testing.T) {
 func TestCookieSignerReservedClaims(t *testing.T) {
 	ctx, _ := newED25519Key(t)
 	csc := cookieSignerConfig()
-	cs, err := csc.NewCookieSigner(ctx)
+	cs, err := csc.NewCookieSigner(ctx, testKeySpec)
 	if err != nil {
 		t.Fatalf("NewCookieSigner: %v", err)
 	}
@@ -802,15 +828,15 @@ func TestCookieSignerReservedClaims(t *testing.T) {
 // JWTSignerConfig.Builder and the conditions under which the corresponding
 // Verifier rejects it.
 func TestConfigTokenLifecycle(t *testing.T) {
-	ctx, _ := newED25519Key(t)
+	ctx, pubInfo := newED25519Key(t)
 	sc := signerConfig()
-	signer, err := sc.NewSigner(ctx)
+	signer, err := jwtutil.SignerForKey(ctx, testKeySpec)
 	if err != nil {
-		t.Fatalf("NewSigner: %v", err)
+		t.Fatalf("SignerForKey: %v", err)
 	}
-	verifier, err := sc.VerifierConfig().NewVerifier(ctx)
+	verifier, err := newTestVerifier(ctx, verifierConfigFor(sc), pubInfo)
 	if err != nil {
-		t.Fatalf("NewVerifier: %v", err)
+		t.Fatalf("newTestVerifier: %v", err)
 	}
 	sign := func(t *testing.T, tok jwt.Token) []byte {
 		t.Helper()
@@ -859,28 +885,28 @@ func TestConfigTokenLifecycle(t *testing.T) {
 
 // TestConfigSubjectClaimsDuration covers JWTSignerConfig.Subject, Claims and
 // Duration: Builder applies them automatically, a caller can still override
-// subject and claims explicitly, and JWTVerifierConfig (whether derived via
+// subject and claims explicitly, and JWTValidatorConfig (whether derived via
 // VerifierConfig or configured directly) enforces them.
 // subjectClaimsSigner returns a context, a JWTSignerConfig with Subject,
-// Duration and Claims all set, a Signer for it, and a Verifier derived from
-// it via VerifierConfig, for the tests below that exercise those three
-// fields.
-func subjectClaimsSigner(t *testing.T) (context.Context, jwtutil.JWTSignerConfig, jwtutil.Signer, *jwtutil.Verifier) {
+// Duration and Claims all set, a Signer for it, the matching public keys.Info,
+// and a verifier derived from it via VerifierConfig, for the tests below that
+// exercise those three fields.
+func subjectClaimsSigner(t *testing.T) (context.Context, jwtutil.JWTSignerConfig, jwtutil.Signer, keys.Info, *testVerifier) {
 	t.Helper()
-	ctx, _ := newED25519Key(t)
+	ctx, pubInfo := newED25519Key(t)
 	sc := signerConfig()
 	sc.Subject = "configured-subject"
 	sc.Duration = 30 * time.Minute
 	sc.Claims = map[string]string{"role": "admin", "scope": "rw"}
-	signer, err := sc.NewSigner(ctx)
+	signer, err := jwtutil.SignerForKey(ctx, testKeySpec)
 	if err != nil {
-		t.Fatalf("NewSigner: %v", err)
+		t.Fatalf("SignerForKey: %v", err)
 	}
-	verifier, err := sc.VerifierConfig().NewVerifier(ctx)
+	verifier, err := newTestVerifier(ctx, verifierConfigFor(sc), pubInfo)
 	if err != nil {
-		t.Fatalf("NewVerifier: %v", err)
+		t.Fatalf("newTestVerifier: %v", err)
 	}
-	return ctx, sc, signer, verifier
+	return ctx, sc, signer, pubInfo, verifier
 }
 
 // TestConfigBuilderAppliesSubjectClaimsDuration covers JWTSignerConfig.Subject,
@@ -888,7 +914,7 @@ func subjectClaimsSigner(t *testing.T) (context.Context, jwtutil.JWTSignerConfig
 // resulting token validates against a Verifier derived from the same
 // configuration.
 func TestConfigBuilderAppliesSubjectClaimsDuration(t *testing.T) {
-	ctx, sc, signer, verifier := subjectClaimsSigner(t)
+	ctx, sc, signer, _, verifier := subjectClaimsSigner(t)
 	tok, err := sc.Builder(0).Build()
 	if err != nil {
 		t.Fatalf("Build: %v", err)
@@ -919,7 +945,7 @@ func TestConfigBuilderAppliesSubjectClaimsDuration(t *testing.T) {
 // TestConfigBuilderExpiresInOverridesDuration verifies that an explicit,
 // positive expiresIn passed to Builder overrides the configured Duration.
 func TestConfigBuilderExpiresInOverridesDuration(t *testing.T) {
-	_, sc, _, _ := subjectClaimsSigner(t)
+	_, sc, _, _, _ := subjectClaimsSigner(t)
 	tok, err := sc.Builder(time.Hour).Build()
 	if err != nil {
 		t.Fatalf("Build: %v", err)
@@ -933,7 +959,7 @@ func TestConfigBuilderExpiresInOverridesDuration(t *testing.T) {
 // TestConfigBuilderSubjectOverride verifies that calling Subject on the
 // jwt.Builder returned by Builder overrides the configured Subject.
 func TestConfigBuilderSubjectOverride(t *testing.T) {
-	_, sc, _, _ := subjectClaimsSigner(t)
+	_, sc, _, _, _ := subjectClaimsSigner(t)
 	tok, err := sc.Builder(0).Subject("override-subject").Build()
 	if err != nil {
 		t.Fatalf("Build: %v", err)
@@ -947,7 +973,7 @@ func TestConfigBuilderSubjectOverride(t *testing.T) {
 // VerifierConfig rejecting a token whose subject or claim value does not
 // match the configuration it was derived from.
 func TestConfigVerifierRejectsWrongSubjectOrClaim(t *testing.T) {
-	ctx, sc, signer, verifier := subjectClaimsSigner(t)
+	ctx, sc, signer, _, verifier := subjectClaimsSigner(t)
 	sign := func(t *testing.T, subject, role string) []byte {
 		t.Helper()
 		tok, err := sc.Builder(0).Subject(subject).Claim("role", role).Build()
@@ -968,21 +994,20 @@ func TestConfigVerifierRejectsWrongSubjectOrClaim(t *testing.T) {
 	}
 }
 
-// TestConfigVerifierConfigOwnSubjectAndClaims covers a JWTVerifierConfig used
+// TestConfigVerifierConfigOwnSubjectAndClaims covers a JWTValidatorConfig used
 // directly (not derived from a JWTSignerConfig) enforcing its own Subject and
 // Claims fields.
 func TestConfigVerifierConfigOwnSubjectAndClaims(t *testing.T) {
-	ctx, sc, signer, _ := subjectClaimsSigner(t)
-	vc := jwtutil.JWTVerifierConfig{
-		Issuer:           sc.Issuer,
-		Audience:         sc.Audience,
-		Subject:          "direct-subject",
-		Claims:           map[string]string{"role": "viewer"},
-		VerificationKeys: []keys.KeySpec{sc.SigningKey},
+	ctx, sc, signer, pubInfo, _ := subjectClaimsSigner(t)
+	vc := jwtutil.JWTValidatorConfig{
+		Issuer:   sc.Issuer,
+		Audience: sc.Audience,
+		Subject:  "direct-subject",
+		Claims:   map[string]string{"role": "viewer"},
 	}
-	dv, err := vc.NewVerifier(ctx)
+	dv, err := newTestVerifier(ctx, vc, pubInfo)
 	if err != nil {
-		t.Fatalf("NewVerifier: %v", err)
+		t.Fatalf("newTestVerifier: %v", err)
 	}
 	good, err := sc.Builder(time.Hour).Subject("direct-subject").Claim("role", "viewer").Build()
 	if err != nil {
@@ -1010,7 +1035,7 @@ func TestConfigVerifierConfigOwnSubjectAndClaims(t *testing.T) {
 }
 
 // TestConfigReservedClaims covers the guard, shared by JWTSignerConfig and
-// JWTVerifierConfig, against configuring a Claims entry that shadows one of
+// JWTValidatorConfig, against configuring a Claims entry that shadows one of
 // the standard claims already covered by a dedicated field or mechanism.
 func TestConfigReservedClaims(t *testing.T) {
 	sc := signerConfig()
@@ -1019,10 +1044,10 @@ func TestConfigReservedClaims(t *testing.T) {
 		t.Errorf("JWTSignerConfig.Validate: got %v, want ErrReservedClaim", err)
 	}
 
-	vc := sc.VerifierConfig()
+	vc := verifierConfigFor(sc)
 	vc.Claims = map[string]string{"iss": "not allowed here"}
 	if err := vc.Validate(); !errors.Is(err, jwtutil.ErrReservedClaim) {
-		t.Errorf("JWTVerifierConfig.Validate: got %v, want ErrReservedClaim", err)
+		t.Errorf("JWTValidatorConfig.Validate: got %v, want ErrReservedClaim", err)
 	}
 }
 
@@ -1040,7 +1065,7 @@ func TestConfigValidateOptionsSkipsReservedClaims(t *testing.T) {
 		t.Fatalf("Build: %v", err)
 	}
 
-	vc := sc.VerifierConfig()
+	vc := verifierConfigFor(sc)
 	// Bypasses Validate, which would otherwise reject this.
 	vc.Claims = map[string]string{"exp": "not-a-real-claim-value"}
 
@@ -1050,17 +1075,17 @@ func TestConfigValidateOptionsSkipsReservedClaims(t *testing.T) {
 }
 
 // TestConfigTokenRejection covers the tokens that a Verifier created from a
-// JWTVerifierConfig rejects.
+// JWTValidatorConfig rejects.
 func TestConfigTokenRejection(t *testing.T) {
-	ctx, _ := newED25519Key(t)
+	ctx, pubInfo := newED25519Key(t)
 	sc := signerConfig()
-	signer, err := sc.NewSigner(ctx)
+	signer, err := jwtutil.SignerForKey(ctx, testKeySpec)
 	if err != nil {
-		t.Fatalf("NewSigner: %v", err)
+		t.Fatalf("SignerForKey: %v", err)
 	}
-	verifier, err := sc.VerifierConfig().NewVerifier(ctx)
+	verifier, err := newTestVerifier(ctx, verifierConfigFor(sc), pubInfo)
 	if err != nil {
-		t.Fatalf("NewVerifier: %v", err)
+		t.Fatalf("newTestVerifier: %v", err)
 	}
 	sign := func(t *testing.T, tok jwt.Token) []byte {
 		t.Helper()
@@ -1110,11 +1135,9 @@ func TestConfigTokenRejection(t *testing.T) {
 		t.Fatalf("NewED25519KeyInfo: %v", err)
 	}
 	otherCtx := keys.ContextWithKey(context.Background(), otherInfo)
-	otherSC := signerConfig()
-	otherSC.SigningKey = otherInfo.KeySpec()
-	otherSigner, err := otherSC.NewSigner(otherCtx)
+	otherSigner, err := jwtutil.SignerForKey(otherCtx, otherInfo.KeySpec())
 	if err != nil {
-		t.Fatalf("NewSigner: %v", err)
+		t.Fatalf("SignerForKey: %v", err)
 	}
 	otherSigned, err := otherSigner.Sign(otherCtx, tok)
 	if err != nil {
@@ -1162,19 +1185,19 @@ func TestNewED25519KeyInfo(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Sign: %v", err)
 	}
-	validator, err := jwtutil.ValidatorForKeys(ctx, info.KeySpec())
+	validator, err := jwtutil.ValidatorForKeys(ctx, info)
 	if err != nil {
 		t.Fatalf("ValidatorForKeys: %v", err)
 	}
 	if _, err := validator.ParseAndValidate(ctx, signed); err != nil {
 		t.Errorf("ParseAndValidate: %v", err)
 	}
-
 }
 
 // TestNewED25519KeyInfoYAMLRoundTrip verifies that a keys.Info created by
 // NewED25519KeyInfo, once marshalled to YAML as it would be when written to a
-// keychain item and read back, still signs and verifies correctly.
+// keychain item and read back, still signs and, once resolved from the
+// round-tripped store, still verifies correctly.
 func TestNewED25519KeyInfoYAMLRoundTrip(t *testing.T) {
 	info, err := jwtutil.NewED25519KeyInfo(testKeyUser, testKeyID)
 	if err != nil {
@@ -1202,7 +1225,15 @@ func TestNewED25519KeyInfoYAMLRoundTrip(t *testing.T) {
 	if _, err := jwtutil.SignerForKey(rctx, info.KeySpec()); err != nil {
 		t.Errorf("SignerForKey after a YAML round trip: %v", err)
 	}
-	validator, err := jwtutil.ValidatorForKeys(rctx, info.KeySpec())
+
+	// A verification key resolved from the round-tripped store still
+	// validates.
+	spec := info.KeySpec()
+	roundTripped, ok := store.Get(spec.User, spec.ID)
+	if !ok {
+		t.Fatalf("key not found in round-tripped store")
+	}
+	validator, err := jwtutil.ValidatorForKeys(rctx, roundTripped)
 	if err != nil {
 		t.Fatalf("ValidatorForKeys: %v", err)
 	}
@@ -1211,8 +1242,11 @@ func TestNewED25519KeyInfoYAMLRoundTrip(t *testing.T) {
 	}
 }
 
-// TestKeyLookupByID covers a key spec that does not name a user, which matches
-// a key with the same id belonging to any user provided that it is unambiguous.
+// TestKeyLookupByID covers a key spec that does not name a user, which
+// matches a key with the same id belonging to any user provided that it is
+// unambiguous, when looking up a signing key from the context-based key store
+// (see SignerForKey). Verification keys are supplied directly rather than
+// looked up this way, so no equivalent ambiguity exists for them.
 func TestKeyLookupByID(t *testing.T) {
 	info, err := jwtutil.NewED25519KeyInfo(testKeyUser, testKeyID)
 	if err != nil {
@@ -1225,9 +1259,6 @@ func TestKeyLookupByID(t *testing.T) {
 	byID := keys.KeySpec{ID: testKeyID}
 	if _, err := jwtutil.SignerForKey(ctx, byID); err != nil {
 		t.Errorf("SignerForKey: %v", err)
-	}
-	if _, err := jwtutil.ValidatorForKeys(ctx, byID); err != nil {
-		t.Errorf("ValidatorForKeys: %v", err)
 	}
 
 	// A second key with the same id makes the spec ambiguous: it is reported
@@ -1244,11 +1275,6 @@ func TestKeyLookupByID(t *testing.T) {
 	// A spec naming a user that holds no such key is not found.
 	if _, err := jwtutil.SignerForKey(ctx, keys.KeySpec{ID: testKeyID, User: "nobody"}); !errors.Is(err, jwtutil.ErrKeyNotFound) {
 		t.Errorf("SignerForKey: got %v, want ErrKeyNotFound", err)
-	}
-
-	// No keys at all is an error rather than a validator that accepts nothing.
-	if _, err := jwtutil.ValidatorForKeys(ctx); err == nil {
-		t.Error("ValidatorForKeys: got nil error, want at least one key to be required")
 	}
 }
 
@@ -1328,7 +1354,7 @@ func TestDecodeBase64Whitespace(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Sign: %v", err)
 	}
-	validator, err := jwtutil.ValidatorForKeys(ctx, info.KeySpec())
+	validator, err := jwtutil.ValidatorForKeys(ctx, info)
 	if err != nil {
 		t.Fatalf("ValidatorForKeys: %v", err)
 	}
@@ -1354,55 +1380,81 @@ func TestEdDSAAlgorithmAlias(t *testing.T) {
 	}
 }
 
-// TestKeySetForKeysEmptyID verifies that empty key IDs in KeySpec are rejected.
-func TestKeySetForKeysEmptyID(t *testing.T) {
+// TestKeySetForKeys covers KeySetForKeys directly: the returned jwk.Set
+// contains exactly the public keys supplied, each keyed by its ID so that
+// jwt.WithKeySet can select it when verifying a token, and invalid input (no
+// keys, an empty ID, or a duplicate ID) is rejected.
+func TestKeySetForKeys(t *testing.T) {
 	ctx := context.Background()
-	if _, err := jwtutil.ValidatorForKeys(ctx, keys.KeySpec{User: "user", ID: ""}); err == nil {
-		t.Error("ValidatorForKeys: got nil error, want empty key ID to be rejected")
-	}
-	if _, err := jwtutil.NewSignerFromContext(ctx, "user", ""); err == nil {
-		t.Error("NewSignerFromContext: got nil error, want empty key ID to be rejected")
-	}
-}
 
-// TestKeySetForKeysDuplicateID verifies that duplicate key IDs in KeySpec are rejected.
-func TestKeySetForKeysDuplicateID(t *testing.T) {
-	ctx := context.Background()
-	specs := []keys.KeySpec{
-		{User: "user1", ID: "same-key-id"},
-		{User: "user2", ID: "same-key-id"},
-	}
-	if _, err := jwtutil.ValidatorForKeys(ctx, specs...); err == nil {
-		t.Error("ValidatorForKeys: got nil error, want duplicate key ID to be rejected")
-	}
-}
+	t.Run("no keys", func(t *testing.T) {
+		if _, err := jwtutil.KeySetForKeys(ctx); err == nil {
+			t.Error("KeySetForKeys: got nil error, want at least one key to be required")
+		}
+	})
 
-// TestCookieDefaultPath verifies that cookie Path defaults to "/" when omitted.
-func TestCookieDefaultPath(t *testing.T) {
-	ctx, _ := newED25519Key(t)
-	csc := cookieSignerConfig()
-	csc.Path = ""
-	cs, err := csc.NewCookieSigner(ctx)
-	if err != nil {
-		t.Fatalf("NewCookieSigner: %v", err)
-	}
-	rec := httptest.NewRecorder()
-	if err := cs.Issue(ctx, rec, "subject", nil); err != nil {
-		t.Fatalf("Issue: %v", err)
-	}
-	cookie := responseCookie(t, rec, "jwt")
-	if cookie.Path != "/" {
-		t.Errorf("cookie default path: got %q, want /", cookie.Path)
-	}
+	t.Run("empty key ID", func(t *testing.T) {
+		info := newKeyInfo(keys.KeySpec{User: "user", ID: ""}, nil, jwtutil.KeyExtra{
+			Algorithm: ed25519Algorithm,
+			PublicKey: base64.StdEncoding.EncodeToString(make([]byte, ed25519.PublicKeySize)),
+		})
+		if _, err := jwtutil.KeySetForKeys(ctx, info); err == nil {
+			t.Error("KeySetForKeys: got nil error, want empty key ID to be rejected")
+		}
+	})
 
-	cv, err := csc.VerifierConfig().NewCookieVerifier(ctx)
-	if err != nil {
-		t.Fatalf("NewCookieVerifier: %v", err)
-	}
-	recClear := httptest.NewRecorder()
-	cv.ClearCookie(recClear)
-	cleared := responseCookie(t, recClear, "jwt")
-	if cleared.Path != "/" {
-		t.Errorf("cleared cookie default path: got %q, want /", cleared.Path)
-	}
+	t.Run("duplicate key ID", func(t *testing.T) {
+		mk := func(user string) keys.Info {
+			info, err := jwtutil.NewED25519KeyInfo(user, "same-key-id")
+			if err != nil {
+				t.Fatalf("NewED25519KeyInfo: %v", err)
+			}
+			return jwtutil.CloneKeyInfoForPublicKey(info)
+		}
+		if _, err := jwtutil.KeySetForKeys(ctx, mk("user1"), mk("user2")); err == nil {
+			t.Error("KeySetForKeys: got nil error, want duplicate key ID to be rejected")
+		}
+	})
+
+	t.Run("single key", func(t *testing.T) {
+		sctx, pubInfo := newED25519Key(t)
+		set, err := jwtutil.KeySetForKeys(ctx, pubInfo)
+		if err != nil {
+			t.Fatalf("KeySetForKeys: %v", err)
+		}
+		if got, want := set.Len(), 1; got != want {
+			t.Errorf("set length: got %v, want %v", got, want)
+		}
+		// The set verifies a token signed by the corresponding private key.
+		signer, err := jwtutil.SignerForKey(sctx, testKeySpec)
+		if err != nil {
+			t.Fatalf("SignerForKey: %v", err)
+		}
+		signed, err := signer.Sign(sctx, newConfigToken(t))
+		if err != nil {
+			t.Fatalf("Sign: %v", err)
+		}
+		if _, err := jwtutil.NewValidator(set).ParseAndValidate(ctx, signed); err != nil {
+			t.Errorf("ParseAndValidate: %v", err)
+		}
+	})
+
+	t.Run("multiple keys", func(t *testing.T) {
+		infoA, err := jwtutil.NewED25519KeyInfo(testKeyUser, "key-a")
+		if err != nil {
+			t.Fatalf("NewED25519KeyInfo: %v", err)
+		}
+		infoB, err := jwtutil.NewED25519KeyInfo(testKeyUser, "key-b")
+		if err != nil {
+			t.Fatalf("NewED25519KeyInfo: %v", err)
+		}
+		set, err := jwtutil.KeySetForKeys(ctx,
+			jwtutil.CloneKeyInfoForPublicKey(infoA), jwtutil.CloneKeyInfoForPublicKey(infoB))
+		if err != nil {
+			t.Fatalf("KeySetForKeys: %v", err)
+		}
+		if got, want := set.Len(), 2; got != want {
+			t.Errorf("set length: got %v, want %v", got, want)
+		}
+	})
 }

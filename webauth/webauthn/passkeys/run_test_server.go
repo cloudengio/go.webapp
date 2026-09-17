@@ -85,11 +85,15 @@ func main() {
 		fmt.Printf("Failed to create JWT signer: %v", err)
 		return
 	}
-	mw := passkeys.NewJWTCookieLoginManager(signer, "pktest", cookies.ScopeAndDuration{
+	mw, err := passkeys.NewJWTCookieLoginManager(signer, "pktest", cookies.ScopeAndDuration{
 		Path:     "/",
 		Domain:   serverURL.Hostname(),
 		Duration: time.Hour * 24 * 30,
 	})
+	if err != nil {
+		fmt.Printf("Failed to create login manager: %v", err)
+		return
+	}
 	requireResidentKey := true
 	w := passkeys.NewHandler(wa, db, db, mw,
 		passkeys.WithLogger(logger),

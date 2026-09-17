@@ -15,6 +15,7 @@ import (
 
 	"cloudeng.io/webapp/cookies"
 	"cloudeng.io/webapp/webauth/jwtutil"
+	"github.com/lestrrat-go/jwx/v3/jwk"
 	"github.com/lestrrat-go/jwx/v3/jwt"
 )
 
@@ -31,8 +32,25 @@ func newTestSigner(t *testing.T) jwtutil.Signer {
 	return signer
 }
 
+// newTestValidator returns a Validator for signer's public key. Signer no
+// longer verifies the tokens it signs, so tests that need to check an issued
+// token use this instead.
+func newTestValidator(t *testing.T, signer jwtutil.Signer) jwtutil.Validator {
+	t.Helper()
+	pub, err := signer.PublicKey()
+	if err != nil {
+		t.Fatalf("PublicKey: %v", err)
+	}
+	set := jwk.NewSet()
+	if err := set.AddKey(pub); err != nil {
+		t.Fatalf("AddKey: %v", err)
+	}
+	return jwtutil.NewValidator(set)
+}
+
 func TestJWTIssuerDirectText(t *testing.T) {
 	signer := newTestSigner(t)
+	validator := newTestValidator(t, signer)
 	handler := jwtutil.NewJWTIssuerMust(signer,
 		jwtutil.WithSubject("user-123"),
 		jwtutil.WithIssuer("test-service"),
@@ -57,7 +75,7 @@ func TestJWTIssuerDirectText(t *testing.T) {
 		t.Fatal("expected non-empty token string in response body")
 	}
 
-	tok, err := signer.ParseAndValidate(req.Context(), []byte(tokenStr))
+	tok, err := validator.ParseAndValidate(req.Context(), []byte(tokenStr))
 	if err != nil {
 		t.Fatalf("failed to validate issued token: %v", err)
 	}
@@ -82,6 +100,7 @@ func TestJWTIssuerDirectText(t *testing.T) {
 
 func TestJWTIssuerDirectJSON(t *testing.T) {
 	signer := newTestSigner(t)
+	validator := newTestValidator(t, signer)
 
 	t.Run("WithJSON option", func(t *testing.T) {
 		handler := jwtutil.JWTIssuerMust(signer,
@@ -109,7 +128,7 @@ func TestJWTIssuerDirectJSON(t *testing.T) {
 			t.Fatalf("expected token field in JSON: %v", resp)
 		}
 
-		tok, err := signer.ParseAndValidate(req.Context(), []byte(tokenStr))
+		tok, err := validator.ParseAndValidate(req.Context(), []byte(tokenStr))
 		if err != nil {
 			t.Fatalf("failed to validate issued token: %v", err)
 		}
@@ -142,87 +161,88 @@ func TestJWTIssuerDirectJSON(t *testing.T) {
 	})
 }
 
-func TestJWTIssuerSecureCookie(t *testing.T) {
+func TestJWTIssuerSecureCookieDefaultAttributes(t *testing.T) {
+	signer := newTestSigner(t)
+	validator := newTestValidator(t, signer)
+
+	handler := jwtutil.NewJWTIssuerMust(signer,
+		jwtutil.WithSubject("cookie-user"),
+		jwtutil.WithSecureCookie("session_token", cookies.ScopeAndDuration{}),
+		jwtutil.WithExpiration(2*time.Hour),
+	)
+
+	req := httptest.NewRequest(http.MethodGet, "/login", nil)
+	w := httptest.NewRecorder()
+	handler.ServeHTTP(w, req)
+
+	if got, want := w.Code, http.StatusOK; got != want {
+		t.Fatalf("got status %d, want %d", got, want)
+	}
+
+	respCookies := w.Result().Cookies()
+	var sessionCookie *http.Cookie
+	for _, c := range respCookies {
+		if c.Name == "session_token" {
+			sessionCookie = c
+			break
+		}
+	}
+	if sessionCookie == nil {
+		t.Fatalf("expected cookie session_token in response, got %v", respCookies)
+	}
+	if !sessionCookie.Secure || !sessionCookie.HttpOnly || sessionCookie.SameSite != http.SameSiteStrictMode {
+		t.Errorf("cookie missing secure flags: Secure=%v, HttpOnly=%v, SameSite=%v",
+			sessionCookie.Secure, sessionCookie.HttpOnly, sessionCookie.SameSite)
+	}
+	if sessionCookie.Path != "/" {
+		t.Errorf(`got cookie path %q, want default "/"`, sessionCookie.Path)
+	}
+	// The cookie's own duration was left unset, so it defaults to the
+	// token's own expiration.
+	if want := int((2 * time.Hour).Seconds()); sessionCookie.MaxAge != want {
+		t.Errorf("got cookie MaxAge %d, want %d", sessionCookie.MaxAge, want)
+	}
+
+	tok, err := validator.ParseAndValidate(req.Context(), []byte(sessionCookie.Value))
+	if err != nil {
+		t.Fatalf("failed to validate token in cookie: %v", err)
+	}
+	sub, _ := tok.Subject()
+	if got, want := sub, "cookie-user"; got != want {
+		t.Errorf("got subject %q, want %q", got, want)
+	}
+}
+
+func TestJWTIssuerSecureCookieExplicitScopeOverridesDefaults(t *testing.T) {
 	signer := newTestSigner(t)
 
-	t.Run("default attributes", func(t *testing.T) {
-		handler := jwtutil.NewJWTIssuerMust(signer,
-			jwtutil.WithSubject("cookie-user"),
-			jwtutil.WithSecureCookie("session_token", cookies.ScopeAndDuration{}),
-			jwtutil.WithExpiration(2*time.Hour),
-		)
+	handler := jwtutil.NewJWTIssuerMust(signer,
+		jwtutil.WithSubject("secure-scoped-user"),
+		jwtutil.WithSecureCookie("scoped_cookie", cookies.ScopeAndDuration{
+			Domain:   "app.example.com",
+			Path:     "/account",
+			Duration: 10 * time.Minute,
+		}),
+		jwtutil.WithExpiration(2*time.Hour),
+	)
 
-		req := httptest.NewRequest(http.MethodGet, "/login", nil)
-		w := httptest.NewRecorder()
-		handler.ServeHTTP(w, req)
+	req := httptest.NewRequest(http.MethodGet, "/login", nil)
+	w := httptest.NewRecorder()
+	handler.ServeHTTP(w, req)
 
-		if got, want := w.Code, http.StatusOK; got != want {
-			t.Fatalf("got status %d, want %d", got, want)
-		}
-
-		respCookies := w.Result().Cookies()
-		var sessionCookie *http.Cookie
-		for _, c := range respCookies {
-			if c.Name == "session_token" {
-				sessionCookie = c
-				break
-			}
-		}
-		if sessionCookie == nil {
-			t.Fatalf("expected cookie session_token in response, got %v", respCookies)
-		}
-		if !sessionCookie.Secure || !sessionCookie.HttpOnly || sessionCookie.SameSite != http.SameSiteStrictMode {
-			t.Errorf("cookie missing secure flags: Secure=%v, HttpOnly=%v, SameSite=%v",
-				sessionCookie.Secure, sessionCookie.HttpOnly, sessionCookie.SameSite)
-		}
-		if sessionCookie.Path != "/" {
-			t.Errorf(`got cookie path %q, want default "/"`, sessionCookie.Path)
-		}
-		// The cookie's own duration was left unset, so it defaults to the
-		// token's own expiration.
-		if want := int((2 * time.Hour).Seconds()); sessionCookie.MaxAge != want {
-			t.Errorf("got cookie MaxAge %d, want %d", sessionCookie.MaxAge, want)
-		}
-
-		tok, err := signer.ParseAndValidate(req.Context(), []byte(sessionCookie.Value))
-		if err != nil {
-			t.Fatalf("failed to validate token in cookie: %v", err)
-		}
-		sub, _ := tok.Subject()
-		if got, want := sub, "cookie-user"; got != want {
-			t.Errorf("got subject %q, want %q", got, want)
-		}
-	})
-
-	t.Run("explicit scope overrides defaults", func(t *testing.T) {
-		handler := jwtutil.NewJWTIssuerMust(signer,
-			jwtutil.WithSubject("secure-scoped-user"),
-			jwtutil.WithSecureCookie("scoped_cookie", cookies.ScopeAndDuration{
-				Domain:   "app.example.com",
-				Path:     "/account",
-				Duration: 10 * time.Minute,
-			}),
-			jwtutil.WithExpiration(2*time.Hour),
-		)
-
-		req := httptest.NewRequest(http.MethodGet, "/login", nil)
-		w := httptest.NewRecorder()
-		handler.ServeHTTP(w, req)
-
-		respCookies := w.Result().Cookies()
-		if len(respCookies) == 0 || respCookies[0].Name != "scoped_cookie" {
-			t.Fatalf("expected scoped_cookie, got %v", respCookies)
-		}
-		got := respCookies[0]
-		if got.Domain != "app.example.com" || got.Path != "/account" {
-			t.Errorf("got domain=%q path=%q, want domain=%q path=%q", got.Domain, got.Path, "app.example.com", "/account")
-		}
-		// The cookie's own (shorter) duration, not the token's expiration,
-		// governs its Max-Age.
-		if want := int((10 * time.Minute).Seconds()); got.MaxAge != want {
-			t.Errorf("got cookie MaxAge %d, want %d", got.MaxAge, want)
-		}
-	})
+	respCookies := w.Result().Cookies()
+	if len(respCookies) == 0 || respCookies[0].Name != "scoped_cookie" {
+		t.Fatalf("expected scoped_cookie, got %v", respCookies)
+	}
+	got := respCookies[0]
+	if got.Domain != "app.example.com" || got.Path != "/account" {
+		t.Errorf("got domain=%q path=%q, want domain=%q path=%q", got.Domain, got.Path, "app.example.com", "/account")
+	}
+	// The cookie's own (shorter) duration, not the token's expiration,
+	// governs its Max-Age.
+	if want := int((10 * time.Minute).Seconds()); got.MaxAge != want {
+		t.Errorf("got cookie MaxAge %d, want %d", got.MaxAge, want)
+	}
 }
 
 func TestJWTIssuerInsecureCookie(t *testing.T) {
@@ -541,6 +561,7 @@ func TestJWTIssuerCookieConflicts(t *testing.T) {
 
 func TestJWTIssuerClaimsWithOptions(t *testing.T) {
 	signer := newTestSigner(t)
+	validator := newTestValidator(t, signer)
 	claims := map[string]any{
 		"org":  "cloudeng",
 		"tier": "enterprise",
@@ -558,7 +579,7 @@ func TestJWTIssuerClaimsWithOptions(t *testing.T) {
 	handler.ServeHTTP(w, req)
 
 	tokenStr := w.Body.String()
-	tok, err := signer.ParseAndValidate(req.Context(), []byte(tokenStr),
+	tok, err := validator.ParseAndValidate(req.Context(), []byte(tokenStr),
 		jwt.WithAcceptableSkew(time.Second),
 	)
 	if err != nil {
