@@ -131,6 +131,60 @@ func TestSignAndVerifyED25519(t *testing.T) {
 	})
 }
 
+func TestValidatorParseAndSkew(t *testing.T) {
+	ctx := t.Context()
+	signer := newED25519Signer(t, "test-key-skew")
+	publicKey, err := signer.PublicKey()
+	if err != nil {
+		t.Fatalf("failed to get public key: %v", err)
+	}
+	set := jwk.NewSet()
+	if err := set.AddKey(publicKey); err != nil {
+		t.Fatalf("failed to add key to set: %v", err)
+	}
+	validator := jwtutil.NewValidator(set)
+
+	expiredTok, err := jwt.NewBuilder().
+		Issuer("test-issuer").
+		Audience([]string{"test-audience"}).
+		Subject("test-expired").
+		IssuedAt(time.Now().Add(-2 * time.Hour)).
+		Expiration(time.Now().Add(-time.Hour)).
+		Build()
+	if err != nil {
+		t.Fatalf("failed to build expired token: %v", err)
+	}
+	expiredBytes, err := signer.Sign(ctx, expiredTok)
+	if err != nil {
+		t.Fatalf("failed to sign expired token: %v", err)
+	}
+
+	// Parse verifies signature only, allowing inspection of expired tokens.
+	parsed, err := validator.Parse(ctx, expiredBytes)
+	if err != nil {
+		t.Fatalf("Parse() failed for expired token: %v", err)
+	}
+	sub, _ := parsed.Subject()
+	if got, want := sub, "test-expired"; got != want {
+		t.Errorf("got subject %q, want %q", got, want)
+	}
+
+	// ParseAndValidate without skew fails because the token is expired.
+	if _, err := validator.ParseAndValidate(ctx, expiredBytes); err == nil {
+		t.Fatal("ParseAndValidate() should have failed for expired token without skew")
+	}
+
+	// ParseAndValidate with sufficient skew succeeds.
+	parsedWithSkew, err := validator.ParseAndValidate(ctx, expiredBytes, jwt.WithAcceptableSkew(2*time.Hour))
+	if err != nil {
+		t.Fatalf("ParseAndValidate() failed with acceptable skew: %v", err)
+	}
+	subSkew, _ := parsedWithSkew.Subject()
+	if got, want := subSkew, "test-expired"; got != want {
+		t.Errorf("got subject %q, want %q", got, want)
+	}
+}
+
 func marshalKeySet(key jwk.Key) (jwk.Set, error) {
 	ks := jwk.NewSet()
 	if err := ks.AddKey(key); err != nil {

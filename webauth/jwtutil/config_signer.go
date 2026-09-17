@@ -27,7 +27,7 @@ func SignerForKey(ctx context.Context, spec keys.KeySpec) (Signer, error) {
 // since a later call to Subject or Claim on the same builder simply replaces
 // the earlier one. The expiration claim is set to expiresIn from now if it is
 // positive, or to c.Duration from now if expiresIn is not positive and
-// c.Duration is.
+// c.Duration is, or defaults to 24 hours.
 func (c JWTSignerConfig) Builder(expiresIn time.Duration) *jwt.Builder {
 	now := time.Now()
 	builder := jwt.NewBuilder().IssuedAt(now).Issuer(c.Issuer).Audience(slices.Clone(c.Audience))
@@ -40,8 +40,9 @@ func (c JWTSignerConfig) Builder(expiresIn time.Duration) *jwt.Builder {
 	if expiresIn <= 0 {
 		expiresIn = c.Duration
 	}
-	if expiresIn > 0 {
-		builder.Expiration(now.Add(expiresIn))
+	if expiresIn <= 0 {
+		expiresIn = 24 * time.Hour
 	}
+	builder.Expiration(now.Add(expiresIn))
 	return builder
 }

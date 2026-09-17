@@ -70,28 +70,48 @@ func (e ED25519) Signer(info keys.Info) (Signer, error) {
 
 // PublicKey implements JWKKey by importing the ed25519 public key stored in
 // info's extra information, which must be base64, standard encoding, of the
-// 32 byte public key.
+// 32 byte public key. If extra information does not contain a public key, but
+// info's token contains the ed25519 private key, the public key is derived from it.
 func (e ED25519) PublicKey(info keys.Info) (jwk.Key, error) {
 	var extra KeyExtra
 	if err := info.UnmarshalExtra(&extra); err != nil {
 		return nil, fmt.Errorf("key %v: failed to unmarshal extra information: %w", info.KeySpec(), err)
 	}
-	if extra.PublicKey == "" {
-		return nil, fmt.Errorf("key %v: no public_key in extra information", info.KeySpec())
+	var pubBytes []byte
+	if extra.PublicKey != "" {
+		decoded, cleanup, err := decodeBase64([]byte(extra.PublicKey))
+		defer cleanup()
+		if err != nil {
+			return nil, fmt.Errorf("key %v: public_key: %w", info.KeySpec(), err)
+		}
+		if len(decoded) != ed25519.PublicKeySize {
+			return nil, fmt.Errorf("key %v: public_key is not a base64 encoded ed25519 public key of %v bytes, got %v",
+				info.KeySpec(), ed25519.PublicKeySize, len(decoded))
+		}
+		pubBytes = slices.Clone(decoded)
+	} else {
+		tok := info.Token()
+		defer tok.Clear()
+		if len(tok.Value()) == 0 {
+			return nil, fmt.Errorf("key %v: no public_key in extra information", info.KeySpec())
+		}
+		decoded, cleanup, err := decodeBase64(tok.Value())
+		defer cleanup()
+		if err != nil {
+			return nil, fmt.Errorf("key %v: no public_key in extra and failed to decode token private key: %w", info.KeySpec(), err)
+		}
+		if len(decoded) != ed25519.PrivateKeySize {
+			return nil, fmt.Errorf("key %v: no public_key in extra and token private key is not %v bytes, got %v",
+				info.KeySpec(), ed25519.PrivateKeySize, len(decoded))
+		}
+		pub := ed25519.PrivateKey(decoded).Public().(ed25519.PublicKey)
+		pubBytes = slices.Clone([]byte(pub))
 	}
-	decoded, cleanup, err := decodeBase64([]byte(extra.PublicKey))
-	defer cleanup()
-	if err != nil {
-		return nil, fmt.Errorf("key %v: public_key: %w", info.KeySpec(), err)
-	}
-	if len(decoded) != ed25519.PublicKeySize {
-		return nil, fmt.Errorf("key %v: public_key is not a base64 encoded ed25519 public key of %v bytes, got %v",
-			info.KeySpec(), ed25519.PublicKeySize, len(decoded))
-	}
+
 	// jwk.Import stores an ed25519.PublicKey's bytes as given, without cloning
-	// them, unlike the private key path below; clone here so that cleanup
+	// them, unlike the private key path below; pubBytes is cloned above so that cleanup
 	// zeroing decoded on return does not corrupt the imported key.
-	jwkKey, err := jwk.Import(ed25519.PublicKey(slices.Clone(decoded)))
+	jwkKey, err := jwk.Import(ed25519.PublicKey(pubBytes))
 	if err != nil {
 		return nil, fmt.Errorf("key %v: failed to import JWK: %w", info.KeySpec(), err)
 	}
@@ -103,6 +123,11 @@ func (e ED25519) PublicKey(info keys.Info) (jwk.Key, error) {
 		{jwk.KeyUsageKey, "sig"},
 	} {
 		if err := jwkKey.Set(kv.k, kv.v); err != nil {
+			return nil, fmt.Errorf("key %v: %w", info.KeySpec(), err)
+		}
+	}
+	if id := info.KeySpec().ID; id != "" {
+		if err := jwkKey.Set(jwk.KeyIDKey, id); err != nil {
 			return nil, fmt.Errorf("key %v: %w", info.KeySpec(), err)
 		}
 	}

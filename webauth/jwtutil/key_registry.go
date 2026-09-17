@@ -93,8 +93,7 @@ func NewSignerFromKeyInfo(ctx context.Context, info keys.Info) (Signer, error) {
 // material in info, using the JWKKey implementation registered for the
 // algorithm named in its extra information. The returned key carries the
 // algorithm and usage required to verify a token signed by the corresponding
-// Signer, but not a key id: that depends on how the key is being looked up
-// and is the caller's responsibility to set, see keySetForKeys.
+// Signer, as well as the key ID if specified in info.
 func PublicKeyFromKeyInfo(ctx context.Context, info keys.Info) (jwk.Key, error) {
 	impl, err := algoImpl(ctx, info)
 	if err != nil {
@@ -148,6 +147,9 @@ func decodeBase64(raw []byte) ([]byte, func(), error) {
 	cleanup := func() {
 		for i := range decoded {
 			decoded[i] = 0
+		}
+		for i := range trimmed {
+			trimmed[i] = 0
 		}
 	}
 	n, err := base64.StdEncoding.Decode(decoded, trimmed)

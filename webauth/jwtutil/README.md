@@ -126,8 +126,7 @@ PublicKeyFromKeyInfo returns the public key corresponding to the key
 material in info, using the JWKKey implementation registered for the
 algorithm named in its extra information. The returned key carries the
 algorithm and usage required to verify a token signed by the corresponding
-Signer, but not a key id: that depends on how the key is being looked up and
-is the caller's responsibility to set, see keySetForKeys.
+Signer, as well as the key ID if specified in info.
 
 ### Func TokenFromContext
 ```go
@@ -287,8 +286,10 @@ on the wire.
 func (e ED25519) PublicKey(info keys.Info) (jwk.Key, error)
 ```
 PublicKey implements JWKKey by importing the ed25519 public key stored in
-info's extra information, which must be base64, standard encoding, of the 32
-byte public key.
+info's extra information, which must be base64, standard encoding, of the
+32 byte public key. If extra information does not contain a public key,
+but info's token contains the ed25519 private key, the public key is derived
+from it.
 
 
 ```go
@@ -546,7 +547,7 @@ configured, and either can still be overridden by the caller before Build,
 since a later call to Subject or Claim on the same builder simply replaces
 the earlier one. The expiration claim is set to expiresIn from now if it
 is positive, or to c.Duration from now if expiresIn is not positive and
-c.Duration is.
+c.Duration is, or defaults to 24 hours.
 
 
 ```go

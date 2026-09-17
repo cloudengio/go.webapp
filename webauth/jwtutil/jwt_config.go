@@ -21,12 +21,6 @@ func (c JWTCookieConfig) Validate() error {
 	if c.Name == "" {
 		return fmt.Errorf("cookie name is required")
 	}
-	if c.Domain == "" {
-		return fmt.Errorf("cookie domain is required")
-	}
-	if c.Path == "" {
-		return fmt.Errorf("cookie path is required")
-	}
 	if c.Duration <= 0 {
 		return fmt.Errorf("cookie duration must be greater than 0")
 	}
@@ -89,14 +83,8 @@ type JWTCookieSignerConfig struct {
 }
 
 func (c JWTCookieSignerConfig) Validate() error {
-	if c.Name == "" {
-		return fmt.Errorf("cookie name is required")
-	}
-	// JWTCookieConfig.Duration (the cookie's own lifetime) must be named
-	// explicitly: JWTSignerConfig now has its own Duration (the JWT's
-	// validity), and being shallower it would otherwise shadow this one.
-	if c.JWTCookieConfig.Duration <= 0 {
-		return fmt.Errorf("cookie duration must be greater than 0")
+	if err := c.JWTCookieConfig.Validate(); err != nil {
+		return err
 	}
 	return c.JWTSignerConfig.Validate()
 }

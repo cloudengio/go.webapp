@@ -78,6 +78,9 @@ func (c JWTCookieSignerConfig) NewCookieSigner(ctx context.Context, spec keys.Ke
 		return nil, err
 	}
 	c.ScopeAndDuration = c.SetDefaults("", "/", 0)
+	if c.Duration == 0 {
+		c.Duration = c.JWTCookieConfig.Duration
+	}
 	signer, err := SignerForKey(ctx, spec)
 	if err != nil {
 		return nil, err

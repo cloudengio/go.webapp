@@ -491,12 +491,23 @@ func TestJWTCookieConfigValidate(t *testing.T) {
 		t.Errorf("valid config: got %v, want nil", err)
 	}
 
-	noName, noDomain, noPath, zeroDuration := valid, valid, valid, valid
+	// Host-only cookie (empty domain) and default path (empty path) are valid.
+	hostOnly := valid
+	hostOnly.Domain = ""
+	if err := hostOnly.Validate(); err != nil {
+		t.Errorf("host-only config: got %v, want nil", err)
+	}
+	defaultPath := valid
+	defaultPath.Path = ""
+	if err := defaultPath.Validate(); err != nil {
+		t.Errorf("default path config: got %v, want nil", err)
+	}
+
+	noName, zeroDuration, negativeDuration := valid, valid, valid
 	noName.Name = ""
-	noDomain.Domain = ""
-	noPath.Path = ""
 	zeroDuration.Duration = 0
-	for _, cfg := range []jwtutil.JWTCookieConfig{noName, noDomain, noPath, zeroDuration} {
+	negativeDuration.Duration = -time.Hour
+	for _, cfg := range []jwtutil.JWTCookieConfig{noName, zeroDuration, negativeDuration} {
 		if err := cfg.Validate(); err == nil {
 			t.Errorf("%#v: got nil error, want an invalid configuration", cfg)
 		}
@@ -551,6 +562,28 @@ func TestCookieSigner(t *testing.T) {
 	}
 	if got, want := cookie.MaxAge, int(time.Hour.Seconds()); got != want {
 		t.Errorf("cookie MaxAge: got %v, want %v", got, want)
+	}
+}
+
+// TestCookieSignerDefaultsJWTDuration verifies that if JWTSignerConfig.Duration
+// was left at 0, NewCookieSigner defaults it to JWTCookieConfig.Duration so the
+// issued token does not lack an expiration.
+func TestCookieSignerDefaultsJWTDuration(t *testing.T) {
+	ctx, _ := newED25519Key(t)
+	csc := cookieSignerConfig()
+	csc.Duration = 0
+	csc.JWTCookieConfig.Duration = 3 * time.Hour
+	cs, err := csc.NewCookieSigner(ctx, testKeySpec)
+	if err != nil {
+		t.Fatalf("NewCookieSigner: %v", err)
+	}
+	tok, err := cs.NewToken("user", nil)
+	if err != nil {
+		t.Fatalf("NewToken: %v", err)
+	}
+	iat, _ := tok.IssuedAt()
+	if exp, ok := tok.Expiration(); !ok || exp.Sub(iat) != 3*time.Hour {
+		t.Errorf("expiration: got %v (ok=%v), want 3h matching cookie duration", exp.Sub(iat), ok)
 	}
 }
 
@@ -956,6 +989,20 @@ func TestConfigBuilderExpiresInOverridesDuration(t *testing.T) {
 	}
 }
 
+// TestConfigBuilderDefaultDuration verifies that if neither an explicit
+// duration nor a configured Duration is provided, Builder defaults to 24h.
+func TestConfigBuilderDefaultDuration(t *testing.T) {
+	sc := signerConfig() // Duration is 0
+	tok, err := sc.Builder(0).Build()
+	if err != nil {
+		t.Fatalf("Build: %v", err)
+	}
+	iat, _ := tok.IssuedAt()
+	if exp, ok := tok.Expiration(); !ok || exp.Sub(iat) != 24*time.Hour {
+		t.Errorf("expiration: got %v after issue (ok=%v), want 24h default", exp.Sub(iat), ok)
+	}
+}
+
 // TestConfigBuilderSubjectOverride verifies that calling Subject on the
 // jwt.Builder returned by Builder overrides the configured Subject.
 func TestConfigBuilderSubjectOverride(t *testing.T) {
@@ -1323,6 +1370,73 @@ func TestPublicKeyFromKeyInfoErrors(t *testing.T) {
 				t.Error("PublicKeyFromKeyInfo: got nil error, want the key to be rejected")
 			}
 		})
+	}
+}
+
+// TestPublicKeySetsKeyID verifies that PublicKeyFromKeyInfo sets the key ID
+// on the returned jwk.Key if specified in info.KeySpec().ID.
+func TestPublicKeySetsKeyID(t *testing.T) {
+	ctx := context.Background()
+	info, err := jwtutil.NewED25519KeyInfo(testKeyUser, testKeyID)
+	if err != nil {
+		t.Fatalf("NewED25519KeyInfo: %v", err)
+	}
+	pub, err := jwtutil.PublicKeyFromKeyInfo(ctx, info)
+	if err != nil {
+		t.Fatalf("PublicKeyFromKeyInfo: %v", err)
+	}
+	kid, ok := pub.KeyID()
+	if !ok || kid != testKeyID {
+		t.Errorf("pub.KeyID() = %q (ok=%v), want %q", kid, ok, testKeyID)
+	}
+}
+
+// TestPublicKeyFallbackFromPrivateToken verifies that PublicKeyFromKeyInfo
+// can derive the public key from the private key token if extra.PublicKey is empty.
+func TestPublicKeyFallbackFromPrivateToken(t *testing.T) {
+	ctx := context.Background()
+	info, err := jwtutil.NewED25519KeyInfo(testKeyUser, testKeyID)
+	if err != nil {
+		t.Fatalf("NewED25519KeyInfo: %v", err)
+	}
+	// Omit public key from extra.
+	info.WithExtra(jwtutil.KeyExtra{Algorithm: ed25519Algorithm})
+
+	pub, err := jwtutil.PublicKeyFromKeyInfo(ctx, info)
+	if err != nil {
+		t.Fatalf("PublicKeyFromKeyInfo fallback failed: %v", err)
+	}
+	kid, ok := pub.KeyID()
+	if !ok || kid != testKeyID {
+		t.Errorf("pub.KeyID() = %q (ok=%v), want %q", kid, ok, testKeyID)
+	}
+
+	// Verify a token signed by the signer can be verified by the derived public key.
+	signer, err := jwtutil.NewSignerFromKeyInfo(ctx, info)
+	if err != nil {
+		t.Fatalf("NewSignerFromKeyInfo: %v", err)
+	}
+	token, err := signerConfig().Builder(time.Hour).Subject("alice").Build()
+	if err != nil {
+		t.Fatalf("Build: %v", err)
+	}
+	signed, err := signer.Sign(ctx, token)
+	if err != nil {
+		t.Fatalf("Sign: %v", err)
+	}
+
+	set := jwk.NewSet()
+	if err := set.AddKey(pub); err != nil {
+		t.Fatalf("AddKey: %v", err)
+	}
+	validator := jwtutil.NewValidator(set)
+	parsed, err := validator.ParseAndValidate(ctx, signed)
+	if err != nil {
+		t.Fatalf("ParseAndValidate failed: %v", err)
+	}
+	sub, _ := parsed.Subject()
+	if sub != "alice" {
+		t.Errorf("subject = %q, want alice", sub)
 	}
 }
 

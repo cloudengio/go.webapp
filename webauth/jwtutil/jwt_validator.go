@@ -41,8 +41,12 @@ func (v validator) ParseAndValidate(ctx context.Context, tokenBytes []byte, vali
 	return token, nil
 }
 
+// Parse verifies the signature of tokenBytes using the validator's key set
+// and returns it without validating any of its claims, which is left to
+// Validate so that caller-supplied validation options (including any
+// allowance for clock skew) are applied.
 func (v validator) Parse(_ context.Context, tokenBytes []byte) (jwt.Token, error) {
-	return jwt.Parse(tokenBytes, jwt.WithKeySet(v.set))
+	return jwt.Parse(tokenBytes, jwt.WithKeySet(v.set), jwt.WithValidate(false))
 }
 
 func (v validator) Validate(_ context.Context, token jwt.Token, validators ...jwt.ValidateOption) error {
