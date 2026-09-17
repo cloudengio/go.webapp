@@ -49,6 +49,13 @@ claim.
 
 
 ## Functions
+### Func CloneKeyInfoForPublicKey
+```go
+func CloneKeyInfoForPublicKey(info keys.Info) keys.Info
+```
+CloneKeyInfoForPublicKey returns a copy of the key info without the private
+key material, suitable for use as a public key.
+
 ### Func ContextWithToken
 ```go
 func ContextWithToken(ctx context.Context, key string, tok jwt.Token) context.Context
@@ -186,10 +193,12 @@ Name returns the name of the cookie that tokens are issued in.
 ```go
 func (cs *CookieSigner) NewToken(subject string, claims map[string]any) (jwt.Token, error)
 ```
-NewToken returns a token for subject with the issuer, audience and duration
-specified by the configuration along with any additional claims supplied.
-If claims contains any reserved standard JWT claims (iss, sub, aud, exp,
-nbf, iat, jti), ErrReservedClaim is returned.
+NewToken returns a token for subject with the issuer, audience,
+subject, claims and duration specified by the configuration (see
+JWTSignerConfig.Builder), along with any additional claims supplied here.
+subject and claims, if not empty, override the configured ones. If claims
+contains any reserved standard JWT claims (iss, sub, aud, exp, nbf, iat,
+jti), ErrReservedClaim is returned.
 
 
 ```go
@@ -299,13 +308,29 @@ algorithm name using algoRegistry, see NewED25519KeyInfo/ED25519 for the
 pattern to follow when adding another algorithm.
 
 
+### Type JWTCookieConfig
+```go
+type JWTCookieConfig struct {
+	Name                     string `yaml:"name" doc:"cookie-name,jwt,name of the authentication cookie to set"`
+	cookies.ScopeAndDuration `yaml:",inline" doc:"cookie and token scope and duration"`
+	Insecure                 bool `yaml:"insecure" doc:"insecure,false,whether to allow insecure (non-HTTPS) connections"`
+}
+```
+
+### Methods
+
+```go
+func (c JWTCookieConfig) Validate() error
+```
+
+
+
+
 ### Type JWTCookieSignerConfig
 ```go
 type JWTCookieSignerConfig struct {
-	Name                     string        `yaml:"name" doc:"cookie name"`
-	ValidationTimeSkew       time.Duration `yaml:"validation_time_skew" doc:"allowed time skew for cookie and token validation"`
-	cookies.ScopeAndDuration `yaml:",inline" doc:"cookie and token scope and duration"`
-	JWTSignerConfig          `yaml:",inline" doc:"jwt info"`
+	JWTCookieConfig `yaml:"cookie" doc:"jwt cookie config"`
+	JWTSignerConfig `yaml:",inline" doc:"jwt info"`
 }
 ```
 JWTCookieSignerConfig provides configuration for a cookie storing a JWT.
@@ -328,10 +353,12 @@ func (c JWTCookieSignerConfig) Validate() error
 func (c JWTCookieSignerConfig) VerifierConfig() JWTCookieVerifierConfig
 ```
 VerifierConfig returns the cookie verifier configuration implied by the
-cookie signer configuration, ie. the same cookie name, scope, duration, time
-skew, issuer and audience with the signing key as the sole verification key.
-It is intended for use by a service that both issues and verifies its own
-cookies.
+cookie signer configuration, ie. the same cookie name, scope, duration,
+insecure setting, issuer and audience with the signing key as the sole
+verification key. Its ValidationTimeSkew is left at zero: a signer
+validating tokens that it issued itself has no need to allow for clock drift
+between machines. It is intended for use by a service that both issues and
+verifies its own cookies.
 
 
 
@@ -339,10 +366,9 @@ cookies.
 ### Type JWTCookieVerifierConfig
 ```go
 type JWTCookieVerifierConfig struct {
-	Name                     string        `yaml:"name" doc:"cookie name"`
-	ValidationTimeSkew       time.Duration `yaml:"validation_time_skew" doc:"allowed time skew for cookie and token validation"`
-	cookies.ScopeAndDuration `yaml:",inline" doc:"cookie and token scope and duration"`
-	JWTVerifierConfig        `yaml:",inline" doc:"jwt info"`
+	JWTCookieConfig    `yaml:"cookie" doc:"jwt cookie config"`
+	ValidationTimeSkew time.Duration `yaml:"validation_time_skew" doc:"allowed time skew for cookie and token validation"`
+	JWTVerifierConfig  `yaml:",inline" doc:"jwt info"`
 }
 ```
 JWTCookieVerifierConfig provides configuration for verifying a JWT stored in
@@ -387,44 +413,11 @@ WithAudience sets the "aud" claim of issued tokens.
 
 
 ```go
-func WithClaim(key string, value any) JWTIssuerOption
-```
-WithClaim adds or replaces a custom claim in issued tokens. If key is
-a reserved standard JWT claim (iss, sub, aud, exp, nbf, iat, jti),
-NewJWTIssuer returns ErrReservedClaim.
-
-
-```go
 func WithClaims(claims map[string]any) JWTIssuerOption
 ```
 WithClaims adds or replaces multiple custom claims in issued tokens.
 If any key is a reserved standard JWT claim (iss, sub, aud, exp, nbf, iat,
 jti), NewJWTIssuer returns ErrReservedClaim.
-
-
-```go
-func WithCookie(name string) JWTIssuerOption
-```
-WithCookie configures the handler to set the token in a secure HTTP cookie
-with the given name (alias for WithSecureCookie).
-
-
-```go
-func WithCookieDomain(domain string) JWTIssuerOption
-```
-WithCookieDomain sets the Domain attribute for issued cookies.
-
-
-```go
-func WithCookiePath(path string) JWTIssuerOption
-```
-WithCookiePath sets the Path attribute for issued cookies. Defaults to "/".
-
-
-```go
-func WithCookieSameSite(sameSite http.SameSite) JWTIssuerOption
-```
-WithCookieSameSite sets the SameSite attribute for issued cookies.
 
 
 ```go
@@ -448,12 +441,14 @@ WithExpiresIn is an alias for WithExpiration.
 
 
 ```go
-func WithInsecureCookie(name string) JWTIssuerOption
+func WithInsecureCookie(name string, scope cookies.ScopeAndDuration) JWTIssuerOption
 ```
-WithInsecureCookie configures the handler to set the token in a plain
-HTTP cookie without forcing Secure and SameSiteStrictMode attributes. A
-subsequent WithCookieSameSite option can be used to set a specific SameSite
-mode. Only one cookie option may be specified.
+WithInsecureCookie configures the handler to set the token in a plain HTTP
+cookie (see cookies.T) named name, scoped and expiring as specified by
+scope, without the Secure, HttpOnly or SameSiteStrictMode attributes that
+WithSecureCookie applies. If scope.Duration is zero, the cookie expires
+along with the token itself (see WithExpiration). Only one cookie option may
+be specified.
 
 
 ```go
@@ -505,10 +500,12 @@ handler falls back to WithRedirect (if configured).
 
 
 ```go
-func WithSecureCookie(name string) JWTIssuerOption
+func WithSecureCookie(name string, scope cookies.ScopeAndDuration) JWTIssuerOption
 ```
 WithSecureCookie configures the handler to set the token in a secure HTTP
-cookie with the given name. Only one cookie option may be specified.
+cookie (see cookies.Secure) named name, scoped and expiring as specified by
+scope. If scope.Duration is zero, the cookie expires along with the token
+itself (see WithExpiration). Only one cookie option may be specified.
 
 
 ```go
@@ -522,9 +519,12 @@ WithSubject sets the "sub" claim of issued tokens.
 ### Type JWTSignerConfig
 ```go
 type JWTSignerConfig struct {
-	Issuer     string       `yaml:"jwt_issuer" doc:"jwt issuer"`
-	Audience   []string     `yaml:"jwt_audience" doc:"jwt audience"`
-	SigningKey keys.KeySpec `yaml:"jwt_signing_key" doc:"jwt signing key spec"`
+	Issuer     string            `yaml:"jwt_issuer" doc:"jwt issuer"`
+	Audience   []string          `yaml:"jwt_audience" doc:"jwt audience"`
+	Duration   time.Duration     `yaml:"jwt_duration" doc:"duration,24h,validity duration of the issued JWT"`
+	Subject    string            `yaml:"jwt_subject" doc:"jwt subject, always included as 'sub' claim if provided"`
+	Claims     map[string]string `yaml:"jwt_claims" doc:"additional claims to include in issued JWTs"`
+	SigningKey keys.KeySpec      `yaml:"jwt_signing_key" doc:"jwt signing key spec"`
 }
 ```
 JWTSignerConfig provides configuration for signing JSON Web Tokens (JWTs).
@@ -534,9 +534,13 @@ JWTSignerConfig provides configuration for signing JSON Web Tokens (JWTs).
 ```go
 func (c JWTSignerConfig) Builder(expiresIn time.Duration) *jwt.Builder
 ```
-Builder returns a jwt.Builder with the issued at, issuer and audience claims
-set from the configuration. The expiration claim is set to expiresIn from
-now if it is positive.
+Builder returns a jwt.Builder with the issued at, issuer, audience, subject
+and claims set from the configuration; subject and claims are only set if
+configured, and either can still be overridden by the caller before Build,
+since a later call to Subject or Claim on the same builder simply replaces
+the earlier one. The expiration claim is set to expiresIn from now if it
+is positive, or to c.Duration from now if expiresIn is not positive and
+c.Duration is.
 
 
 ```go
@@ -557,9 +561,9 @@ func (c JWTSignerConfig) Validate() error
 func (c JWTSignerConfig) VerifierConfig() JWTVerifierConfig
 ```
 VerifierConfig returns the verifier configuration implied by the signer
-configuration, namely the same issuer and audience with the signing key as
-the sole verification key. It is intended for use by a service that both
-issues and verifies its own tokens.
+configuration, namely the same issuer, audience, subject and claims,
+with the signing key as the sole verification key. It is intended for use by
+a service that both issues and verifies its own tokens.
 
 
 
@@ -567,9 +571,11 @@ issues and verifies its own tokens.
 ### Type JWTVerifierConfig
 ```go
 type JWTVerifierConfig struct {
-	Issuer           string         `yaml:"jwt_issuer" doc:"jwt issuer"`
-	Audience         []string       `yaml:"jwt_audience" doc:"jwt audience"`
-	VerificationKeys []keys.KeySpec `yaml:"jwt_verification_keys" doc:"jwt verification key specs"`
+	Issuer           string            `yaml:"jwt_issuer" doc:"jwt issuer"`
+	Audience         []string          `yaml:"jwt_audience" doc:"jwt audience"`
+	Subject          string            `yaml:"jwt_subject" doc:"jwt subject, always expected as 'sub' claim if provided"`
+	Claims           map[string]string `yaml:"jwt_claims" doc:"additional claims to expect in the JWT"`
+	VerificationKeys []keys.KeySpec    `yaml:"jwt_verification_keys" doc:"jwt verification key specs"`
 }
 ```
 JWTVerifierConfig provides configuration for verifying JSON Web Tokens
@@ -603,7 +609,12 @@ func (c JWTVerifierConfig) ValidateOptions() []jwt.ValidateOption
 ```
 ValidateOptions returns the validation options implied by the configuration,
 namely that a token must have been issued by the configured issuer and must
-be intended for at least one of the configured audiences.
+be intended for at least one of the configured audiences. Claims entries
+that shadow a reserved claim (see ErrReservedClaim) are skipped: Validate
+already rejects a configuration containing one, but ValidateOptions may be
+called independently of Validate, and standard claims like exp/nbf/iat are
+not strings, so a jwt.WithClaimValue for one would never match and would
+silently reject every otherwise-valid token.
 
 
 

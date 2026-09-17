@@ -106,6 +106,7 @@ func (d ScopeAndDuration) SetDefaults(domain, path string, duration time.Duratio
 
 // Cookie returns a new http.Cookie with the specified value and the
 // scope and duration settings from the ScopeAndDuration receiver.
+// Secure and HttpOnly are set to true, and SameSite is set to Strict mode.
 func (d ScopeAndDuration) Cookie(value string) *http.Cookie {
 	return &http.Cookie{
 		Domain:   d.Domain,

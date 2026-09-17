@@ -33,6 +33,32 @@ func isReservedClaim(key string) bool {
 	}
 }
 
+// setNamedCookie sets ck under name, honoring insecure: by default the cookie
+// is set securely (HttpOnly, Secure, SameSiteStrictMode, matching
+// cookies.ScopeAndDuration.Cookie's own defaults); when insecure is true,
+// those attributes are cleared from ck first so that it is sent over plain
+// HTTP too.
+func setNamedCookie(rw http.ResponseWriter, name string, insecure bool, ck *http.Cookie) { //nolint:gosec // G124: insecure is an explicit, documented opt-in.
+	if insecure {
+		ck.Secure = false
+		ck.HttpOnly = false
+		ck.SameSite = http.SameSiteDefaultMode
+		cookies.T(name).Set(rw, ck)
+		return
+	}
+	cookies.Secure(name).Set(rw, ck)
+}
+
+// readNamedCookie reads the cookie named name from r; insecure only affects
+// which cookies.T-like type is used, which does not itself change how a
+// cookie is read.
+func readNamedCookie(r *http.Request, name string, insecure bool) (string, bool) {
+	if insecure {
+		return cookies.T(name).Read(r)
+	}
+	return cookies.Secure(name).Read(r)
+}
+
 // CookieSigner issues JWTs carried in a named, secure, cookie as specified by a
 // JWTCookieSignerConfig. It is also a Validator for the tokens that it issues,
 // applying the same issuer, audience and clock skew checks as the
@@ -63,9 +89,6 @@ func (c JWTCookieSignerConfig) NewCookieSigner(ctx context.Context) (*CookieSign
 		return nil, err
 	}
 	opts := c.JWTSignerConfig.VerifierConfig().ValidateOptions()
-	if c.ValidationTimeSkew > 0 {
-		opts = append(opts, jwt.WithAcceptableSkew(c.ValidationTimeSkew))
-	}
 	return &CookieSigner{
 		Signer:   signer,
 		verifier: newVerifier(set, opts),
@@ -75,15 +98,15 @@ func (c JWTCookieSignerConfig) NewCookieSigner(ctx context.Context) (*CookieSign
 
 // VerifierConfig returns the cookie verifier configuration implied by the
 // cookie signer configuration, ie. the same cookie name, scope, duration,
-// time skew, issuer and audience with the signing key as the sole verification
-// key. It is intended for use by a service that both issues and verifies its
-// own cookies.
+// insecure setting, issuer and audience with the signing key as the sole
+// verification key. Its ValidationTimeSkew is left at zero: a signer
+// validating tokens that it issued itself has no need to allow for clock
+// drift between machines. It is intended for use by a service that both
+// issues and verifies its own cookies.
 func (c JWTCookieSignerConfig) VerifierConfig() JWTCookieVerifierConfig {
 	return JWTCookieVerifierConfig{
-		Name:               c.Name,
-		ValidationTimeSkew: c.ValidationTimeSkew,
-		ScopeAndDuration:   c.SetDefaults("", "/", 0),
-		JWTVerifierConfig:  c.JWTSignerConfig.VerifierConfig(),
+		JWTCookieConfig:   c.JWTCookieConfig,
+		JWTVerifierConfig: c.JWTSignerConfig.VerifierConfig(),
 	}
 }
 
@@ -92,17 +115,20 @@ func (cs *CookieSigner) Name() string {
 	return cs.cfg.Name
 }
 
-// NewToken returns a token for subject with the issuer, audience and duration
-// specified by the configuration along with any additional claims supplied.
-// If claims contains any reserved standard JWT claims (iss, sub, aud, exp, nbf,
-// iat, jti), ErrReservedClaim is returned.
+// NewToken returns a token for subject with the issuer, audience, subject,
+// claims and duration specified by the configuration (see
+// JWTSignerConfig.Builder), along with any additional claims supplied here.
+// subject and claims, if not empty, override the configured ones. If claims
+// contains any reserved standard JWT claims (iss, sub, aud, exp, nbf, iat,
+// jti), ErrReservedClaim is returned.
 func (cs *CookieSigner) NewToken(subject string, claims map[string]any) (jwt.Token, error) {
 	for k := range claims {
 		if isReservedClaim(k) {
 			return nil, fmt.Errorf("%w: %q cannot be overridden", ErrReservedClaim, k)
 		}
 	}
-	builder := cs.cfg.Builder(cs.cfg.Duration)
+	// 0 lets Builder apply its own configured Duration as the expiration.
+	builder := cs.cfg.Builder(0)
 	if subject != "" {
 		builder.Subject(subject)
 	}
@@ -121,8 +147,13 @@ func (cs *CookieSigner) Cookie(ctx context.Context, token jwt.Token) (*http.Cook
 	}
 	ck := cs.cfg.Cookie(string(signed)) //nolint:gosec // G124: cookies.ScopeAndDuration.Cookie sets Secure, HttpOnly and SameSiteStrictMode.
 	ck.Name = cs.cfg.Name
-	if cs.cfg.Duration > 0 {
-		ck.MaxAge = int(cs.cfg.Duration.Seconds())
+	// The cookie's own lifetime (JWTCookieConfig.Duration, via
+	// ScopeAndDuration) is distinct from, and must be named explicitly to
+	// avoid being shadowed by, the JWT's own validity duration
+	// (JWTSignerConfig.Duration): JWTCookieSignerConfig embeds both, and the
+	// latter is shallower so it wins any unqualified cs.cfg.Duration.
+	if d := cs.cfg.JWTCookieConfig.Duration; d > 0 {
+		ck.MaxAge = int(d.Seconds())
 	}
 	return ck, nil
 }
@@ -133,7 +164,7 @@ func (cs *CookieSigner) SetCookie(ctx context.Context, rw http.ResponseWriter, t
 	if err != nil {
 		return err
 	}
-	cookies.Secure(cs.cfg.Name).Set(rw, ck)
+	setNamedCookie(rw, cs.cfg.Name, cs.cfg.Insecure, ck)
 	return nil
 }
 
@@ -197,7 +228,7 @@ func (cv *CookieVerifier) Name() string {
 // the token that it contains. ErrNoCookie is returned if the request does not
 // carry the cookie.
 func (cv *CookieVerifier) ValidateRequest(ctx context.Context, r *http.Request, validators ...jwt.ValidateOption) (jwt.Token, error) {
-	value, ok := cookies.Secure(cv.cfg.Name).Read(r)
+	value, ok := readNamedCookie(r, cv.cfg.Name, cv.cfg.Insecure)
 	if !ok {
 		return nil, fmt.Errorf("%w: %v", ErrNoCookie, cv.cfg.Name)
 	}
@@ -209,5 +240,5 @@ func (cv *CookieVerifier) ClearCookie(rw http.ResponseWriter) {
 	ck := cv.cfg.Cookie("") //nolint:gosec // G124: the cookie is being deleted.
 	ck.Expires = time.Time{}
 	ck.MaxAge = -1
-	cookies.Secure(cv.cfg.Name).Set(rw, ck)
+	setNamedCookie(rw, cv.cfg.Name, cv.cfg.Insecure, ck)
 }

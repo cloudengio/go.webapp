@@ -7,7 +7,9 @@ package jwtutil
 import (
 	"context"
 	"fmt"
+	"maps"
 	"slices"
+	"sort"
 	"time"
 
 	"cloudeng.io/cmdutil/keys"
@@ -34,12 +36,25 @@ func SignerForKey(ctx context.Context, spec keys.KeySpec) (Signer, error) {
 	return NewSignerFromContext(ctx, spec.User, spec.ID)
 }
 
-// Builder returns a jwt.Builder with the issued at, issuer and audience claims
-// set from the configuration. The expiration claim is set to expiresIn from now
-// if it is positive.
+// Builder returns a jwt.Builder with the issued at, issuer, audience, subject
+// and claims set from the configuration; subject and claims are only set if
+// configured, and either can still be overridden by the caller before Build,
+// since a later call to Subject or Claim on the same builder simply replaces
+// the earlier one. The expiration claim is set to expiresIn from now if it is
+// positive, or to c.Duration from now if expiresIn is not positive and
+// c.Duration is.
 func (c JWTSignerConfig) Builder(expiresIn time.Duration) *jwt.Builder {
 	now := time.Now()
 	builder := jwt.NewBuilder().IssuedAt(now).Issuer(c.Issuer).Audience(slices.Clone(c.Audience))
+	if c.Subject != "" {
+		builder.Subject(c.Subject)
+	}
+	for k, v := range c.Claims {
+		builder.Claim(k, v)
+	}
+	if expiresIn <= 0 {
+		expiresIn = c.Duration
+	}
 	if expiresIn > 0 {
 		builder.Expiration(now.Add(expiresIn))
 	}
@@ -47,13 +62,15 @@ func (c JWTSignerConfig) Builder(expiresIn time.Duration) *jwt.Builder {
 }
 
 // VerifierConfig returns the verifier configuration implied by the signer
-// configuration, namely the same issuer and audience with the signing key as
-// the sole verification key. It is intended for use by a service that both
-// issues and verifies its own tokens.
+// configuration, namely the same issuer, audience, subject and claims, with
+// the signing key as the sole verification key. It is intended for use by a
+// service that both issues and verifies its own tokens.
 func (c JWTSignerConfig) VerifierConfig() JWTVerifierConfig {
 	return JWTVerifierConfig{
 		Issuer:           c.Issuer,
 		Audience:         slices.Clone(c.Audience),
+		Subject:          c.Subject,
+		Claims:           maps.Clone(c.Claims),
 		VerificationKeys: []keys.KeySpec{c.SigningKey},
 	}
 }
@@ -130,7 +147,12 @@ func keySetForKeys(ctx context.Context, specs []keys.KeySpec) (jwk.Set, error) {
 
 // ValidateOptions returns the validation options implied by the configuration,
 // namely that a token must have been issued by the configured issuer and must
-// be intended for at least one of the configured audiences.
+// be intended for at least one of the configured audiences. Claims entries
+// that shadow a reserved claim (see ErrReservedClaim) are skipped: Validate
+// already rejects a configuration containing one, but ValidateOptions may be
+// called independently of Validate, and standard claims like exp/nbf/iat are
+// not strings, so a jwt.WithClaimValue for one would never match and would
+// silently reject every otherwise-valid token.
 func (c JWTVerifierConfig) ValidateOptions() []jwt.ValidateOption {
 	var opts []jwt.ValidateOption
 	if c.Issuer != "" {
@@ -138,6 +160,20 @@ func (c JWTVerifierConfig) ValidateOptions() []jwt.ValidateOption {
 	}
 	if len(c.Audience) > 0 {
 		opts = append(opts, jwt.WithValidator(audienceValidator(c.Audience)))
+	}
+	if c.Subject != "" {
+		opts = append(opts, jwt.WithSubject(c.Subject))
+	}
+	claimKeys := make([]string, 0, len(c.Claims))
+	for k := range c.Claims {
+		if isReservedClaim(k) {
+			continue
+		}
+		claimKeys = append(claimKeys, k)
+	}
+	sort.Strings(claimKeys)
+	for _, k := range claimKeys {
+		opts = append(opts, jwt.WithClaimValue(k, c.Claims[k]))
 	}
 	return opts
 }

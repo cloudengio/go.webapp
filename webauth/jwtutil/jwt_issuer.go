@@ -30,10 +30,8 @@ type jwtIssuerOptions struct {
 	notBeforeSet      bool
 	claims            map[string]any
 	cookieName        string
-	cookieSecure      bool
-	cookiePath        string
-	cookieDomain      string
-	cookieSameSite    http.SameSite
+	cookieScope       cookies.ScopeAndDuration
+	cookieInsecure    bool
 	hasSecureCookie   bool
 	hasInsecureCookie bool
 	cookieCount       int
@@ -48,12 +46,9 @@ type jwtIssuerOptions struct {
 
 func defaultJWTIssuerOptions() jwtIssuerOptions {
 	return jwtIssuerOptions{
-		expiration:     time.Hour,
-		cookieSecure:   true,
-		cookiePath:     "/",
-		cookieSameSite: http.SameSiteStrictMode,
-		claims:         make(map[string]any),
-		logger:         slog.New(slog.DiscardHandler),
+		expiration: time.Hour,
+		claims:     make(map[string]any),
+		logger:     slog.New(slog.DiscardHandler),
 	}
 }
 
@@ -99,15 +94,6 @@ func WithNotBefore(offset time.Duration) JWTIssuerOption {
 	}
 }
 
-// WithClaim adds or replaces a custom claim in issued tokens. If key is a
-// reserved standard JWT claim (iss, sub, aud, exp, nbf, iat, jti), NewJWTIssuer
-// returns ErrReservedClaim.
-func WithClaim(key string, value any) JWTIssuerOption {
-	return func(o *jwtIssuerOptions) {
-		o.claims[key] = value
-	}
-}
-
 // WithClaims adds or replaces multiple custom claims in issued tokens. If any
 // key is a reserved standard JWT claim (iss, sub, aud, exp, nbf, iat, jti),
 // NewJWTIssuer returns ErrReservedClaim.
@@ -117,56 +103,33 @@ func WithClaims(claims map[string]any) JWTIssuerOption {
 	}
 }
 
-// WithCookie configures the handler to set the token in a secure HTTP cookie
-// with the given name (alias for WithSecureCookie).
-func WithCookie(name string) JWTIssuerOption {
-	return WithSecureCookie(name)
-}
-
 // WithSecureCookie configures the handler to set the token in a secure HTTP
-// cookie with the given name. Only one cookie option may be specified.
-func WithSecureCookie(name string) JWTIssuerOption {
+// cookie (see cookies.Secure) named name, scoped and expiring as specified by
+// scope. If scope.Duration is zero, the cookie expires along with the token
+// itself (see WithExpiration). Only one cookie option may be specified.
+func WithSecureCookie(name string, scope cookies.ScopeAndDuration) JWTIssuerOption {
 	return func(o *jwtIssuerOptions) {
 		o.cookieName = name
-		o.cookieSecure = true
-		o.cookieSameSite = http.SameSiteStrictMode
+		o.cookieScope = scope
+		o.cookieInsecure = false
 		o.hasSecureCookie = true
 		o.cookieCount++
 	}
 }
 
-// WithInsecureCookie configures the handler to set the token in a plain HTTP cookie
-// without forcing Secure and SameSiteStrictMode attributes. A subsequent
-// WithCookieSameSite option can be used to set a specific SameSite mode.
-// Only one cookie option may be specified.
-func WithInsecureCookie(name string) JWTIssuerOption {
+// WithInsecureCookie configures the handler to set the token in a plain HTTP
+// cookie (see cookies.T) named name, scoped and expiring as specified by
+// scope, without the Secure, HttpOnly or SameSiteStrictMode attributes that
+// WithSecureCookie applies. If scope.Duration is zero, the cookie expires
+// along with the token itself (see WithExpiration). Only one cookie option
+// may be specified.
+func WithInsecureCookie(name string, scope cookies.ScopeAndDuration) JWTIssuerOption {
 	return func(o *jwtIssuerOptions) {
 		o.cookieName = name
-		o.cookieSecure = false
-		o.cookieSameSite = 0
+		o.cookieScope = scope
+		o.cookieInsecure = true
 		o.hasInsecureCookie = true
 		o.cookieCount++
-	}
-}
-
-// WithCookiePath sets the Path attribute for issued cookies. Defaults to "/".
-func WithCookiePath(path string) JWTIssuerOption {
-	return func(o *jwtIssuerOptions) {
-		o.cookiePath = path
-	}
-}
-
-// WithCookieDomain sets the Domain attribute for issued cookies.
-func WithCookieDomain(domain string) JWTIssuerOption {
-	return func(o *jwtIssuerOptions) {
-		o.cookieDomain = domain
-	}
-}
-
-// WithCookieSameSite sets the SameSite attribute for issued cookies.
-func WithCookieSameSite(sameSite http.SameSite) JWTIssuerOption {
-	return func(o *jwtIssuerOptions) {
-		o.cookieSameSite = sameSite
 	}
 }
 
@@ -264,7 +227,7 @@ func NewJWTIssuer(signer Signer, opts ...JWTIssuerOption) (http.Handler, error) 
 	}
 	for k := range o.claims {
 		if isReservedClaim(k) {
-			return nil, fmt.Errorf("%w: claim %q cannot be overridden via WithClaim/WithClaims", ErrReservedClaim, k)
+			return nil, fmt.Errorf("%w: claim %q cannot be overridden via WithClaims", ErrReservedClaim, k)
 		}
 	}
 	if !o.directSet && o.cookieName == "" {
@@ -351,28 +314,18 @@ func (h *jwtIssuerHandler) createToken(r *http.Request) ([]byte, error) {
 	return h.signer.Sign(r.Context(), tok)
 }
 
+// setCookie signs no further data but builds and sets the cookie carrying
+// tokenStr, scoped and expiring as configured. If the cookie's own duration
+// was left unset, it defaults to the token's own expiration (WithExpiration),
+// so the two coincide unless a caller deliberately configures the cookie to
+// outlive, or expire before, the token itself.
 func (h *jwtIssuerHandler) setCookie(w http.ResponseWriter, tokenStr string) {
-	ck := &http.Cookie{ //nolint:gosec // G124: secure attributes managed by cookies.Secure or handler options.
-		Path:     h.opts.cookiePath,
-		Domain:   h.opts.cookieDomain,
-		Value:    tokenStr,
-		SameSite: h.opts.cookieSameSite,
+	scope := h.opts.cookieScope.SetDefaults("", "/", h.opts.expiration)
+	ck := scope.Cookie(tokenStr) //nolint:gosec // G124: Secure, HttpOnly and SameSite are set by setNamedCookie according to h.opts.cookieInsecure.
+	if scope.Duration > 0 {
+		ck.MaxAge = int(scope.Duration.Seconds())
 	}
-	if h.opts.expiration > 0 {
-		ck.Expires = time.Now().Add(h.opts.expiration)
-		ck.MaxAge = int(h.opts.expiration.Seconds())
-	}
-	if h.opts.cookieSecure {
-		if h.opts.cookieSameSite == http.SameSiteStrictMode {
-			cookies.Secure(h.opts.cookieName).Set(w, ck)
-		} else {
-			ck.Secure = true
-			ck.HttpOnly = true
-			cookies.T(h.opts.cookieName).Set(w, ck)
-		}
-	} else {
-		cookies.T(h.opts.cookieName).Set(w, ck)
-	}
+	setNamedCookie(w, h.opts.cookieName, h.opts.cookieInsecure, ck)
 }
 
 func (h *jwtIssuerHandler) getRedirectURL(r *http.Request) string {

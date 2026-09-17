@@ -13,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	"cloudeng.io/webapp/cookies"
 	"cloudeng.io/webapp/webauth/jwtutil"
 	"github.com/lestrrat-go/jwx/v3/jwt"
 )
@@ -37,7 +38,7 @@ func TestJWTIssuerDirectText(t *testing.T) {
 		jwtutil.WithIssuer("test-service"),
 		jwtutil.WithAudience("api", "web"),
 		jwtutil.WithExpiration(30*time.Minute),
-		jwtutil.WithClaim("role", "admin"),
+		jwtutil.WithClaims(map[string]any{"role": "admin"}),
 	)
 
 	req := httptest.NewRequest(http.MethodGet, "/token", nil)
@@ -147,7 +148,7 @@ func TestJWTIssuerSecureCookie(t *testing.T) {
 	t.Run("default attributes", func(t *testing.T) {
 		handler := jwtutil.NewJWTIssuerMust(signer,
 			jwtutil.WithSubject("cookie-user"),
-			jwtutil.WithCookie("session_token"),
+			jwtutil.WithSecureCookie("session_token", cookies.ScopeAndDuration{}),
 			jwtutil.WithExpiration(2*time.Hour),
 		)
 
@@ -159,20 +160,28 @@ func TestJWTIssuerSecureCookie(t *testing.T) {
 			t.Fatalf("got status %d, want %d", got, want)
 		}
 
-		cookies := w.Result().Cookies()
+		respCookies := w.Result().Cookies()
 		var sessionCookie *http.Cookie
-		for _, c := range cookies {
+		for _, c := range respCookies {
 			if c.Name == "session_token" {
 				sessionCookie = c
 				break
 			}
 		}
 		if sessionCookie == nil {
-			t.Fatalf("expected cookie session_token in response, got %v", cookies)
+			t.Fatalf("expected cookie session_token in response, got %v", respCookies)
 		}
 		if !sessionCookie.Secure || !sessionCookie.HttpOnly || sessionCookie.SameSite != http.SameSiteStrictMode {
 			t.Errorf("cookie missing secure flags: Secure=%v, HttpOnly=%v, SameSite=%v",
 				sessionCookie.Secure, sessionCookie.HttpOnly, sessionCookie.SameSite)
+		}
+		if sessionCookie.Path != "/" {
+			t.Errorf(`got cookie path %q, want default "/"`, sessionCookie.Path)
+		}
+		// The cookie's own duration was left unset, so it defaults to the
+		// token's own expiration.
+		if want := int((2 * time.Hour).Seconds()); sessionCookie.MaxAge != want {
+			t.Errorf("got cookie MaxAge %d, want %d", sessionCookie.MaxAge, want)
 		}
 
 		tok, err := signer.ParseAndValidate(req.Context(), []byte(sessionCookie.Value))
@@ -185,26 +194,33 @@ func TestJWTIssuerSecureCookie(t *testing.T) {
 		}
 	})
 
-	t.Run("with SameSite override", func(t *testing.T) {
+	t.Run("explicit scope overrides defaults", func(t *testing.T) {
 		handler := jwtutil.NewJWTIssuerMust(signer,
-			jwtutil.WithSubject("secure-lax-user"),
-			jwtutil.WithSecureCookie("secure_lax"),
-			jwtutil.WithCookieSameSite(http.SameSiteLaxMode),
+			jwtutil.WithSubject("secure-scoped-user"),
+			jwtutil.WithSecureCookie("scoped_cookie", cookies.ScopeAndDuration{
+				Domain:   "app.example.com",
+				Path:     "/account",
+				Duration: 10 * time.Minute,
+			}),
+			jwtutil.WithExpiration(2*time.Hour),
 		)
 
 		req := httptest.NewRequest(http.MethodGet, "/login", nil)
 		w := httptest.NewRecorder()
 		handler.ServeHTTP(w, req)
 
-		cookies := w.Result().Cookies()
-		if len(cookies) == 0 || cookies[0].Name != "secure_lax" {
-			t.Fatalf("expected secure_lax cookie, got %v", cookies)
+		respCookies := w.Result().Cookies()
+		if len(respCookies) == 0 || respCookies[0].Name != "scoped_cookie" {
+			t.Fatalf("expected scoped_cookie, got %v", respCookies)
 		}
-		if !cookies[0].Secure {
-			t.Errorf("expected Secure=true for secure cookie")
+		got := respCookies[0]
+		if got.Domain != "app.example.com" || got.Path != "/account" {
+			t.Errorf("got domain=%q path=%q, want domain=%q path=%q", got.Domain, got.Path, "app.example.com", "/account")
 		}
-		if cookies[0].SameSite != http.SameSiteLaxMode {
-			t.Errorf("got SameSite %v, want SameSiteLaxMode (%v)", cookies[0].SameSite, http.SameSiteLaxMode)
+		// The cookie's own (shorter) duration, not the token's expiration,
+		// governs its Max-Age.
+		if want := int((10 * time.Minute).Seconds()); got.MaxAge != want {
+			t.Errorf("got cookie MaxAge %d, want %d", got.MaxAge, want)
 		}
 	})
 }
@@ -215,49 +231,52 @@ func TestJWTIssuerInsecureCookie(t *testing.T) {
 	t.Run("default attributes", func(t *testing.T) {
 		handler := jwtutil.NewJWTIssuerMust(signer,
 			jwtutil.WithSubject("insecure-user"),
-			jwtutil.WithInsecureCookie("plain_cookie"),
-			jwtutil.WithCookiePath("/api"),
+			jwtutil.WithInsecureCookie("plain_cookie", cookies.ScopeAndDuration{Path: "/api"}),
 		)
 
 		req := httptest.NewRequest(http.MethodGet, "/login", nil)
 		w := httptest.NewRecorder()
 		handler.ServeHTTP(w, req)
 
-		cookies := w.Result().Cookies()
-		if len(cookies) == 0 || cookies[0].Name != "plain_cookie" {
-			t.Fatalf("expected plain_cookie, got %v", cookies)
+		respCookies := w.Result().Cookies()
+		if len(respCookies) == 0 || respCookies[0].Name != "plain_cookie" {
+			t.Fatalf("expected plain_cookie, got %v", respCookies)
 		}
-		if cookies[0].Path != "/api" {
-			t.Errorf("got cookie path %q, want /api", cookies[0].Path)
+		if respCookies[0].Path != "/api" {
+			t.Errorf("got cookie path %q, want /api", respCookies[0].Path)
 		}
-		if cookies[0].Secure {
-			t.Errorf("expected Secure=false for insecure cookie")
+		if respCookies[0].Secure || respCookies[0].HttpOnly {
+			t.Errorf("expected Secure=false and HttpOnly=false for insecure cookie, got Secure=%v HttpOnly=%v",
+				respCookies[0].Secure, respCookies[0].HttpOnly)
 		}
-		if cookies[0].SameSite != 0 {
-			t.Errorf("got SameSite %v, want 0 (unset)", cookies[0].SameSite)
+		// SameSiteDefaultMode is set internally, but http.Cookie.String omits
+		// the attribute entirely for it, so it round-trips back as the zero
+		// value (unset), letting the browser apply its own default.
+		if respCookies[0].SameSite != 0 {
+			t.Errorf("got SameSite %v, want 0 (unset)", respCookies[0].SameSite)
 		}
 	})
 
-	t.Run("with SameSite override", func(t *testing.T) {
+	t.Run("cookie duration independent of token expiration", func(t *testing.T) {
 		handler := jwtutil.NewJWTIssuerMust(signer,
-			jwtutil.WithSubject("insecure-lax-user"),
-			jwtutil.WithInsecureCookie("plain_lax"),
-			jwtutil.WithCookieSameSite(http.SameSiteLaxMode),
+			jwtutil.WithSubject("insecure-scoped-user"),
+			jwtutil.WithInsecureCookie("plain_scoped", cookies.ScopeAndDuration{Duration: 5 * time.Minute}),
+			jwtutil.WithExpiration(time.Hour),
 		)
 
 		req := httptest.NewRequest(http.MethodGet, "/login", nil)
 		w := httptest.NewRecorder()
 		handler.ServeHTTP(w, req)
 
-		cookies := w.Result().Cookies()
-		if len(cookies) == 0 || cookies[0].Name != "plain_lax" {
-			t.Fatalf("expected plain_lax cookie, got %v", cookies)
+		respCookies := w.Result().Cookies()
+		if len(respCookies) == 0 || respCookies[0].Name != "plain_scoped" {
+			t.Fatalf("expected plain_scoped cookie, got %v", respCookies)
 		}
-		if cookies[0].Secure {
+		if respCookies[0].Secure {
 			t.Errorf("expected Secure=false for insecure cookie")
 		}
-		if cookies[0].SameSite != http.SameSiteLaxMode {
-			t.Errorf("got SameSite %v, want SameSiteLaxMode (%v)", cookies[0].SameSite, http.SameSiteLaxMode)
+		if want := int((5 * time.Minute).Seconds()); respCookies[0].MaxAge != want {
+			t.Errorf("got cookie MaxAge %d, want %d", respCookies[0].MaxAge, want)
 		}
 	})
 }
@@ -267,7 +286,7 @@ func TestJWTIssuerRedirect(t *testing.T) {
 
 	t.Run("Static redirect", func(t *testing.T) {
 		handler := jwtutil.NewJWTIssuerMust(signer,
-			jwtutil.WithCookie("session_token"),
+			jwtutil.WithSecureCookie("session_token", cookies.ScopeAndDuration{}),
 			jwtutil.WithRedirect("/dashboard"),
 		)
 
@@ -285,7 +304,7 @@ func TestJWTIssuerRedirect(t *testing.T) {
 
 	t.Run("Dynamic redirect from query parameter", func(t *testing.T) {
 		handler := jwtutil.NewJWTIssuerMust(signer,
-			jwtutil.WithCookie("session_token"),
+			jwtutil.WithSecureCookie("session_token", cookies.ScopeAndDuration{}),
 			jwtutil.WithRedirect("/default"),
 			jwtutil.WithRedirectQueryParam("redirect"),
 		)
@@ -321,7 +340,7 @@ func TestJWTIssuerOpenRedirectPrevention(t *testing.T) {
 	for _, target := range untrusted {
 		t.Run(target, func(t *testing.T) {
 			handler := jwtutil.NewJWTIssuerMust(signer,
-				jwtutil.WithCookie("session_token"),
+				jwtutil.WithSecureCookie("session_token", cookies.ScopeAndDuration{}),
 				jwtutil.WithRedirect("/safe-fallback"),
 				jwtutil.WithRedirectQueryParam("redirect"),
 			)
@@ -341,7 +360,7 @@ func TestJWTIssuerOpenRedirectPrevention(t *testing.T) {
 
 	t.Run("untrusted redirect without fallback does not redirect", func(t *testing.T) {
 		handler := jwtutil.NewJWTIssuerMust(signer,
-			jwtutil.WithCookie("session_token"),
+			jwtutil.WithSecureCookie("session_token", cookies.ScopeAndDuration{}),
 			jwtutil.WithRedirectQueryParam("redirect"),
 		)
 		req := httptest.NewRequest(http.MethodGet, "/login?redirect=https://attacker.example", nil)
@@ -361,7 +380,7 @@ func TestJWTIssuerAllowedRedirects(t *testing.T) {
 	signer := newTestSigner(t)
 
 	handler := jwtutil.NewJWTIssuerMust(signer,
-		jwtutil.WithCookie("session_token"),
+		jwtutil.WithSecureCookie("session_token", cookies.ScopeAndDuration{}),
 		jwtutil.WithRedirect("/safe-fallback"),
 		jwtutil.WithRedirectQueryParam("redirect"),
 		jwtutil.WithAllowedRedirects(
@@ -415,7 +434,7 @@ func TestJWTIssuerBothCookieAndDirect(t *testing.T) {
 	signer := newTestSigner(t)
 	handler := jwtutil.NewJWTIssuerMust(signer,
 		jwtutil.WithSubject("both-user"),
-		jwtutil.WithCookie("session_token"),
+		jwtutil.WithSecureCookie("session_token", cookies.ScopeAndDuration{}),
 		jwtutil.WithDirect(true),
 	)
 
@@ -468,8 +487,8 @@ func TestJWTIssuerMust(t *testing.T) {
 			}
 		}()
 		jwtutil.NewJWTIssuerMust(signer,
-			jwtutil.WithSecureCookie("c1"),
-			jwtutil.WithInsecureCookie("c2"),
+			jwtutil.WithSecureCookie("c1", cookies.ScopeAndDuration{}),
+			jwtutil.WithInsecureCookie("c2", cookies.ScopeAndDuration{}),
 		)
 	})
 }
@@ -483,36 +502,29 @@ func TestJWTIssuerCookieConflicts(t *testing.T) {
 		{
 			name: "both secure and insecure",
 			opts: []jwtutil.JWTIssuerOption{
-				jwtutil.WithSecureCookie("c1"),
-				jwtutil.WithInsecureCookie("c2"),
+				jwtutil.WithSecureCookie("c1", cookies.ScopeAndDuration{}),
+				jwtutil.WithInsecureCookie("c2", cookies.ScopeAndDuration{}),
 			},
 		},
 		{
 			name: "insecure then secure",
 			opts: []jwtutil.JWTIssuerOption{
-				jwtutil.WithInsecureCookie("c1"),
-				jwtutil.WithSecureCookie("c2"),
+				jwtutil.WithInsecureCookie("c1", cookies.ScopeAndDuration{}),
+				jwtutil.WithSecureCookie("c2", cookies.ScopeAndDuration{}),
 			},
 		},
 		{
 			name: "multiple secure",
 			opts: []jwtutil.JWTIssuerOption{
-				jwtutil.WithSecureCookie("c1"),
-				jwtutil.WithSecureCookie("c2"),
+				jwtutil.WithSecureCookie("c1", cookies.ScopeAndDuration{}),
+				jwtutil.WithSecureCookie("c2", cookies.ScopeAndDuration{}),
 			},
 		},
 		{
 			name: "multiple insecure",
 			opts: []jwtutil.JWTIssuerOption{
-				jwtutil.WithInsecureCookie("c1"),
-				jwtutil.WithInsecureCookie("c2"),
-			},
-		},
-		{
-			name: "WithCookie then WithInsecureCookie",
-			opts: []jwtutil.JWTIssuerOption{
-				jwtutil.WithCookie("c1"),
-				jwtutil.WithInsecureCookie("c2"),
+				jwtutil.WithInsecureCookie("c1", cookies.ScopeAndDuration{}),
+				jwtutil.WithInsecureCookie("c2", cookies.ScopeAndDuration{}),
 			},
 		},
 	}
@@ -571,8 +583,8 @@ func TestJWTIssuerCacheControl(t *testing.T) {
 	}{
 		{"direct text", []jwtutil.JWTIssuerOption{jwtutil.WithSubject("u1")}},
 		{"direct json", []jwtutil.JWTIssuerOption{jwtutil.WithSubject("u2"), jwtutil.WithJSON(true)}},
-		{"cookie only", []jwtutil.JWTIssuerOption{jwtutil.WithSubject("u3"), jwtutil.WithCookie("c")}},
-		{"cookie redirect", []jwtutil.JWTIssuerOption{jwtutil.WithSubject("u4"), jwtutil.WithCookie("c"), jwtutil.WithRedirect("/dash")}},
+		{"cookie only", []jwtutil.JWTIssuerOption{jwtutil.WithSubject("u3"), jwtutil.WithSecureCookie("c", cookies.ScopeAndDuration{})}},
+		{"cookie redirect", []jwtutil.JWTIssuerOption{jwtutil.WithSubject("u4"), jwtutil.WithSecureCookie("c", cookies.ScopeAndDuration{}), jwtutil.WithRedirect("/dash")}},
 	}
 
 	for _, tc := range cases {
@@ -603,23 +615,6 @@ func TestJWTIssuerReservedClaims(t *testing.T) {
 	}
 
 	for _, key := range reservedKeys {
-		t.Run("WithClaim/"+key, func(t *testing.T) {
-			_, err := jwtutil.NewJWTIssuer(signer, jwtutil.WithClaim(key, "val"))
-			if err == nil {
-				t.Fatalf("expected error for reserved claim %q, got nil", key)
-			}
-			if !errors.Is(err, jwtutil.ErrReservedClaim) {
-				t.Errorf("expected ErrReservedClaim, got %v", err)
-			}
-			defer func() {
-				r := recover()
-				if r == nil {
-					t.Errorf("expected panic for WithClaim with reserved key %q", key)
-				}
-			}()
-			_ = jwtutil.NewJWTIssuerMust(signer, jwtutil.WithClaim(key, "val"))
-		})
-
 		t.Run("WithClaims/"+key, func(t *testing.T) {
 			_, err := jwtutil.NewJWTIssuer(signer, jwtutil.WithClaims(map[string]any{key: "val"}))
 			if err == nil {

@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"cloudeng.io/cmdutil/keys"
+	"cloudeng.io/webapp/cookies"
 	"cloudeng.io/webapp/webauth/jwtutil"
 	"github.com/lestrrat-go/jwx/v3/jwa"
 	"gopkg.in/yaml.v3"
@@ -33,7 +34,7 @@ func ExampleJWTIssuer() {
 		jwtutil.WithSubject("service-account"),
 		jwtutil.WithIssuer("auth-service"),
 		jwtutil.WithAudience("api.example.com"),
-		jwtutil.WithClaim("role", "reader"),
+		jwtutil.WithClaims(map[string]any{"role": "reader"}),
 		jwtutil.WithExpiration(time.Hour),
 		jwtutil.WithJSON(true),
 	)
@@ -43,9 +44,9 @@ func ExampleJWTIssuer() {
 	// Sets a secure HTTP cookie and redirects the browser to the dashboard.
 	loginIssuer := jwtutil.JWTIssuerMust(signer,
 		jwtutil.WithSubject("local-user"),
-		jwtutil.WithClaim("role", "admin"),
+		jwtutil.WithClaims(map[string]any{"role": "admin"}),
 		jwtutil.WithExpiration(8*time.Hour),
-		jwtutil.WithCookie("session_token"),
+		jwtutil.WithSecureCookie("session_token", cookies.ScopeAndDuration{}),
 		jwtutil.WithRedirect("/dashboard"),
 	)
 	mux.Handle("/login", loginIssuer)

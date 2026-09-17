@@ -14,6 +14,7 @@ import (
 	"cloudeng.io/webapp/webauth/jwtutil"
 	"cloudeng.io/webapp/websec"
 	"github.com/lestrrat-go/jwx/v3/jwk"
+	"github.com/lestrrat-go/jwx/v3/jwt"
 )
 
 func ExampleNewLocalhostHandler() {
@@ -34,7 +35,7 @@ func ExampleNewLocalhostHandler() {
 
 	secured := websec.NewLocalhostHandler(appHandler,
 		websec.WithAllowedPorts(8080),
-		websec.WithJWTCookie("session_token", validator, "role", "admin"),
+		websec.WithJWTCookie("session_token", validator, jwt.WithClaimValue("role", "admin")),
 	)
 
 	// 3. Deliver a token to the browser as the cookie the middleware reads.

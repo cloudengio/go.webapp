@@ -428,32 +428,74 @@ func TestConfigValidate(t *testing.T) {
 	}
 
 	csc := cookieSignerConfig()
-	noName, negativeSkew, zeroDuration := csc, csc, csc
+	noName, zeroDuration := csc, csc
 	noName.Name = ""
-	negativeSkew.ValidationTimeSkew = -time.Second
-	zeroDuration.Duration = 0
-	for _, cfg := range []jwtutil.JWTCookieSignerConfig{noName, negativeSkew, zeroDuration} {
+	// JWTCookieConfig.Duration must be named explicitly here: JWTSignerConfig
+	// now has its own, shallower Duration, which an unqualified
+	// zeroDuration.Duration would resolve to instead.
+	zeroDuration.JWTCookieConfig.Duration = 0
+	for _, cfg := range []jwtutil.JWTCookieSignerConfig{noName, zeroDuration} {
 		if _, err := cfg.NewCookieSigner(ctx); err == nil {
 			t.Errorf("%#v: got nil error, want an invalid configuration", cfg)
 		}
 	}
+
 	cvc := csc.VerifierConfig()
-	cvc.Name = ""
-	if _, err := cvc.NewCookieVerifier(ctx); err == nil {
-		t.Error("NewCookieVerifier: got nil error, want an invalid configuration")
+	noVerifierName, negativeSkew := cvc, cvc
+	noVerifierName.Name = ""
+	negativeSkew.ValidationTimeSkew = -time.Second
+	for _, cfg := range []jwtutil.JWTCookieVerifierConfig{noVerifierName, negativeSkew} {
+		if _, err := cfg.NewCookieVerifier(ctx); err == nil {
+			t.Errorf("%#v: got nil error, want an invalid configuration", cfg)
+		}
 	}
 }
 
-func cookieSignerConfig() jwtutil.JWTCookieSignerConfig {
-	return jwtutil.JWTCookieSignerConfig{
-		Name:               "jwt",
-		ValidationTimeSkew: time.Minute,
+// TestJWTCookieConfigValidate covers JWTCookieConfig.Validate directly: a
+// name, domain, path and a positive duration are all required.
+func TestJWTCookieConfigValidate(t *testing.T) {
+	valid := jwtutil.JWTCookieConfig{
+		Name: "jwt",
 		ScopeAndDuration: cookies.ScopeAndDuration{
 			Domain:   "example.com",
 			Path:     "/app",
 			Duration: time.Hour,
 		},
-		JWTSignerConfig: signerConfig(),
+	}
+	if err := valid.Validate(); err != nil {
+		t.Errorf("valid config: got %v, want nil", err)
+	}
+
+	noName, noDomain, noPath, zeroDuration := valid, valid, valid, valid
+	noName.Name = ""
+	noDomain.Domain = ""
+	noPath.Path = ""
+	zeroDuration.Duration = 0
+	for _, cfg := range []jwtutil.JWTCookieConfig{noName, noDomain, noPath, zeroDuration} {
+		if err := cfg.Validate(); err == nil {
+			t.Errorf("%#v: got nil error, want an invalid configuration", cfg)
+		}
+	}
+}
+
+func cookieSignerConfig() jwtutil.JWTCookieSignerConfig {
+	// The JWT's own validity (JWTSignerConfig.Duration) is set to match the
+	// cookie's lifetime (JWTCookieConfig.Duration) here, though the two are
+	// independent: see TestCookieSignerAndVerifier's MaxAge assertion versus
+	// TestCookieVerifier's expiration assertion for tests that pin each down
+	// separately.
+	sc := signerConfig()
+	sc.Duration = time.Hour
+	return jwtutil.JWTCookieSignerConfig{
+		JWTCookieConfig: jwtutil.JWTCookieConfig{
+			Name: "jwt",
+			ScopeAndDuration: cookies.ScopeAndDuration{
+				Domain:   "example.com",
+				Path:     "/app",
+				Duration: time.Hour,
+			},
+		},
+		JWTSignerConfig: sc,
 	}
 }
 
@@ -489,6 +531,43 @@ func TestCookieSignerAndVerifier(t *testing.T) {
 	// The signer validates the cookies that it issues itself.
 	if _, err := cs.ParseAndValidate(ctx, []byte(cookie.Value)); err != nil {
 		t.Errorf("CookieSigner.ParseAndValidate: %v", err)
+	}
+}
+
+// TestCookieInsecure covers Insecure: unlike the secure-by-default case, the
+// cookie carries none of the Secure/HttpOnly/SameSite attributes, and a
+// request carrying it (set without those attributes, as a real insecure
+// client would receive it) still validates.
+func TestCookieInsecure(t *testing.T) {
+	ctx, _ := newED25519Key(t)
+	csc := cookieSignerConfig()
+	csc.Insecure = true
+	cs, err := csc.NewCookieSigner(ctx)
+	if err != nil {
+		t.Fatalf("NewCookieSigner: %v", err)
+	}
+
+	rec := httptest.NewRecorder()
+	if err := cs.Issue(ctx, rec, "subject", nil); err != nil {
+		t.Fatalf("Issue: %v", err)
+	}
+	cookie := responseCookie(t, rec, "jwt")
+	// Once round-tripped through the wire, an unset SameSite (ie. never
+	// written to the Set-Cookie header, which is what SameSiteDefaultMode
+	// means) reads back as the zero value, not SameSiteDefaultMode itself.
+	if cookie.Secure || cookie.HttpOnly || cookie.SameSite != 0 {
+		t.Errorf("cookie is not insecure: %#v", cookie)
+	}
+
+	cvc := csc.VerifierConfig()
+	cv, err := cvc.NewCookieVerifier(ctx)
+	if err != nil {
+		t.Fatalf("NewCookieVerifier: %v", err)
+	}
+	req := httptest.NewRequest("GET", "/", nil)
+	req.AddCookie(cookie)
+	if _, err := cv.ValidateRequest(ctx, req); err != nil {
+		t.Errorf("ValidateRequest: %v", err)
 	}
 }
 
@@ -588,7 +667,9 @@ func TestCookieValidationTimeSkew(t *testing.T) {
 		return signed
 	}
 
-	cv, err := csc.VerifierConfig().NewCookieVerifier(ctx)
+	cvc := csc.VerifierConfig()
+	cvc.ValidationTimeSkew = time.Minute
+	cv, err := cvc.NewCookieVerifier(ctx)
 	if err != nil {
 		t.Fatalf("NewCookieVerifier: %v", err)
 	}
@@ -773,6 +854,198 @@ func TestConfigTokenLifecycle(t *testing.T) {
 	}
 	if err := verifier.Validate(ctx, parsed, jwt.WithClaimValue("role", "admin")); err == nil {
 		t.Error("Validate: got nil error, want the role check to fail")
+	}
+}
+
+// TestConfigSubjectClaimsDuration covers JWTSignerConfig.Subject, Claims and
+// Duration: Builder applies them automatically, a caller can still override
+// subject and claims explicitly, and JWTVerifierConfig (whether derived via
+// VerifierConfig or configured directly) enforces them.
+// subjectClaimsSigner returns a context, a JWTSignerConfig with Subject,
+// Duration and Claims all set, a Signer for it, and a Verifier derived from
+// it via VerifierConfig, for the tests below that exercise those three
+// fields.
+func subjectClaimsSigner(t *testing.T) (context.Context, jwtutil.JWTSignerConfig, jwtutil.Signer, *jwtutil.Verifier) {
+	t.Helper()
+	ctx, _ := newED25519Key(t)
+	sc := signerConfig()
+	sc.Subject = "configured-subject"
+	sc.Duration = 30 * time.Minute
+	sc.Claims = map[string]string{"role": "admin", "scope": "rw"}
+	signer, err := sc.NewSigner(ctx)
+	if err != nil {
+		t.Fatalf("NewSigner: %v", err)
+	}
+	verifier, err := sc.VerifierConfig().NewVerifier(ctx)
+	if err != nil {
+		t.Fatalf("NewVerifier: %v", err)
+	}
+	return ctx, sc, signer, verifier
+}
+
+// TestConfigBuilderAppliesSubjectClaimsDuration covers JWTSignerConfig.Subject,
+// Duration and Claims: Builder(0) applies all three automatically, and the
+// resulting token validates against a Verifier derived from the same
+// configuration.
+func TestConfigBuilderAppliesSubjectClaimsDuration(t *testing.T) {
+	ctx, sc, signer, verifier := subjectClaimsSigner(t)
+	tok, err := sc.Builder(0).Build()
+	if err != nil {
+		t.Fatalf("Build: %v", err)
+	}
+	if sub, _ := tok.Subject(); sub != sc.Subject {
+		t.Errorf("subject: got %q, want %q", sub, sc.Subject)
+	}
+	iat, _ := tok.IssuedAt()
+	if exp, ok := tok.Expiration(); !ok || exp.Sub(iat) != sc.Duration {
+		t.Errorf("expiration: got %v after issue (ok=%v), want %v", exp.Sub(iat), ok, sc.Duration)
+	}
+	for k, want := range sc.Claims {
+		var got string
+		if err := tok.Get(k, &got); err != nil || got != want {
+			t.Errorf("claim %q: got %v, %v, want %q", k, got, err, want)
+		}
+	}
+
+	signed, err := signer.Sign(ctx, tok)
+	if err != nil {
+		t.Fatalf("Sign: %v", err)
+	}
+	if _, err := verifier.ParseAndValidate(ctx, signed); err != nil {
+		t.Errorf("a token with the configured subject and claims must validate: %v", err)
+	}
+}
+
+// TestConfigBuilderExpiresInOverridesDuration verifies that an explicit,
+// positive expiresIn passed to Builder overrides the configured Duration.
+func TestConfigBuilderExpiresInOverridesDuration(t *testing.T) {
+	_, sc, _, _ := subjectClaimsSigner(t)
+	tok, err := sc.Builder(time.Hour).Build()
+	if err != nil {
+		t.Fatalf("Build: %v", err)
+	}
+	iat, _ := tok.IssuedAt()
+	if exp, ok := tok.Expiration(); !ok || exp.Sub(iat) != time.Hour {
+		t.Errorf("expiration: got %v after issue (ok=%v), want 1h, not the configured %v", exp.Sub(iat), ok, sc.Duration)
+	}
+}
+
+// TestConfigBuilderSubjectOverride verifies that calling Subject on the
+// jwt.Builder returned by Builder overrides the configured Subject.
+func TestConfigBuilderSubjectOverride(t *testing.T) {
+	_, sc, _, _ := subjectClaimsSigner(t)
+	tok, err := sc.Builder(0).Subject("override-subject").Build()
+	if err != nil {
+		t.Fatalf("Build: %v", err)
+	}
+	if sub, _ := tok.Subject(); sub != "override-subject" {
+		t.Errorf("subject: got %q, want override-subject", sub)
+	}
+}
+
+// TestConfigVerifierRejectsWrongSubjectOrClaim covers a Verifier derived via
+// VerifierConfig rejecting a token whose subject or claim value does not
+// match the configuration it was derived from.
+func TestConfigVerifierRejectsWrongSubjectOrClaim(t *testing.T) {
+	ctx, sc, signer, verifier := subjectClaimsSigner(t)
+	sign := func(t *testing.T, subject, role string) []byte {
+		t.Helper()
+		tok, err := sc.Builder(0).Subject(subject).Claim("role", role).Build()
+		if err != nil {
+			t.Fatalf("Build: %v", err)
+		}
+		signed, err := signer.Sign(ctx, tok)
+		if err != nil {
+			t.Fatalf("Sign: %v", err)
+		}
+		return signed
+	}
+	if _, err := verifier.ParseAndValidate(ctx, sign(t, "someone-else", "admin")); err == nil {
+		t.Error("ParseAndValidate: got nil error, want the wrong subject to be rejected")
+	}
+	if _, err := verifier.ParseAndValidate(ctx, sign(t, sc.Subject, "user")); err == nil {
+		t.Error("ParseAndValidate: got nil error, want the wrong role claim to be rejected")
+	}
+}
+
+// TestConfigVerifierConfigOwnSubjectAndClaims covers a JWTVerifierConfig used
+// directly (not derived from a JWTSignerConfig) enforcing its own Subject and
+// Claims fields.
+func TestConfigVerifierConfigOwnSubjectAndClaims(t *testing.T) {
+	ctx, sc, signer, _ := subjectClaimsSigner(t)
+	vc := jwtutil.JWTVerifierConfig{
+		Issuer:           sc.Issuer,
+		Audience:         sc.Audience,
+		Subject:          "direct-subject",
+		Claims:           map[string]string{"role": "viewer"},
+		VerificationKeys: []keys.KeySpec{sc.SigningKey},
+	}
+	dv, err := vc.NewVerifier(ctx)
+	if err != nil {
+		t.Fatalf("NewVerifier: %v", err)
+	}
+	good, err := sc.Builder(time.Hour).Subject("direct-subject").Claim("role", "viewer").Build()
+	if err != nil {
+		t.Fatalf("Build: %v", err)
+	}
+	signedGood, err := signer.Sign(ctx, good)
+	if err != nil {
+		t.Fatalf("Sign: %v", err)
+	}
+	if _, err := dv.ParseAndValidate(ctx, signedGood); err != nil {
+		t.Errorf("ParseAndValidate: %v", err)
+	}
+
+	bad, err := sc.Builder(time.Hour).Subject("direct-subject").Claim("role", "admin").Build()
+	if err != nil {
+		t.Fatalf("Build: %v", err)
+	}
+	signedBad, err := signer.Sign(ctx, bad)
+	if err != nil {
+		t.Fatalf("Sign: %v", err)
+	}
+	if _, err := dv.ParseAndValidate(ctx, signedBad); err == nil {
+		t.Error("ParseAndValidate: got nil error, want the wrong role claim to be rejected")
+	}
+}
+
+// TestConfigReservedClaims covers the guard, shared by JWTSignerConfig and
+// JWTVerifierConfig, against configuring a Claims entry that shadows one of
+// the standard claims already covered by a dedicated field or mechanism.
+func TestConfigReservedClaims(t *testing.T) {
+	sc := signerConfig()
+	sc.Claims = map[string]string{"sub": "not allowed here"}
+	if err := sc.Validate(); !errors.Is(err, jwtutil.ErrReservedClaim) {
+		t.Errorf("JWTSignerConfig.Validate: got %v, want ErrReservedClaim", err)
+	}
+
+	vc := sc.VerifierConfig()
+	vc.Claims = map[string]string{"iss": "not allowed here"}
+	if err := vc.Validate(); !errors.Is(err, jwtutil.ErrReservedClaim) {
+		t.Errorf("JWTVerifierConfig.Validate: got %v, want ErrReservedClaim", err)
+	}
+}
+
+// TestConfigValidateOptionsSkipsReservedClaims covers ValidateOptions' own
+// defense against a Claims entry that shadows a reserved claim. Validate
+// normally rejects such a configuration, but ValidateOptions can be called
+// independently of Validate (as it is by, e.g., an issuer config's own
+// ValidateOptions method), and a raw jwt.WithClaimValue for a reserved claim
+// like exp would never match (exp is a time.Time, not a string), silently
+// rejecting every otherwise-valid token.
+func TestConfigValidateOptionsSkipsReservedClaims(t *testing.T) {
+	sc := signerConfig()
+	tok, err := sc.Builder(time.Hour).Subject("subject").Build()
+	if err != nil {
+		t.Fatalf("Build: %v", err)
+	}
+
+	vc := sc.VerifierConfig()
+	// Bypasses Validate, which would otherwise reject this.
+	vc.Claims = map[string]string{"exp": "not-a-real-claim-value"}
+
+	if err := jwt.Validate(tok, vc.ValidateOptions()...); err != nil {
+		t.Errorf("ValidateOptions: got %v, want the bogus %q claim entry to be ignored", err, "exp")
 	}
 }
 
