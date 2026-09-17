@@ -64,8 +64,8 @@ func readNamedCookie(r *http.Request, name string, insecure bool) (string, bool)
 
 // CookieSigner issues JWTs carried in a named cookie as specified by a
 // JWTCookieSignerConfig. It only signs; a service that also needs to verify
-// the cookies it issues should build a separate CookieVerifier from the
-// matching JWTCookieValidatorConfig (see VerifierConfig).
+// the cookies it issues should build a separate CookieValidator from the
+// matching JWTCookieValidatorConfig (see ValidatorConfig).
 type CookieSigner struct {
 	Signer
 	cfg JWTCookieSignerConfig
@@ -91,15 +91,15 @@ func (c JWTCookieSignerConfig) NewCookieSigner(ctx context.Context, spec keys.Ke
 	}, nil
 }
 
-// VerifierConfig returns the cookie validator configuration implied by the
+// ValidatorConfig returns the cookie validator configuration implied by the
 // cookie signer configuration, ie. the same cookie name, scope, duration,
 // insecure setting, issuer, audience, subject and claims. Its
 // ValidationTimeSkew is left at zero: a signer validating tokens that it
 // issued itself has no need to allow for clock drift between machines. It is
 // intended for use by a service that both issues and verifies its own
 // cookies; the verification key(s) must still be supplied separately when
-// constructing the CookieVerifier, since neither config carries key material.
-func (c JWTCookieSignerConfig) VerifierConfig() JWTCookieValidatorConfig {
+// constructing the CookieValidator, since neither config carries key material.
+func (c JWTCookieSignerConfig) ValidatorConfig() JWTCookieValidatorConfig {
 	return JWTCookieValidatorConfig{
 		JWTCookieConfig: c.JWTCookieConfig,
 		JWTValidatorConfig: JWTValidatorConfig{
@@ -109,6 +109,11 @@ func (c JWTCookieSignerConfig) VerifierConfig() JWTCookieValidatorConfig {
 			Claims:   maps.Clone(c.Claims),
 		},
 	}
+}
+
+// VerifierConfig is an alias for ValidatorConfig.
+func (c JWTCookieSignerConfig) VerifierConfig() JWTCookieValidatorConfig {
+	return c.ValidatorConfig()
 }
 
 // Name returns the name of the cookie that tokens are issued in.
@@ -179,17 +184,20 @@ func (cs *CookieSigner) Issue(ctx context.Context, rw http.ResponseWriter, subje
 	return cs.SetCookie(ctx, rw, token)
 }
 
-// CookieVerifier verifies JWTs carried in a named cookie as specified by a
+// CookieValidator validates JWTs carried in a named cookie as specified by a
 // JWTCookieValidatorConfig.
-type CookieVerifier struct {
+type CookieValidator struct {
 	set  jwk.Set
 	opts []jwt.ValidateOption
 	cfg  JWTCookieValidatorConfig
 }
 
-// NewCookieVerifier returns a CookieVerifier that verifies tokens against
+// CookieVerifier is an alias for CookieValidator.
+type CookieVerifier = CookieValidator
+
+// NewCookieValidator returns a CookieValidator that validates tokens against
 // verificationKeys, obtained as per KeySetForKeys.
-func (c JWTCookieValidatorConfig) NewCookieVerifier(ctx context.Context, verificationKeys ...keys.Info) (*CookieVerifier, error) {
+func (c JWTCookieValidatorConfig) NewCookieValidator(ctx context.Context, verificationKeys ...keys.Info) (*CookieValidator, error) {
 	if err := c.Validate(); err != nil {
 		return nil, err
 	}
@@ -202,33 +210,38 @@ func (c JWTCookieValidatorConfig) NewCookieVerifier(ctx context.Context, verific
 	if c.ValidationTimeSkew > 0 {
 		opts = append(opts, jwt.WithAcceptableSkew(c.ValidationTimeSkew))
 	}
-	return &CookieVerifier{
+	return &CookieValidator{
 		set:  set,
 		opts: opts,
 		cfg:  c,
 	}, nil
 }
 
+// NewCookieVerifier is an alias for NewCookieValidator.
+func (c JWTCookieValidatorConfig) NewCookieVerifier(ctx context.Context, verificationKeys ...keys.Info) (*CookieVerifier, error) {
+	return c.NewCookieValidator(ctx, verificationKeys...)
+}
+
 // Name returns the name of the cookie that tokens are read from.
-func (cv *CookieVerifier) Name() string {
+func (cv *CookieValidator) Name() string {
 	return cv.cfg.Name
 }
 
 // Parse verifies the signature of token and returns it without validating any
 // of its claims, which is left to Validate so that the options implied by the
 // configuration, including any allowance for clock skew, are applied.
-func (cv *CookieVerifier) Parse(_ context.Context, token []byte) (jwt.Token, error) {
+func (cv *CookieValidator) Parse(_ context.Context, token []byte) (jwt.Token, error) {
 	return jwt.Parse(token, jwt.WithKeySet(cv.set), jwt.WithValidate(false))
 }
 
 // Validate validates token using the configured issuer, audience and clock
 // skew followed by any additional validators supplied.
-func (cv *CookieVerifier) Validate(_ context.Context, token jwt.Token, validators ...jwt.ValidateOption) error {
+func (cv *CookieValidator) Validate(_ context.Context, token jwt.Token, validators ...jwt.ValidateOption) error {
 	return jwt.Validate(token, append(slices.Clone(cv.opts), validators...)...)
 }
 
 // ParseAndValidate parses and validates token as per Parse and Validate.
-func (cv *CookieVerifier) ParseAndValidate(ctx context.Context, token []byte, validators ...jwt.ValidateOption) (jwt.Token, error) {
+func (cv *CookieValidator) ParseAndValidate(ctx context.Context, token []byte, validators ...jwt.ValidateOption) (jwt.Token, error) {
 	parsed, err := cv.Parse(ctx, token)
 	if err != nil {
 		return nil, err
@@ -242,7 +255,7 @@ func (cv *CookieVerifier) ParseAndValidate(ctx context.Context, token []byte, va
 // ValidateRequest reads the configured cookie from r and parses and validates
 // the token that it contains. ErrNoCookie is returned if the request does not
 // carry the cookie.
-func (cv *CookieVerifier) ValidateRequest(ctx context.Context, r *http.Request, validators ...jwt.ValidateOption) (jwt.Token, error) {
+func (cv *CookieValidator) ValidateRequest(ctx context.Context, r *http.Request, validators ...jwt.ValidateOption) (jwt.Token, error) {
 	value, ok := readNamedCookie(r, cv.cfg.Name, cv.cfg.Insecure)
 	if !ok {
 		return nil, fmt.Errorf("%w: %v", ErrNoCookie, cv.cfg.Name)
@@ -251,7 +264,7 @@ func (cv *CookieVerifier) ValidateRequest(ctx context.Context, r *http.Request, 
 }
 
 // ClearCookie requests the removal of the cookie by the client.
-func (cv *CookieVerifier) ClearCookie(rw http.ResponseWriter) {
+func (cv *CookieValidator) ClearCookie(rw http.ResponseWriter) {
 	ck := cv.cfg.Cookie("") //nolint:gosec // G124: the cookie is being deleted.
 	ck.Expires = time.Time{}
 	ck.MaxAge = -1

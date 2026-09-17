@@ -279,10 +279,10 @@ jwt_audience:
 	fmt.Printf("%v: path=%v domain=%v secure=%v httponly=%v maxage=%v\n",
 		cookie.Name, cookie.Path, cookie.Domain, cookie.Secure, cookie.HttpOnly, cookie.MaxAge)
 
-	// The client returns the cookie on its next request, which the verifier
+	// The client returns the cookie on its next request, which the validator
 	// created from the same configuration validates against the signing
 	// key's public half.
-	verifier, err := cfg.VerifierConfig().NewCookieVerifier(ctx, publicKeyInfo(signingKey.ID, pub))
+	validator, err := cfg.ValidatorConfig().NewCookieValidator(ctx, publicKeyInfo(signingKey.ID, pub))
 	if err != nil {
 		fmt.Println(err)
 		return
@@ -290,7 +290,7 @@ jwt_audience:
 	req := httptest.NewRequest("GET", "/dashboard", nil)
 	req.AddCookie(cookie)
 
-	token, err := verifier.ValidateRequest(ctx, req)
+	token, err := validator.ValidateRequest(ctx, req)
 	if err != nil {
 		fmt.Println(err)
 		return
@@ -304,7 +304,7 @@ jwt_audience:
 	fmt.Println(subject, role)
 
 	// A request without the cookie is reported as such.
-	if _, err := verifier.ValidateRequest(ctx, httptest.NewRequest("GET", "/dashboard", nil)); errors.Is(err, jwtutil.ErrNoCookie) {
+	if _, err := validator.ValidateRequest(ctx, httptest.NewRequest("GET", "/dashboard", nil)); errors.Is(err, jwtutil.ErrNoCookie) {
 		fmt.Println("no cookie:", err)
 	}
 

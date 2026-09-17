@@ -106,7 +106,7 @@ func newConfigToken(t *testing.T) jwt.Token {
 
 // testVerifier pairs a Validator with the jwt.ValidateOptions implied by a
 // JWTValidatorConfig. JWTValidatorConfig has no NewVerifier of its own, since
-// it carries no keys (see config_cookies.go's CookieVerifier, which is built
+// it carries no keys (see config_cookies.go's CookieValidator, which is built
 // the same way internally), so tests that need both the signature check and
 // the issuer/audience/subject/claims checks build one this way.
 type testVerifier struct {
@@ -404,9 +404,13 @@ func TestConfigMissingKeys(t *testing.T) {
 		t.Errorf("SignerForKey: got %v, want ErrNoKeyStore", err)
 	}
 
-	// NewCookieVerifier's verification keys are supplied directly rather than
+	// NewCookieValidator's verification keys are supplied directly rather than
 	// looked up from a context store, so calling it with none is simply "no
 	// keys supplied", not ErrNoKeyStore.
+	if _, err := csc.ValidatorConfig().NewCookieValidator(context.Background()); err == nil {
+		t.Error("NewCookieValidator: got nil error, want at least one verification key to be required")
+	}
+	// Also test backward-compatibility alias NewCookieVerifier / VerifierConfig.
 	if _, err := csc.VerifierConfig().NewCookieVerifier(context.Background()); err == nil {
 		t.Error("NewCookieVerifier: got nil error, want at least one verification key to be required")
 	}
@@ -518,7 +522,7 @@ func cookieSignerConfig() jwtutil.JWTCookieSignerConfig {
 	// The JWT's own validity (JWTSignerConfig.Duration) is set to match the
 	// cookie's lifetime (JWTCookieConfig.Duration) here, though the two are
 	// independent: see TestCookieSigner's MaxAge assertion versus
-	// TestCookieVerifier's expiration assertion for tests that pin each down
+	// TestCookieValidator's expiration assertion for tests that pin each down
 	// separately.
 	sc := signerConfig()
 	sc.Duration = time.Hour
@@ -536,7 +540,7 @@ func cookieSignerConfig() jwtutil.JWTCookieSignerConfig {
 }
 
 // TestCookieSigner covers issuing a cookie containing a JWT. CookieSigner only
-// signs; see TestCookieVerifier for validating the cookie it issues.
+// signs; see TestCookieValidator for validating the cookie it issues.
 func TestCookieSigner(t *testing.T) {
 	ctx, _ := newED25519Key(t)
 	csc := cookieSignerConfig()
@@ -612,10 +616,10 @@ func TestCookieInsecure(t *testing.T) {
 		t.Errorf("cookie is not insecure: %#v", cookie)
 	}
 
-	cvc := csc.VerifierConfig()
-	cv, err := cvc.NewCookieVerifier(ctx, pubInfo)
+	cvc := csc.ValidatorConfig()
+	cv, err := cvc.NewCookieValidator(ctx, pubInfo)
 	if err != nil {
-		t.Fatalf("NewCookieVerifier: %v", err)
+		t.Fatalf("NewCookieValidator: %v", err)
 	}
 	req := httptest.NewRequest("GET", "/", nil)
 	req.AddCookie(cookie)
@@ -624,9 +628,9 @@ func TestCookieInsecure(t *testing.T) {
 	}
 }
 
-// TestCookieVerifier covers validating a cookie issued by a CookieSigner from a
+// TestCookieValidator covers validating a cookie issued by a CookieSigner from a
 // request, and requesting its removal.
-func TestCookieVerifier(t *testing.T) {
+func TestCookieValidator(t *testing.T) {
 	ctx, pubInfo := newED25519Key(t)
 	csc := cookieSignerConfig()
 	cs, err := csc.NewCookieSigner(ctx, testKeySpec)
@@ -639,10 +643,10 @@ func TestCookieVerifier(t *testing.T) {
 	}
 	cookie := responseCookie(t, rec, "jwt")
 
-	cvc := csc.VerifierConfig()
-	cv, err := cvc.NewCookieVerifier(ctx, pubInfo)
+	cvc := csc.ValidatorConfig()
+	cv, err := cvc.NewCookieValidator(ctx, pubInfo)
 	if err != nil {
-		t.Fatalf("NewCookieVerifier: %v", err)
+		t.Fatalf("NewCookieValidator: %v", err)
 	}
 	if got, want := cv.Name(), "jwt"; got != want {
 		t.Errorf("Name: got %v, want %v", got, want)
@@ -676,13 +680,13 @@ func TestCookieVerifier(t *testing.T) {
 	}
 }
 
-// TestCookieVerifierClearCookie verifies that clearing the cookie requests its
+// TestCookieValidatorClearCookie verifies that clearing the cookie requests its
 // removal, keeping its scope so that the client removes the cookie that was set.
-func TestCookieVerifierClearCookie(t *testing.T) {
+func TestCookieValidatorClearCookie(t *testing.T) {
 	ctx, pubInfo := newED25519Key(t)
-	cv, err := cookieSignerConfig().VerifierConfig().NewCookieVerifier(ctx, pubInfo)
+	cv, err := cookieSignerConfig().ValidatorConfig().NewCookieValidator(ctx, pubInfo)
 	if err != nil {
-		t.Fatalf("NewCookieVerifier: %v", err)
+		t.Fatalf("NewCookieValidator: %v", err)
 	}
 	rec := httptest.NewRecorder()
 	cv.ClearCookie(rec)
@@ -720,11 +724,11 @@ func TestCookieValidationTimeSkew(t *testing.T) {
 		return signed
 	}
 
-	cvc := csc.VerifierConfig()
+	cvc := csc.ValidatorConfig()
 	cvc.ValidationTimeSkew = time.Minute
-	cv, err := cvc.NewCookieVerifier(ctx, pubInfo)
+	cv, err := cvc.NewCookieValidator(ctx, pubInfo)
 	if err != nil {
-		t.Fatalf("NewCookieVerifier: %v", err)
+		t.Fatalf("NewCookieValidator: %v", err)
 	}
 	for _, tc := range []struct {
 		expiredBy time.Duration
@@ -755,7 +759,7 @@ func responseCookie(t *testing.T, rec *httptest.ResponseRecorder, name string) *
 
 // TestCookieSignAndVerifySeparately verifies that a token signed by a
 // CookieSigner can be parsed and validated separately, in two steps, by a
-// CookieVerifier built from the matching JWTCookieValidatorConfig, as well as
+// CookieValidator built from the matching JWTCookieValidatorConfig, as well as
 // in one step via ParseAndValidate.
 func TestCookieSignAndVerifySeparately(t *testing.T) {
 	ctx, pubInfo := newED25519Key(t)
@@ -764,9 +768,9 @@ func TestCookieSignAndVerifySeparately(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewCookieSigner: %v", err)
 	}
-	cv, err := csc.VerifierConfig().NewCookieVerifier(ctx, pubInfo)
+	cv, err := csc.ValidatorConfig().NewCookieValidator(ctx, pubInfo)
 	if err != nil {
-		t.Fatalf("NewCookieVerifier: %v", err)
+		t.Fatalf("NewCookieValidator: %v", err)
 	}
 	tok, err := cs.NewToken("subject", nil)
 	if err != nil {

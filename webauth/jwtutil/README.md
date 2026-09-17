@@ -171,8 +171,8 @@ type CookieSigner struct {
 ```
 CookieSigner issues JWTs carried in a named cookie as specified by a
 JWTCookieSignerConfig. It only signs; a service that also needs to verify
-the cookies it issues should build a separate CookieVerifier from the
-matching JWTCookieValidatorConfig (see VerifierConfig).
+the cookies it issues should build a separate CookieValidator from the
+matching JWTCookieValidatorConfig (see ValidatorConfig).
 
 ### Methods
 
@@ -215,31 +215,31 @@ SetCookie signs token and sets the resulting cookie on rw.
 
 
 
-### Type CookieVerifier
+### Type CookieValidator
 ```go
-type CookieVerifier struct {
+type CookieValidator struct {
 	// contains filtered or unexported fields
 }
 ```
-CookieVerifier verifies JWTs carried in a named cookie as specified by a
+CookieValidator validates JWTs carried in a named cookie as specified by a
 JWTCookieValidatorConfig.
 
 ### Methods
 
 ```go
-func (cv *CookieVerifier) ClearCookie(rw http.ResponseWriter)
+func (cv *CookieValidator) ClearCookie(rw http.ResponseWriter)
 ```
 ClearCookie requests the removal of the cookie by the client.
 
 
 ```go
-func (cv *CookieVerifier) Name() string
+func (cv *CookieValidator) Name() string
 ```
 Name returns the name of the cookie that tokens are read from.
 
 
 ```go
-func (cv *CookieVerifier) Parse(_ context.Context, token []byte) (jwt.Token, error)
+func (cv *CookieValidator) Parse(_ context.Context, token []byte) (jwt.Token, error)
 ```
 Parse verifies the signature of token and returns it without validating any
 of its claims, which is left to Validate so that the options implied by the
@@ -247,26 +247,33 @@ configuration, including any allowance for clock skew, are applied.
 
 
 ```go
-func (cv *CookieVerifier) ParseAndValidate(ctx context.Context, token []byte, validators ...jwt.ValidateOption) (jwt.Token, error)
+func (cv *CookieValidator) ParseAndValidate(ctx context.Context, token []byte, validators ...jwt.ValidateOption) (jwt.Token, error)
 ```
 ParseAndValidate parses and validates token as per Parse and Validate.
 
 
 ```go
-func (cv *CookieVerifier) Validate(_ context.Context, token jwt.Token, validators ...jwt.ValidateOption) error
+func (cv *CookieValidator) Validate(_ context.Context, token jwt.Token, validators ...jwt.ValidateOption) error
 ```
 Validate validates token using the configured issuer, audience and clock
 skew followed by any additional validators supplied.
 
 
 ```go
-func (cv *CookieVerifier) ValidateRequest(ctx context.Context, r *http.Request, validators ...jwt.ValidateOption) (jwt.Token, error)
+func (cv *CookieValidator) ValidateRequest(ctx context.Context, r *http.Request, validators ...jwt.ValidateOption) (jwt.Token, error)
 ```
 ValidateRequest reads the configured cookie from r and parses and validates
 the token that it contains. ErrNoCookie is returned if the request does not
 carry the cookie.
 
 
+
+
+### Type CookieVerifier
+```go
+type CookieVerifier = CookieValidator
+```
+CookieVerifier is an alias for CookieValidator.
 
 
 ### Type ED25519
@@ -358,16 +365,22 @@ func (c JWTCookieSignerConfig) Validate() error
 
 
 ```go
-func (c JWTCookieSignerConfig) VerifierConfig() JWTCookieValidatorConfig
+func (c JWTCookieSignerConfig) ValidatorConfig() JWTCookieValidatorConfig
 ```
-VerifierConfig returns the cookie validator configuration implied
+ValidatorConfig returns the cookie validator configuration implied
 by the cookie signer configuration, ie. the same cookie name, scope,
 duration, insecure setting, issuer, audience, subject and claims.
 Its ValidationTimeSkew is left at zero: a signer validating tokens that it
 issued itself has no need to allow for clock drift between machines. It is
 intended for use by a service that both issues and verifies its own cookies;
 the verification key(s) must still be supplied separately when constructing
-the CookieVerifier, since neither config carries key material.
+the CookieValidator, since neither config carries key material.
+
+
+```go
+func (c JWTCookieSignerConfig) VerifierConfig() JWTCookieValidatorConfig
+```
+VerifierConfig is an alias for ValidatorConfig.
 
 
 
@@ -386,10 +399,16 @@ in a cookie.
 ### Methods
 
 ```go
+func (c JWTCookieValidatorConfig) NewCookieValidator(ctx context.Context, verificationKeys ...keys.Info) (*CookieValidator, error)
+```
+NewCookieValidator returns a CookieValidator that validates tokens against
+verificationKeys, obtained as per KeySetForKeys.
+
+
+```go
 func (c JWTCookieValidatorConfig) NewCookieVerifier(ctx context.Context, verificationKeys ...keys.Info) (*CookieVerifier, error)
 ```
-NewCookieVerifier returns a CookieVerifier that verifies tokens against
-verificationKeys, obtained as per KeySetForKeys.
+NewCookieVerifier is an alias for NewCookieValidator.
 
 
 ```go
