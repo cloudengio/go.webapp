@@ -352,9 +352,9 @@ func (h *handler) verifyJWT(w http.ResponseWriter, r *http.Request) (*http.Reque
 		h.opts.logger.Warn("invalid jwt token in cookie", "error", err)
 		h.denyWithStatus(w, r, http.StatusUnauthorized, "invalid or expired authentication token", DenialInvalidJWT)
 		return r, false
-	} else {
-		h.opts.logger.Warn("missing jwt token in cookie", "error", "no cookie found", "cookie", string(cfg.cookie))
 	}
+
+	h.opts.logger.Warn("missing jwt token in cookie", "error", "no cookie found", "cookie", string(cfg.cookie))
 
 	h.denyWithStatus(w, r, http.StatusUnauthorized, "missing authentication cookie", DenialInvalidJWT)
 	return r, false
