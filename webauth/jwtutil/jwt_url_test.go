@@ -6,8 +6,6 @@ package jwtutil_test
 
 import (
 	"context"
-	"crypto/ed25519"
-	"crypto/rand"
 	"net/url"
 	"testing"
 	"time"
@@ -19,12 +17,12 @@ import (
 func newEd25519SignerValidator(t *testing.T, keyID string) (jwtutil.Signer, jwtutil.Validator) {
 	t.Helper()
 
-	_, priv, err := ed25519.GenerateKey(rand.Reader)
+	info, err := jwtutil.NewED25519KeyInfo("", keyID)
 	if err != nil {
-		t.Fatalf("failed to generate ed25519 key pair: %v", err)
+		t.Fatalf("NewED25519KeyInfo: %v", err)
 	}
 
-	signer, err := jwtutil.NewED25519Signer(priv, keyID)
+	signer, err := jwtutil.NewSignerFromKeyInfo(context.Background(), info)
 	if err != nil {
 		t.Fatalf("failed to create signer: %v", err)
 	}

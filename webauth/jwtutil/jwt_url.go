@@ -13,7 +13,7 @@ import (
 	"github.com/lestrrat-go/jwx/v3/jwt"
 )
 
-// CreateVerificationToken creates a compacted JWT containing the specified
+// CreateVerificationToken creates a compact JWT containing the specified
 // claim to be verified along with an expiration time, subject, issuer, and audience.
 func CreateVerificationToken(ctx context.Context, s Signer, subject, claimKey string, claimValue any, expiresIn time.Duration, issuer, audience string) ([]byte, error) {
 	now := time.Now()
@@ -39,9 +39,15 @@ func CreateVerificationToken(ctx context.Context, s Signer, subject, claimKey st
 	return s.Sign(ctx, tok)
 }
 
+const (
+	DefaultVerificationURLValidity = 5 * time.Minute
+)
+
 // VerificationURL generates a verification URL by appending the signed
 // verification token as a query parameter ("token") to the provided baseURL.
 // The URL will encode any existing query parameters gracefully.
+// A URL so generated should and its token should have a very short expiration
+// time and ideally be used only once.
 func VerificationURL(baseURL string, tokenBytes []byte) (string, error) {
 	u, err := url.Parse(baseURL)
 	if err != nil {

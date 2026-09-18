@@ -980,80 +980,163 @@ UnmarshalYAML implements yaml.Unmarshaler.
 
 ## External Markdown Files Included Here
 
-### Code Review: `main` vs `go-1.27-gofix` (code_review.md)
+### Code Review: jwtutil-config branch (main...jwtutil-config) (code_review.md)
 
-#### Overview
+Review level: **high** (recall-biased, 8-angle finder + 1-vote verification)
 
-This review covers the changes introduced in the `go-1.27-gofix` branch compared to `main`. The branch primarily updates the repository to Go 1.27, updates dependencies (including `github.com/stretchr/testify` to v1.12.1 and CloudEng packages), applies Go 1.27 modernizations (such as `errors.AsType`, `sync.WaitGroup.Go`, and promoted field initialization in composite literals), and updates GitHub Actions workflows.
+Scope: `webauth/jwtutil/{config_cookies,config_signer,jwk_impl,jwt_config,key_registry,
+jwt_issuer,jwt_url,signer}.go` and their tests, plus small call-site updates in
+`webauth/webauthn/passkeys` and `websec`. This branch replaces the old
+`NewED25519Signer(priv, id)` API with a `keys.Info`/`keys.InMemoryKeyStore`-backed
+key-management layer (`NewED25519KeyInfo`, `JWKKey`/`ED25519`, `JWTSignerConfig`,
+`JWTVerifierConfig`, `JWTCookieSignerConfig`, `JWTCookieVerifierConfig`,
+`CookieSigner`, `CookieVerifier`), and adds reserved-JWT-claim protection to both
+the new cookie signer and the existing `JWTIssuer` handler.
 
----
+`go build ./...`, `go vet ./...` and `go test ./webauth/... ./websec/...` all pass
+on this branch, so every finding below is a latent/edge-case issue rather than a
+build or existing-test failure.
 
-#### Findings
+#### Security review
 
-##### 1. [Logic / Test Failure] Broken YAML Unmarshaling in `goget/goget_test.go`
-- **Severity**: High (causes test failure)
-- **Location**: `goget/goget_test.go:13`
-- **Description**: 
-  `goget_test.go` imported `"github.com/stretchr/testify/assert/yaml"` and invoked `yaml.Unmarshal(...)` to test `Spec` unmarshaling.
-  When `github.com/stretchr/testify` was upgraded from `v1.12.0` to `v1.12.1`, testify switched its internal YAML dependency from `gopkg.in/yaml.v3` to `go.yaml.in/yaml/v3`.
-  The `Spec` type in `goget.go` implements `UnmarshalYAML(value *yaml.Node) error` using `*gopkg.in/yaml.v3.Node`.
-  Because `go.yaml.in/yaml/v3` defines its own `Node` type, it did not match the method signature for `Spec.UnmarshalYAML`, causing custom unmarshaling (`SplitHostnamePath()`) to be bypassed. As a result, `s.hostname` and `s.path` remained empty strings, breaking `TestYAMLUnmarshal`.
-- **Recommendation**: Import `"gopkg.in/yaml.v3"` directly in `goget_test.go` rather than using testify's internal `assert/yaml` package.
+A separate, dedicated security-focused pass (own sub-agent, ≥80%-confidence-of-exploitability
+bar) covered the same files: reserved-claim injection is blocked (`isReservedClaim` in both
+`config_cookies.go` and `jwt_issuer.go`); key-ID/algorithm binding is enforced (`keySetForKeys`
+pins `kid`/`alg`, defeating algorithm-confusion/key-substitution attacks); audience/issuer
+enforcement in `NewVerifier`/`NewCookieVerifier` is correct (requires at least one configured
+audience to match, not all); cookies unconditionally set `Secure`/`HttpOnly`/`SameSite=Strict`;
+key material is zeroed after use with correct `slices.Clone` handling around `jwk.Import`'s
+non-cloning public-key path; Ed25519 keys are generated via `crypto/rand`. **No high-confidence
+security vulnerability was found.**
 
----
+Two sub-threshold (6/10 confidence) API-misuse footguns are noted for awareness only — not
+exploitable via attacker input, only via a downstream implementer misusing a documented,
+partial-guarantee API:
+- **`JWTSignerConfig.Builder`** (`config_signer.go:265-272`) only sets the `exp` claim
+  `if expiresIn > 0`; since `jwx/v3` doesn't require `exp` to be present, a direct caller passing
+  a zero/unset duration gets a never-expiring token. (The hardened `CookieSigner.NewToken` path is
+  unaffected — `JWTCookieSignerConfig.Validate` requires `Duration > 0`.)
+- **`NewValidator`/`ValidatorForKeys`** (`config_signer.go:286-308`) intentionally skip
+  issuer/audience checks (documented), but are built from the same `JWTVerifierConfig` as
+  `NewVerifier`, so a naming mix-up could lead a caller to accept a signature-valid token meant
+  for a different issuer/audience.
 
-##### 2. [Security / Logic] Private Key Retention in Validator Key Set (`webauth/jwtutil/signer.go`)
-- **Severity**: Low / Informational
-- **Location**: `webauth/jwtutil/signer.go:63-72`
-- **Description**:
-  In `NewSigner`, the private key `jwkKey` is added directly to `set := jwk.NewSet()` which is then embedded into the `validator` field of `signer`.
-  While `jwx` can perform signature verification using a private key (by extracting the public portion), storing the full private key in a verification key set is unnecessary and risks exposing private key material if the key set is ever passed to an external component or introspected.
-  Only the public key `pk` (or a set containing `pk`) needs to be provided for token verification.
-- **Recommendation**: Add `pk` to `set` instead of `jwkKey` when configuring the validator key set: `set.AddKey(pk)`.
+No action required for security; both footguns above are optional hardening only.
 
----
+#### Findings (JSON)
 
-##### 3. [Language / Backward Compatibility] Go 1.27 Promoted Field Initializers (`webauth/jwtutil/signer.go`, `cmd/acme/main_test.go`)
-- **Severity**: Low / Informational
-- **Location**: `webauth/jwtutil/signer.go:70`, `cmd/acme/main_test.go:26-32`
-- **Description**:
-  `gofix` modernized struct literals by initializing promoted fields directly:
-  - `webauth/jwtutil/signer.go`: `signer{ set: set, ... }` instead of `signer{ validator: validator{set: set}, ... }`
-  - `cmd/acme/main_test.go`: `certManagerFlags{ Provider: ..., Email: ..., LocalCacheDir: ... }`
-  This is a new Go 1.27 feature. Any tools or developers building on Go < 1.27 will receive compilation errors (`unknown field 'set' in struct literal of type signer`).
-- **Recommendation**: Ensure that all CI environments and toolchains enforce Go 1.27+ minimum versions (which is properly reflected in `go.mod` and `.github/workflows`).
+All four findings below have been addressed and re-verified (`go build ./...`, `go vet ./...`,
+and `go test ./webauth/... ./websec/...` all pass after the fixes):
 
----
+```json
+[
+  {
+    "file": "webauth/jwtutil/key_registry.go",
+    "line": 104,
+    "status": "fixed",
+    "summary": "decodeBase64 only trims leading/trailing whitespace, not embedded newlines, so a base64 key value that spans multiple lines is rejected even though the package explicitly claims to support that case.",
+    "failure_scenario": "An operator authors a signing/verification key in YAML using a wrapped literal block scalar (a common way to keep a long base64 token readable in a config file), e.g. `token: |\\n  QUJDRA==\\n  QUJDRA==`. bytes.TrimSpace only strips the outer whitespace, so the embedded '\\n' is passed straight into base64.StdEncoding.Decode, which returns \"illegal base64 data at input byte N\". ED25519.Signer/ED25519.PublicKey (and therefore JWTSignerConfig.NewSigner / verification key loading) reject an otherwise-valid key, and the failure only shows up once someone formats their YAML this way -- something the package's own TestDecodeBase64Whitespace claims to cover (\"whitespace or newlines (e.g. from YAML block scalars)\") but only actually exercises leading/trailing whitespace, not an embedded line break, so the gap is untested.",
+    "fix": "decodeBase64 now strips all whitespace via bytes.Map + unicode.IsSpace instead of bytes.TrimSpace. TestDecodeBase64Whitespace extended to embed a newline in the middle of the encoded private key (simulating a wrapped YAML block scalar); TestConfigInvalidKeys's \"not base64 encoded\" negative case (\"this is not a key!\") still correctly fails to decode, since '!' remains an illegal base64 character after whitespace stripping."
+  },
+  {
+    "file": "webauth/jwtutil/config_test.go",
+    "line": 2076,
+    "status": "fixed (by user, verified correct)",
+    "summary": "TestPublicKeyFromKeyInfoErrors constructs keys.NewInfo(testKeyID, testKeyUser, nil) with the user and id arguments transposed (keys.NewInfo takes (user, id, token)), unlike the correct storeKey(ctx, spec, token, extra) helper used everywhere else in the same file.",
+    "failure_scenario": "testKeyID (\"jwt-signing-key\") ends up in the User field and testKeyUser (\"tester\") ends up in the ID field of the resulting keys.Info. The test still passes today because PublicKeyFromKeyInfo never checks the identity against an expectation, but the mistake means the test isn't exercising the key identity it appears to be, and the same transposition pattern recurs in three other files added/touched by this branch (see below), suggesting it is a systematic copy/paste slip in the New(ED25519KeyInfo(user, id)/keys.NewInfo(user, id, token) migration rather than an isolated typo.",
+    "fix": "Now keys.NewInfo(testKeyUser, testKeyID, nil), matching keys.NewInfo(user, id, token)."
+  },
+  {
+    "file": "websec/localhost_test.go",
+    "line": 471,
+    "status": "fixed (websec/example_test.go was fixed by user; localhost_test.go and passkey_server_test.go were still unfixed and have now been fixed here)",
+    "summary": "setupSigner calls jwtutil.NewED25519KeyInfo(\"test-key-id\", \"test-user\") with the arguments swapped relative to their names -- NewED25519KeyInfo(user, id) receives \"test-key-id\" as the user and \"test-user\" as the id, the opposite of what the variable names suggest was intended (and the opposite of the previous NewED25519Signer(priv, \"test-key-id\") call it replaces, which used \"test-key-id\" as the key ID).",
+    "failure_scenario": "No test currently asserts on the resulting key's ID/User, so the swap is silent today. But it means the signing key that setupSigner produces is now keyed by ID \"test-user\" instead of \"test-key-id\": if a future test starts asserting a JWKS `kid` value, does a per-user key lookup, or copies this call as a template for a new test, it will silently pick up the wrong identifier. The identical transposition appears in websec/example_test.go:16 (`NewED25519KeyInfo(\"key\", \"user\")`) and webauth/webauthn/passkeys/passkey_server_test.go:98 (`NewED25519KeyInfo(\"pkid\", \"test-user\")`, which used to be the *key ID* \"pkid\" under the old NewED25519Signer(priv, \"pkid\") call and is now silently the *user*).",
+    "fix": "websec/example_test.go -> NewED25519KeyInfo(\"user\", \"key\"). websec/localhost_test.go setupSigner -> NewED25519KeyInfo(\"test-user\", \"test-key-id\"). webauth/webauthn/passkeys/passkey_server_test.go -> NewED25519KeyInfo(\"test-user\", \"pkid\"), preserving \"pkid\" as the key ID as in the pre-migration behaviour."
+  },
+  {
+    "file": "webauth/jwtutil/signer.go",
+    "line": 27,
+    "status": "fixed (by user, verified correct); the unrelated pre-existing build error in the same file (see fix note) has also now been fixed",
+    "summary": "NewED25519Signer(priv, id) was removed with no replacement of the same shape, but webauth/webauthn/passkeys/run_test_server.go (a //go:build ignore demo/manual-test program) still calls jwtutil.NewED25519Signer(pubKey, privKey, \"pkid\") and is therefore permanently uncompilable even for its intended manual use (`go run run_test_server.go <host:port>`).",
+    "failure_scenario": "That file already didn't compile before this branch (it passes 3 args to what was a 2-arg function), so `go build ./...`/CI were never affected either way, but this diff finishes removing any function of that name, so the file can no longer be trivially fixed by correcting the argument count -- it needs to be rewritten against NewED25519KeyInfo/ED25519{}.Signer (as the other three call sites in this diff were) or deleted. Left as-is, anyone who tries to run the passkeys demo server per its own doc comment gets a build failure with no obvious pointer to the new API.",
+    "fix": "run_test_server.go now builds its key via jwtutil.NewED25519KeyInfo(\"user\", \"key\") + jwtutil.ED25519{}.Signer(ki), matching the pattern used elsewhere in this diff. Additionally fixed the separate, pre-existing (predates this branch) bug where webapp.NewTLSServer was called with 3 args (string, *http.ServeMux, *tls.Config) instead of its actual signature (context.Context, string, http.Handler, *tls.Config) -- the already-in-scope `ctx` is now passed as the first argument. `go build -o /dev/null ./webauth/webauthn/passkeys/run_test_server.go` now succeeds."
+  }
+]
+```
 
-##### 4. [Performance / Resource Management] Request Body Handling in `body.go`
-- **Severity**: Low / Informational
-- **Location**: `body.go:20-33`
-- **Description**:
-  In `ReadBodyLimit`, when `replace == false`, `r.Body` is wrapped with `http.MaxBytesReader` and consumed completely by `io.ReadAll(r.Body)`, but `r.Body` is not replaced with a readable stream or closed. Subsequent handlers attempting to read `r.Body` will encounter `EOF`.
-  When `replace == true`, `r.Body.Close()` is explicitly called and replaced with `io.NopCloser(bytes.NewReader(body))`.
-- **Recommendation**: Document this behavior clearly for callers so that callers who need to pass the request downstream know to set `replace = true`.
+#### Remediation plan
 
----
+1. **Fix `decodeBase64` to tolerate embedded newlines/whitespace (key_registry.go).**
+   - Strip *all* whitespace, not just the leading/trailing run, before decoding,
+     e.g. `bytes.Map(func(r rune) rune { if unicode.IsSpace(r) { return -1 }; return r }(...))`
+     or filter with `strings.Fields`/`bytes.ReplaceAll` for `\n`, `\r`, `\t`, and
+     interior spaces.
+   - Extend `TestDecodeBase64Whitespace` (config_test.go) with a case that embeds
+     an internal newline (simulating a wrapped YAML literal block scalar) so the
+     regression is caught going forward — the current test only covers
+     leading/trailing whitespace despite its doc comment claiming block-scalar
+     coverage.
+   - Re-run `TestConfigSigningKeyEncoding`/`TestConfigInvalidKeys` to confirm the
+     "not base64 encoded" negative case (which relies on illegal characters,
+     including a space, being rejected) still fails as expected after loosening
+     whitespace handling.
 
-##### 5. [Concurrency / Testing] Timing / Synchronization in `webhooks/relay_test.go`
-- **Severity**: Low
-- **Location**: `webhooks/relay_test.go:307-325`
-- **Description**:
-  `TestRelayConcurrentReadsDefault` spawns two reader goroutines with `wg.Go(...)` and immediately calls `postWebhook(...)` twice.
-  Because there is no barrier or signaling that the reader goroutines have started and are blocked inside `handler(w, req)`, there is a slight scheduling race where both webhooks might be posted to the FIFO queue before either reader has invoked `/api/wait`.
-  While the test passes because the FIFO queue buffers the messages, it does not strictly verify that readers were concurrently blocked while waiting for a delivery.
-- **Recommendation**: Use a synchronization primitive or verify blocking behavior if strict concurrent wait semantics need to be asserted.
+2. **Fix the transposed `user`/`id` arguments.**
+   - `webauth/jwtutil/config_test.go`: change
+     `keys.NewInfo(testKeyID, testKeyUser, nil)` to
+     `keys.NewInfo(testKeyUser, testKeyID, nil)` in `TestPublicKeyFromKeyInfoErrors`.
+   - `websec/example_test.go`: change `jwtutil.NewED25519KeyInfo("key", "user")`
+     to `jwtutil.NewED25519KeyInfo("user", "key")` (or clearer literal names).
+   - `websec/localhost_test.go` (`setupSigner`): change
+     `jwtutil.NewED25519KeyInfo("test-key-id", "test-user")` to
+     `jwtutil.NewED25519KeyInfo("test-user", "test-key-id")` so the key's ID
+     matches what the variable name (and the pre-migration `NewED25519Signer(priv,
+     "test-key-id")` call) implies.
+   - `webauth/webauthn/passkeys/passkey_server_test.go`: change
+     `jwtutil.NewED25519KeyInfo("pkid", "test-user")` to
+     `jwtutil.NewED25519KeyInfo("test-user", "pkid")` to preserve "pkid" as the
+     key ID, matching the original `NewED25519Signer(privKey, "pkid")` behaviour
+     it replaces.
+   - After fixing, grep the rest of the branch's `NewED25519KeyInfo(...)` call
+     sites (config_test.go's own helpers are correct and can be used as the
+     template) to confirm no other instance of the swap was missed.
 
----
+3. **Repair or retire `run_test_server.go`.**
+   - Preferred: update it to build a key via `jwtutil.NewED25519KeyInfo` +
+     `jwtutil.ED25519{}.Signer(...)` (mirroring the fix already applied to
+     `passkey_server_test.go` and `websec/example_test.go` in this same diff), or
+     use `jwtutil.NewSignerFromContext`/`SignerForKey` for a more representative
+     example of the new config-driven flow.
+   - Alternative: if the demo is stale/unmaintained, delete it rather than leave
+     dead, non-compiling example code referencing a removed API — the
+     `//go:build ignore` tag means CI will never catch further drift.
 
-#### Step-by-Step Fix Plan
+4. **Document the `NewED25519Signer` removal as a breaking API change** in the
+   branch's PR description/changelog (the README.md diff already documents the
+   new API surface, but doesn't call out that `NewED25519Signer` is gone) so
+   downstream consumers of `cloudeng.io/webapp/webauth/jwtutil` know to migrate
+   to `NewED25519KeyInfo` + `NewSignerFromKeyInfo`/`ED25519{}.Signer`.
 
-1. **Fix Test Import in `goget/goget_test.go`**:
-   - Replace `"github.com/stretchr/testify/assert/yaml"` with `"gopkg.in/yaml.v3"`.
-   - Run `go test ./goget` to verify `TestYAMLUnmarshal` passes.
-2. **(Optional / Future) Strengthen Public Key Isolation in `webauth/jwtutil/signer.go`**:
-   - Change `set.AddKey(jwkKey)` to `set.AddKey(pk)` so that the validator only holds the public key.
-3. **Verify All Workspaces and Submodules**:
-   - Run `go test ./...` across the entire workspace (`cloudeng.io/webapp`, `cmd/acme`, `cmd/webapp`, `webauth/auth0`).
+#### Notes on things that looked suspicious but checked out
+
+- `NewCookieSigner` adds `signer.PublicKey()` to its internal verification
+  `jwk.Set` without explicitly setting a `kid`, unlike `keySetForKeys` which
+  does. This is safe: `jwk.Import`'s OKP `PublicKey()` path copies every field
+  (including `kid`) from the private key it was derived from, so the key ID set
+  by `NewSigner` on the private key survives onto the public key. Confirmed by
+  reading `jwk/okp.go`'s `makeOKPPublicKey` and by the passing
+  `TestCookieSignerAndVerifier`/`TestCookieValidationTimeSkew` tests.
+- `ED25519.Signer` decodes the private key into a buffer that is zeroed via a
+  deferred `cleanup()` after `jwk.Import` runs. This does not corrupt the
+  imported key because `ed25519.PrivateKey.Seed()`/`.Public()` (called inside
+  `jwk.Import`'s OKP private-key path) copy the bytes rather than aliasing the
+  input slice — unlike the public-key import path, which the code correctly
+  works around with an explicit `slices.Clone` (see the comment in
+  `ED25519.PublicKey`).
+- `Verifier.validateOptions` clones `v.opts` before appending per-call
+  validators (`append(slices.Clone(v.opts), validators...)`), which correctly
+  avoids a data race across concurrent `Validate` calls that would otherwise be
+  possible if `append` reused `v.opts`'s backing array.
 
 

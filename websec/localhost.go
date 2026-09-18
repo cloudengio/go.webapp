@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"net/netip"
 	"net/url"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -25,21 +26,9 @@ import (
 type Option func(o *options)
 
 type jwtConfig struct {
-	cookie     cookies.Secure
-	contextKey string
-	validator  jwtutil.Validator
-	claimKey   string
-	claimValue any
-}
-
-// tokenKey returns the key that a validated token is stored under in the
-// request context. It defaults to the name of the cookie the token arrived in,
-// which is what WithJWTContextKey overrides.
-func (c *jwtConfig) tokenKey() string {
-	if c.contextKey != "" {
-		return c.contextKey
-	}
-	return string(c.cookie)
+	cookie          cookies.Secure
+	validator       jwtutil.Validator
+	validateOptions []jwt.ValidateOption
 }
 
 // Denial reason constants used as label values for the denial metric.
@@ -91,8 +80,6 @@ type options struct {
 	customResponseHeaders map[string]string
 	logger                *slog.Logger
 	jwt                   *jwtConfig
-	jwtCookieName         string
-	jwtContextKey         string
 	counterVec            webapp.CounterVecInc
 	counterVecAdd         webapp.CounterVecAdd
 }
@@ -213,50 +200,21 @@ func WithCounterVecAdd(counter webapp.CounterVecAdd) Option {
 
 // WithJWTCookie enables JWT validation for requests presented in a cookie.
 // It verifies that the cookie named cookieName contains a JWT that validator
-// accepts and that contains claimKey == claimValue. If cookieName is empty,
-// it defaults to "auth_token".
+// accepts, subject to validateOptions (e.g. jwt.WithClaimValue). If
+// cookieName is empty, it defaults to "auth_token". validateOptions is
+// cloned, so the caller's slice may be reused or modified afterward.
 //
 // The validated token is stored in the request context under the name of the
-// cookie unless WithJWTContextKey says otherwise. WithJWTCookieName can be
-// used to set the cookie name separately from this option.
-func WithJWTCookie(cookieName string, validator jwtutil.Validator, claimKey string, claimValue any) Option {
+// cookie, for retrieval with jwtutil.TokenFromContext.
+func WithJWTCookie(cookieName string, validator jwtutil.Validator, validateOptions ...jwt.ValidateOption) Option {
 	return func(o *options) {
 		if cookieName == "" {
 			cookieName = "auth_token"
 		}
 		o.jwt = &jwtConfig{
-			cookie:     cookies.Secure(cookieName),
-			validator:  validator,
-			claimKey:   claimKey,
-			claimValue: claimValue,
-		}
-	}
-}
-
-// WithJWTCookieName sets the name of the cookie that carries the JWT,
-// overriding the name given to WithJWTCookie. An empty name is ignored, since
-// a cookie has to be named something.
-func WithJWTCookieName(name string) Option {
-	return func(o *options) {
-		if name != "" {
-			o.jwtCookieName = name
-			if o.jwt != nil {
-				o.jwt.cookie = cookies.Secure(name)
-			}
-		}
-	}
-}
-
-// WithJWTContextKey sets the key that a validated token is stored under in the
-// request context, for retrieval with jwtutil.TokenFromContext. It defaults to the
-// name of the cookie, so this is needed where the two should differ, such as
-// when the name of the cookie is not one the rest of the application should
-// have to know.
-func WithJWTContextKey(key string) Option {
-	return func(o *options) {
-		o.jwtContextKey = key
-		if o.jwt != nil {
-			o.jwt.contextKey = key
+			cookie:          cookies.Secure(cookieName),
+			validator:       validator,
+			validateOptions: slices.Clone(validateOptions),
 		}
 	}
 }
@@ -277,14 +235,6 @@ func NewLocalhostHandler(next http.Handler, opts ...Option) http.Handler {
 	o := defaultOptions()
 	for _, opt := range opts {
 		opt(&o)
-	}
-	if o.jwt != nil {
-		if o.jwtCookieName != "" {
-			o.jwt.cookie = cookies.Secure(o.jwtCookieName)
-		}
-		if o.jwtContextKey != "" {
-			o.jwt.contextKey = o.jwtContextKey
-		}
 	}
 	if o.counterVec == nil {
 		o.counterVec = noopCounter
@@ -396,24 +346,22 @@ func (h *handler) verifyJWT(w http.ResponseWriter, r *http.Request) (*http.Reque
 	if value, ok := cfg.cookie.Read(r); ok && value != "" {
 		tok, err := h.validateToken(r.Context(), value)
 		if err == nil {
-			ctx := jwtutil.ContextWithToken(r.Context(), cfg.tokenKey(), tok)
+			ctx := jwtutil.ContextWithToken(r.Context(), string(cfg.cookie), tok)
 			return r.WithContext(ctx), true
 		}
-		h.opts.logger.WarnContext(r.Context(), "invalid jwt token in cookie", "error", err)
+		h.opts.logger.Warn("invalid jwt token in cookie", "error", err)
 		h.denyWithStatus(w, r, http.StatusUnauthorized, "invalid or expired authentication token", DenialInvalidJWT)
 		return r, false
 	}
+
+	h.opts.logger.Warn("missing jwt token in cookie", "error", "no cookie found", "cookie", string(cfg.cookie))
 
 	h.denyWithStatus(w, r, http.StatusUnauthorized, "missing authentication cookie", DenialInvalidJWT)
 	return r, false
 }
 
 func (h *handler) validateToken(ctx context.Context, tokenStr string) (jwt.Token, error) {
-	var validators []jwt.ValidateOption
-	if h.opts.jwt.claimKey != "" {
-		validators = append(validators, jwt.WithClaimValue(h.opts.jwt.claimKey, h.opts.jwt.claimValue))
-	}
-	return h.opts.jwt.validator.ParseAndValidate(ctx, []byte(tokenStr), validators...)
+	return h.opts.jwt.validator.ParseAndValidate(ctx, []byte(tokenStr), h.opts.jwt.validateOptions...)
 }
 
 func (h *handler) deny(w http.ResponseWriter, r *http.Request, reason string, denialType string) {
@@ -425,7 +373,7 @@ func (h *handler) denyWithStatus(w http.ResponseWriter, r *http.Request, status 
 	if h.opts.counterVecAdd != nil {
 		h.opts.counterVecAdd(r.Context(), 1, denialType)
 	}
-	h.opts.logger.WarnContext(r.Context(), "request rejected by localhost security handler",
+	h.opts.logger.Warn("request rejected by localhost security handler",
 		"status", status,
 		"reason", reason,
 		"denial_type", denialType,

@@ -143,34 +143,16 @@ Defaults to true.
 
 
 ```go
-func WithJWTContextKey(key string) Option
-```
-WithJWTContextKey sets the key that a validated token is stored under in the
-request context, for retrieval with jwtutil.TokenFromContext. It defaults
-to the name of the cookie, so this is needed where the two should differ,
-such as when the name of the cookie is not one the rest of the application
-should have to know.
-
-
-```go
-func WithJWTCookie(cookieName string, validator jwtutil.Validator, claimKey string, claimValue any) Option
+func WithJWTCookie(cookieName string, validator jwtutil.Validator, validateOptions ...jwt.ValidateOption) Option
 ```
 WithJWTCookie enables JWT validation for requests presented in a cookie.
 It verifies that the cookie named cookieName contains a JWT that validator
-accepts and that contains claimKey == claimValue. If cookieName is empty,
-it defaults to "auth_token".
+accepts, subject to validateOptions (e.g. jwt.WithClaimValue). If cookieName
+is empty, it defaults to "auth_token". validateOptions is cloned, so the
+caller's slice may be reused or modified afterward.
 
 The validated token is stored in the request context under the name of the
-cookie unless WithJWTContextKey says otherwise. WithJWTCookieName can be
-used to set the cookie name separately from this option.
-
-
-```go
-func WithJWTCookieName(name string) Option
-```
-WithJWTCookieName sets the name of the cookie that carries the JWT,
-overriding the name given to WithJWTCookie. An empty name is ignored,
-since a cookie has to be named something.
+cookie, for retrieval with jwtutil.TokenFromContext.
 
 
 ```go

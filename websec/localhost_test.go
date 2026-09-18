@@ -6,8 +6,6 @@ package websec_test
 
 import (
 	"context"
-	"crypto/ed25519"
-	"crypto/rand"
 	"net/http"
 	"net/http/httptest"
 	"slices"
@@ -15,9 +13,11 @@ import (
 	"testing"
 	"time"
 
+	"cloudeng.io/webapp/cookies"
 	"cloudeng.io/webapp/webauth/jwtutil"
 	"cloudeng.io/webapp/websec"
 	"github.com/lestrrat-go/jwx/v3/jwk"
+	"github.com/lestrrat-go/jwx/v3/jwt"
 )
 
 func okHandler() http.Handler {
@@ -470,11 +470,11 @@ func setupValidator(t *testing.T, signer jwtutil.Signer) jwtutil.Validator {
 
 func setupSigner(t *testing.T) jwtutil.Signer {
 	t.Helper()
-	_, priv, err := ed25519.GenerateKey(rand.Reader)
+	ki, err := jwtutil.NewED25519KeyInfo("test-user", "test-key-id")
 	if err != nil {
-		t.Fatalf("failed to generate ed25519 key: %v", err)
+		t.Fatalf("failed to create key info: %v", err)
 	}
-	signer, err := jwtutil.NewED25519Signer(priv, "test-key-id")
+	signer, err := jwtutil.ED25519{}.Signer(ki)
 	if err != nil {
 		t.Fatalf("failed to create signer: %v", err)
 	}
@@ -524,7 +524,7 @@ func TestJWTCookieValidation(t *testing.T) {
 	})
 
 	handler := websec.NewLocalhostHandler(echoHandler,
-		websec.WithJWTCookie("auth_cookie", validator, claimKey, claimValue),
+		websec.WithJWTCookie("auth_cookie", validator, jwt.WithClaimValue(claimKey, claimValue)),
 	)
 
 	tests := []struct {
@@ -604,7 +604,7 @@ func TestInvalidJWTCounter(t *testing.T) {
 	validator := setupValidator(t, signer)
 
 	handler := websec.NewLocalhostHandler(okHandler(),
-		websec.WithJWTCookie("test_cookie", validator, "perm", "read"),
+		websec.WithJWTCookie("test_cookie", validator, jwt.WithClaimValue("perm", "read")),
 		websec.WithCounterVec(vec.Inc),
 	)
 
@@ -620,13 +620,9 @@ func TestInvalidJWTCounter(t *testing.T) {
 	}
 }
 
-// TestJWTCookieNameAndContextKey covers the options that separate the name of
-// the cookie carrying the token from the key the token is stored under in the
-// request context. Without them the two are necessarily the same, so each case
-// here also fails if the option is ignored: the cookie the client sends is the
-// one the option names, so a handler still looking for the original name finds
-// no cookie at all.
-func TestJWTCookieNameAndContextKey(t *testing.T) {
+// TestJWTTokenStoredUnderCookieName verifies that a validated token is always
+// stored in the request context under the name of the cookie it arrived in.
+func TestJWTTokenStoredUnderCookieName(t *testing.T) {
 	ctx := t.Context()
 	signer := setupSigner(t)
 	validator := setupValidator(t, signer)
@@ -635,103 +631,41 @@ func TestJWTCookieNameAndContextKey(t *testing.T) {
 		t.Fatalf("failed to create token: %v", err)
 	}
 
-	for _, tc := range []struct {
-		name    string
-		opts    []websec.Option
-		sends   string
-		wantKey string
-	}{
-		{
-			name: "defaults to the cookie name",
-			opts: []websec.Option{
-				websec.WithJWTCookie("auth_cookie", validator, "role", "admin"),
-			},
-			sends:   "auth_cookie",
-			wantKey: "auth_cookie",
-		},
-		{
-			name: "renamed cookie after WithJWTCookie",
-			opts: []websec.Option{
-				websec.WithJWTCookie("auth_cookie", validator, "role", "admin"),
-				websec.WithJWTCookieName("renamed"),
-			},
-			sends:   "renamed",
-			wantKey: "renamed",
-		},
-		{
-			name: "renamed cookie before WithJWTCookie",
-			opts: []websec.Option{
-				websec.WithJWTCookieName("renamed"),
-				websec.WithJWTCookie("auth_cookie", validator, "role", "admin"),
-			},
-			sends:   "renamed",
-			wantKey: "renamed",
-		},
-		{
-			name: "separate context key after WithJWTCookie",
-			opts: []websec.Option{
-				websec.WithJWTCookie("auth_cookie", validator, "role", "admin"),
-				websec.WithJWTContextKey("session"),
-			},
-			sends:   "auth_cookie",
-			wantKey: "session",
-		},
-		{
-			name: "separate context key before WithJWTCookie",
-			opts: []websec.Option{
-				websec.WithJWTContextKey("session"),
-				websec.WithJWTCookie("auth_cookie", validator, "role", "admin"),
-			},
-			sends:   "auth_cookie",
-			wantKey: "session",
-		},
-		{
-			name: "both before WithJWTCookie",
-			opts: []websec.Option{
-				websec.WithJWTCookieName("renamed"),
-				websec.WithJWTContextKey("session"),
-				websec.WithJWTCookie("auth_cookie", validator, "role", "admin"),
-			},
-			sends:   "renamed",
-			wantKey: "session",
-		},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			var gotKeys []string
-			var gotSubject string
-			inner := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				for k := range jwtutil.TokensFromContext(r.Context()) {
-					gotKeys = append(gotKeys, k)
-				}
-				slices.Sort(gotKeys)
-				if tok, ok := jwtutil.TokenFromContext(r.Context(), tc.wantKey); ok {
-					gotSubject, _ = tok.Subject()
-				}
-				w.WriteHeader(http.StatusOK)
-			})
+	var gotKeys []string
+	var gotSubject string
+	inner := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		for k := range jwtutil.TokensFromContext(r.Context()) {
+			gotKeys = append(gotKeys, k)
+		}
+		slices.Sort(gotKeys)
+		if tok, ok := jwtutil.TokenFromContext(r.Context(), "auth_cookie"); ok {
+			gotSubject, _ = tok.Subject()
+		}
+		w.WriteHeader(http.StatusOK)
+	})
 
-			handler := websec.NewLocalhostHandler(inner, tc.opts...)
+	handler := websec.NewLocalhostHandler(inner,
+		websec.WithJWTCookie("auth_cookie", validator, jwt.WithClaimValue("role", "admin")),
+	)
 
-			req := httptest.NewRequest(http.MethodGet, "/", nil)
-			req.RemoteAddr = "127.0.0.1:1234"
-			req.Host = "localhost"
-			// G124 concerns response cookies; Secure, HttpOnly and SameSite
-			// have no meaning on one a client sends.
-			req.AddCookie(&http.Cookie{Name: tc.sends, Value: string(token)}) //nolint:gosec // G124: a request cookie.
-			w := httptest.NewRecorder()
-			handler.ServeHTTP(w, req)
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req.RemoteAddr = "127.0.0.1:1234"
+	req.Host = "localhost"
+	// G124 concerns response cookies; Secure, HttpOnly and SameSite
+	// have no meaning on one a client sends.
+	req.AddCookie(&http.Cookie{Name: "auth_cookie", Value: string(token)}) //nolint:gosec // G124: a request cookie.
+	w := httptest.NewRecorder()
+	handler.ServeHTTP(w, req)
 
-			if got, want := w.Code, http.StatusOK; got != want {
-				t.Fatalf("got status %d, want %d (body %q)", got, want, w.Body.String())
-			}
-			// The token is stored once, under the expected key and no other.
-			if got, want := gotKeys, []string{tc.wantKey}; !slices.Equal(got, want) {
-				t.Errorf("token stored under %v, want %v", got, want)
-			}
-			if got, want := gotSubject, "user-3"; got != want {
-				t.Errorf("subject: got %v, want %v", got, want)
-			}
-		})
+	if got, want := w.Code, http.StatusOK; got != want {
+		t.Fatalf("got status %d, want %d (body %q)", got, want, w.Body.String())
+	}
+	// The token is stored once, under the cookie name and no other key.
+	if got, want := gotKeys, []string{"auth_cookie"}; !slices.Equal(got, want) {
+		t.Errorf("token stored under %v, want %v", got, want)
+	}
+	if got, want := gotSubject, "user-3"; got != want {
+		t.Errorf("subject: got %v, want %v", got, want)
 	}
 }
 
@@ -750,7 +684,7 @@ func TestJWTTokenNotAcceptedFromQuery(t *testing.T) {
 	}
 
 	handler := websec.NewLocalhostHandler(okHandler(),
-		websec.WithJWTCookie("auth_cookie", validator, "role", "admin"),
+		websec.WithJWTCookie("auth_cookie", validator, jwt.WithClaimValue("role", "admin")),
 	)
 
 	for _, param := range []string{"token", "auth_cookie", "jwt"} {
@@ -778,8 +712,8 @@ func TestJWTIssuerIntegration(t *testing.T) {
 
 	issuer := jwtutil.JWTIssuerMust(signer,
 		jwtutil.WithSubject("alice"),
-		jwtutil.WithClaim("role", "manager"),
-		jwtutil.WithCookie("session_cookie"),
+		jwtutil.WithClaims(map[string]any{"role": "manager"}),
+		jwtutil.WithSecureCookie("session_cookie", cookies.ScopeAndDuration{}),
 		jwtutil.WithRedirect("/dashboard"),
 	)
 
@@ -808,7 +742,7 @@ func TestJWTIssuerIntegration(t *testing.T) {
 	})
 
 	secured := websec.NewLocalhostHandler(app,
-		websec.WithJWTCookie("session_cookie", validator, "role", "manager"),
+		websec.WithJWTCookie("session_cookie", validator, jwt.WithClaimValue("role", "manager")),
 	)
 
 	apiReq := httptest.NewRequest(http.MethodGet, "/dashboard", nil)
