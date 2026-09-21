@@ -3,11 +3,11 @@ module cloudeng.io/webapp
 go 1.27.0
 
 require (
-	cloudeng.io/cicd v0.0.0-20260914180154-c85eb1cb5201
+	cloudeng.io/cicd v0.0.0-20260917173125-352abbdf5da1
 	cloudeng.io/cmdutil v0.0.0-20260917173125-352abbdf5da1
 	cloudeng.io/errors v0.0.14-0.20260312171538-61fcde6ce278
 	cloudeng.io/file v0.0.0-20260917173125-352abbdf5da1
-	cloudeng.io/io v0.0.0-20260914180154-c85eb1cb5201
+	cloudeng.io/io v0.0.0-20260917173125-352abbdf5da1
 	cloudeng.io/logging v0.0.0-20260917173125-352abbdf5da1
 	cloudeng.io/net v0.0.0-20260917173125-352abbdf5da1
 	cloudeng.io/os v0.0.0-20260917173125-352abbdf5da1
@@ -16,9 +16,9 @@ require (
 	cloudeng.io/webapi/operations v0.0.0-20260914220715-614066f9ca28
 	github.com/chromedp/cdproto v0.0.0-20260912003405-686a5c723acc
 	github.com/cloudengio/chromedp v0.0.0-20260611181948-3cd91754d426
-	github.com/gaissmai/bart v0.29.0
+	github.com/gaissmai/bart v0.30.0
 	github.com/go-json-experiment/json v0.0.0-20260820222146-c27c302e5fc3
-	github.com/go-webauthn/webauthn v0.18.1
+	github.com/go-webauthn/webauthn v0.18.2
 	github.com/lestrrat-go/jwx/v3 v3.3.0
 	github.com/stretchr/testify v1.12.1
 	golang.org/x/crypto v0.57.0
@@ -28,8 +28,8 @@ require (
 
 require (
 	cloudeng.io/algo v0.0.0-20260917173125-352abbdf5da1 // indirect
-	cloudeng.io/sys v0.0.0-20260914180154-c85eb1cb5201 // indirect
-	cloudeng.io/types v0.0.0-20260914180154-c85eb1cb5201 // indirect
+	cloudeng.io/sys v0.0.0-20260917173125-352abbdf5da1 // indirect
+	cloudeng.io/types v0.0.0-20260917173125-352abbdf5da1 // indirect
 	github.com/chromedp/sysutil v1.1.0 // indirect
 	github.com/decred/dcrd/dcrec/secp256k1/v4 v4.4.1 // indirect
 	github.com/fxamacker/cbor/v2 v2.9.4 // indirect

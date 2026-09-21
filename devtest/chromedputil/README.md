@@ -161,8 +161,8 @@ handler to return true stops the event propagation.
 ```go
 func NativeMessagingHostsDir() string
 ```
-NativeMessagingHostsDirOnCI returns the directory where Chrome looks for
-native messaging hosts.
+NativeMessagingHostsDir returns the directory where Chrome looks for native
+messaging hosts.
 
 ### Func NewListenHandler
 ```go
