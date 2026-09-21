@@ -283,7 +283,7 @@ func ChromeBinPathOnCI() string {
 	return os.Getenv("CHROME_BIN_PATH")
 }
 
-// NativeMessagingHostsDirOnCI returns the directory where Chrome looks for native
+// NativeMessagingHostsDir returns the directory where Chrome looks for native
 // messaging hosts.
 func NativeMessagingHostsDir() string {
 	configDir, err := os.UserConfigDir()

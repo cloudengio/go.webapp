@@ -22,7 +22,8 @@ ScopeAndDuration represents the scope and duration settings for cookies.
 func (d ScopeAndDuration) Cookie(value string) *http.Cookie
 ```
 Cookie returns a new http.Cookie with the specified value and the scope and
-duration settings from the ScopeAndDuration receiver.
+duration settings from the ScopeAndDuration receiver. Secure and HttpOnly
+are set to true, and SameSite is set to Strict mode.
 
 
 ```go
