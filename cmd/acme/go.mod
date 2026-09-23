@@ -3,23 +3,23 @@ module cloudeng.io/webapp/cmd/acme
 go 1.27.0
 
 require (
-	cloudeng.io/aws v0.0.0-20260917173125-352abbdf5da1
-	cloudeng.io/cmdutil v0.0.0-20260917173125-352abbdf5da1
+	cloudeng.io/aws v0.0.0-20260923165344-0acebac4c1e9
+	cloudeng.io/cmdutil v0.0.0-20260922225404-b05ec561761a
 	cloudeng.io/errors v0.0.14-0.20260312171538-61fcde6ce278
-	cloudeng.io/file v0.0.0-20260917173125-352abbdf5da1
-	cloudeng.io/logging v0.0.0-20260917173125-352abbdf5da1
-	cloudeng.io/net v0.0.0-20260917173125-352abbdf5da1
+	cloudeng.io/file v0.0.0-20260923165344-0acebac4c1e9
+	cloudeng.io/logging v0.0.0-20260923165344-0acebac4c1e9
+	cloudeng.io/net v0.0.0-20260923165344-0acebac4c1e9
 	cloudeng.io/webapp v0.0.0-20251211202122-3206a59d8279
 	golang.org/x/crypto v0.57.0
 )
 
 require (
-	cloudeng.io/algo v0.0.0-20260917173125-352abbdf5da1 // indirect
-	cloudeng.io/os v0.0.0-20260917173125-352abbdf5da1 // indirect
+	cloudeng.io/algo v0.0.0-20260923165344-0acebac4c1e9 // indirect
+	cloudeng.io/os v0.0.0-20260923165344-0acebac4c1e9 // indirect
 	cloudeng.io/sync v0.0.12-0.20260804222138-e9281ed260ba // indirect
-	cloudeng.io/sys v0.0.0-20260917173125-352abbdf5da1 // indirect
+	cloudeng.io/sys v0.0.0-20260923165344-0acebac4c1e9 // indirect
 	cloudeng.io/text v0.0.16-0.20260624171915-da98fe9dec2b // indirect
-	cloudeng.io/types v0.0.0-20260917173125-352abbdf5da1 // indirect
+	cloudeng.io/types v0.0.0-20260923165344-0acebac4c1e9 // indirect
 	github.com/aws/aws-sdk-go-v2 v1.47.0 // indirect
 	github.com/aws/aws-sdk-go-v2/config v1.33.5 // indirect
 	github.com/aws/aws-sdk-go-v2/credentials v1.20.5 // indirect
