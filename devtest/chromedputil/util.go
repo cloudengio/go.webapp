@@ -283,8 +283,16 @@ func ChromeBinPathOnCI() string {
 	return os.Getenv("CHROME_BIN_PATH")
 }
 
-// NativeMessagingHostsDir returns the directory where Chrome looks for native
-// messaging hosts.
+// NativeMessagingHostsDir returns the machine/user-wide directory where
+// Chrome looks for native messaging host manifests, keyed off the browser
+// variant (stable, Chrome for Testing, Chromium, ...) inferred from
+// ChromeBinPathOnCI. This is where a real, installed Chrome looks; a Chrome
+// launched with a non-default --user-data-dir, as every ExecAllocator in
+// this package does, also (and more reliably, since it needs no OS/variant
+// guessing at all) looks in UserDataNativeMessagingHostsDir(userDataDir) —
+// prefer that one for anything launched via this package, and use this
+// function only when the manifest must be visible to Chrome regardless of
+// which profile it's launched against.
 func NativeMessagingHostsDir() string {
 	configDir, err := os.UserConfigDir()
 	if err != nil {
@@ -300,6 +308,21 @@ func NativeMessagingHostsDir() string {
 	}
 }
 
+// UserDataNativeMessagingHostsDir returns the directory where Chrome looks
+// for native messaging host manifests scoped to a specific profile:
+// Chromium resolves its DIR_USER_NATIVE_MESSAGING relative to DIR_USER_DATA
+// (i.e. --user-data-dir) on every platform, so, unlike NativeMessagingHostsDir,
+// this needs no per-OS or per-browser-variant guessing, and works the same
+// way for every ExecAllocator this package creates (they all set
+// --user-data-dir; see WithExecAllocatorForCI and UserDataDirOnCI). This is
+// the directory to write a manifest to for any Chrome launched by this
+// package, and is the only mechanism confirmed to work against a Chrome for
+// Testing build's own profile directory, as opposed to the real,
+// machine-wide location NativeMessagingHostsDir guesses at.
+func UserDataNativeMessagingHostsDir(userDataDir string) string {
+	return filepath.Join(userDataDir, "NativeMessagingHosts")
+}
+
 func darwinChromedpProduct() string {
 	// Determine Chrome variant from the CI binary path, defaulting to
 	// standard Google Chrome.
@@ -307,7 +330,10 @@ func darwinChromedpProduct() string {
 	if bin := ChromeBinPathOnCI(); bin != "" {
 		switch {
 		case strings.Contains(bin, "for Testing"):
-			product = "Google/Chrome for Testing"
+			// Chrome for Testing's Application Support directory is a
+			// single "Google Chrome for Testing" component, unlike stable
+			// Chrome's, which nests under "Google/Chrome".
+			product = "Google Chrome for Testing"
 		case strings.Contains(bin, "Chromium"):
 			product = "Chromium"
 		case strings.Contains(bin, "Canary"):

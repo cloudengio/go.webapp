@@ -461,7 +461,7 @@ func TestNativeMessagingHostsDirProduct(t *testing.T) {
 			{"chrome", "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome", "Google/Chrome"},
 			{"chrome for testing",
 				"/Applications/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing",
-				"Google/Chrome for Testing"},
+				"Google Chrome for Testing"},
 			{"chromium", "/Applications/Chromium.app/Contents/MacOS/Chromium", "Chromium"},
 			{"canary", "/Applications/Google Chrome Canary.app/Contents/MacOS/Google Chrome Canary",
 				"Google/Chrome Canary"},
@@ -488,6 +488,22 @@ func TestNativeMessagingHostsDirProduct(t *testing.T) {
 		want := filepath.Join(config, tc.want, "NativeMessagingHosts")
 		if got := chromedputil.NativeMessagingHostsDir(); got != want {
 			t.Errorf("%v:\n got %v\nwant %v", tc.name, got, want)
+		}
+	}
+}
+
+// TestUserDataNativeMessagingHostsDir verifies that the profile-relative
+// native messaging hosts directory is simply NativeMessagingHosts beneath
+// the given --user-data-dir, with no OS or browser-variant guessing
+// involved, unlike NativeMessagingHostsDir.
+func TestUserDataNativeMessagingHostsDir(t *testing.T) {
+	for _, userDataDir := range []string{
+		"/tmp/some-profile",
+		filepath.Join(t.TempDir(), "chrome-profile"),
+	} {
+		want := filepath.Join(userDataDir, "NativeMessagingHosts")
+		if got := chromedputil.UserDataNativeMessagingHostsDir(userDataDir); got != want {
+			t.Errorf("UserDataNativeMessagingHostsDir(%q) = %q, want %q", userDataDir, got, want)
 		}
 	}
 }
