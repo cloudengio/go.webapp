@@ -3,14 +3,14 @@ module cloudeng.io/webapp
 go 1.27.0
 
 require (
-	cloudeng.io/cicd v0.0.0-20260923165344-0acebac4c1e9
-	cloudeng.io/cmdutil v0.0.0-20260922225404-b05ec561761a
+	cloudeng.io/cicd v0.0.0-20260925200243-4023f51f1ebd
+	cloudeng.io/cmdutil v0.0.0-20260925200243-4023f51f1ebd
 	cloudeng.io/errors v0.0.14-0.20260312171538-61fcde6ce278
-	cloudeng.io/file v0.0.0-20260923165344-0acebac4c1e9
-	cloudeng.io/io v0.0.0-20260923165344-0acebac4c1e9
-	cloudeng.io/logging v0.0.0-20260923165344-0acebac4c1e9
-	cloudeng.io/net v0.0.0-20260923165344-0acebac4c1e9
-	cloudeng.io/os v0.0.0-20260923165344-0acebac4c1e9
+	cloudeng.io/file v0.0.0-20260925200243-4023f51f1ebd
+	cloudeng.io/io v0.0.0-20260925200243-4023f51f1ebd
+	cloudeng.io/logging v0.0.0-20260925200243-4023f51f1ebd
+	cloudeng.io/net v0.0.0-20260925200243-4023f51f1ebd
+	cloudeng.io/os v0.0.0-20260925200243-4023f51f1ebd
 	cloudeng.io/sync v0.0.12-0.20260804222138-e9281ed260ba
 	cloudeng.io/text v0.0.16-0.20260624171915-da98fe9dec2b
 	cloudeng.io/webapi/operations v0.0.0-20260914220715-614066f9ca28
@@ -27,9 +27,9 @@ require (
 )
 
 require (
-	cloudeng.io/algo v0.0.0-20260923165344-0acebac4c1e9 // indirect
-	cloudeng.io/sys v0.0.0-20260923165344-0acebac4c1e9 // indirect
-	cloudeng.io/types v0.0.0-20260923165344-0acebac4c1e9 // indirect
+	cloudeng.io/algo v0.0.0-20260925200243-4023f51f1ebd // indirect
+	cloudeng.io/sys v0.0.0-20260925200243-4023f51f1ebd // indirect
+	cloudeng.io/types v0.0.0-20260925200243-4023f51f1ebd // indirect
 	github.com/chromedp/sysutil v1.1.0 // indirect
 	github.com/decred/dcrd/dcrec/secp256k1/v4 v4.4.1 // indirect
 	github.com/fxamacker/cbor/v2 v2.9.4 // indirect
@@ -38,7 +38,7 @@ require (
 	github.com/gobwas/httphead v0.1.0 // indirect
 	github.com/gobwas/pool v0.2.1 // indirect
 	github.com/gobwas/ws v1.4.0 // indirect
-	github.com/goccy/go-json v0.10.6 // indirect
+	github.com/goccy/go-json v0.11.1 // indirect
 	github.com/golang-jwt/jwt/v5 v5.3.1 // indirect
 	github.com/google/go-tpm v0.9.8 // indirect
 	github.com/google/uuid v1.6.0 // indirect

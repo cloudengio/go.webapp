@@ -161,8 +161,16 @@ handler to return true stops the event propagation.
 ```go
 func NativeMessagingHostsDir() string
 ```
-NativeMessagingHostsDir returns the directory where Chrome looks for native
-messaging hosts.
+NativeMessagingHostsDir returns the machine/user-wide directory where Chrome
+looks for native messaging host manifests, keyed off the browser variant
+(stable, Chrome for Testing, Chromium, ...) inferred from ChromeBinPathOnCI.
+This is where a real, installed Chrome looks; a Chrome launched with a
+non-default --user-data-dir, as every ExecAllocator in this package does,
+also (and more reliably, since it needs no OS/variant guessing at all)
+looks in UserDataNativeMessagingHostsDir(userDataDir) — prefer that one
+for anything launched via this package, and use this function only when the
+manifest must be visible to Chrome regardless of which profile it's launched
+against.
 
 ### Func NewListenHandler
 ```go
@@ -197,6 +205,22 @@ SourceScript loads a JavaScript script into the current page.
 func UserDataDirOnCI() string
 ```
 UserDataDirOnCI returns the user data directory for Chrome on CI.
+
+### Func UserDataNativeMessagingHostsDir
+```go
+func UserDataNativeMessagingHostsDir(userDataDir string) string
+```
+UserDataNativeMessagingHostsDir returns the directory where Chrome looks
+for native messaging host manifests scoped to a specific profile: Chromium
+resolves its DIR_USER_NATIVE_MESSAGING relative to DIR_USER_DATA (i.e.
+--user-data-dir) on every platform, so, unlike NativeMessagingHostsDir,
+this needs no per-OS or per-browser-variant guessing, and works the same way
+for every ExecAllocator this package creates (they all set --user-data-dir;
+see WithExecAllocatorForCI and UserDataDirOnCI). This is the directory
+to write a manifest to for any Chrome launched by this package, and is
+the only mechanism confirmed to work against a Chrome for Testing build's
+own profile directory, as opposed to the real, machine-wide location
+NativeMessagingHostsDir guesses at.
 
 ### Func WaitForPromise
 ```go
