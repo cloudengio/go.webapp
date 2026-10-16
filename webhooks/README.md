@@ -42,6 +42,15 @@ ErrWrongServiceSpecificConfig = fmt.Errorf("missing service specific config")
 
 
 ## Functions
+### Func GitHubWorkflowSessionKey
+```go
+func GitHubWorkflowSessionKey(header http.Header, body []byte) (string, bool)
+```
+GitHubWorkflowSessionKey is a SessionKeyFunc that groups the webhooks of a
+GitHub workflow run: the workflow_run and workflow_job events of a run have
+the same session, which is the run's id, and the workflow_run event with an
+action of completed is the last. All other events are not part of a session.
+
 ### Func NoopValidator
 ```go
 func NoopValidator(req *http.Request) ([]byte, int)
@@ -77,7 +86,8 @@ type Config struct {
 	MaxPayloadSize  cmdyaml.ByteSize  `yaml:"max_payload_size" doc:"maximum allowed payload size for incoming webhook requests in bytes, e.g. 1048576 for 1MB"`
 	MaxQueueSize    int               `yaml:"max_queue_size" doc:"maximum number of payloads to hold in the queue for processing, leave empty for default"`
 	ExclusiveReads  bool              `yaml:"exclusive_reads" doc:"if true, at most one long poll reader is admitted at a time and concurrent readers are rejected with 409 Conflict"`
-	Service         string            `yaml:"service" doc:"type of webhook to serve, e.g. github, etc."`
+	Sessions        bool              `yaml:"sessions,omitempty" doc:"if true, webhooks that are part of the same session are relayed to the same long poll reader"`
+	Service         string            `yaml:"service" doc:"type of webhook to serve, e.g. github-workflow, etc."`
 	ServiceSpecific *cmdyaml.Deferred `yaml:"service_specific" doc:"additional details specific to the type of webhook being served, leave empty for default"`
 }
 ```
@@ -172,6 +182,19 @@ WithQueueSize sets the size of the internal buffer for relaying payloads.
 When the buffer is full the oldest payload is dropped.
 
 
+```go
+func WithSessions(key SessionKeyFunc) Option
+```
+WithSessions configures the relay to keep the deliveries of a session, as
+identified by key, together: a long polling reader that asks for sessions,
+see Relay.WaitForWebhook, is given its own queue, and each session is bound,
+when its first delivery arrives, to the queue of the reader with the fewest
+sessions, which is sent all of its deliveries from then on. Deliveries that
+are not part of a session are relayed as they are without sessions, to any
+reader. If no such reader is waiting when the first delivery of a session
+arrives, it is relayed to any reader, as is the rest of that session.
+
+
 
 
 ### Type Relay
@@ -251,6 +274,11 @@ until a webhook payload is available. If the request context is cancelled
 while waiting, it logs the cancellation and returns without responding.
 When exclusive reads are configured (see WithExclusiveReads) and another
 reader is already waiting, it responds immediately with 409 Conflict.
+When sessions are enabled, see WithSessions, a request with a session=1
+query parameter is bound to the sessions that it is sent the first delivery
+of, and is sent all of the deliveries of those sessions, as they arrive,
+one JSON value per line, with any that are not part of a session, until it
+is sent the last of its sessions.
 
 
 
@@ -295,6 +323,19 @@ func (sc *SecretsConfig) UnmarshalYAML(node *yaml.Node) error
 ```
 
 
+
+
+### Type SessionKeyFunc
+```go
+type SessionKeyFunc func(header http.Header, body []byte) (key string, last bool)
+```
+SessionKeyFunc identifies the session, if any, that a webhook delivery
+belongs to, so that all of the deliveries of a session, for example all of
+the webhooks for a GitHub workflow run, are relayed to the same long polling
+reader. header is the header of the delivery request and body its payload,
+both of which have been validated. It returns an empty key for a delivery
+that is not part of a session, which can be relayed to any reader. last is
+true if the delivery is the last of its session.
 
 
 ### Type Validator

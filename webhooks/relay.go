@@ -26,7 +26,9 @@ import (
 // When the internal buffer is full the oldest webhook is dropped to make
 // room for the new one.
 type Relay struct {
+	ctx       context.Context
 	fifo      *patterns.FIFO[delivery]
+	sessions  *sessions // nil unless sessions are enabled, see WithSessions
 	validator Validator
 	opts      options
 	// readSlot serialises long-poll readers when exclusive reads are
@@ -40,6 +42,8 @@ type delivery struct {
 	header     http.Header
 	body       []byte
 	expiration time.Time // when the webhook expires
+	session    string    // the session that it is part of, or empty
+	last       bool      // it is the last of its session
 }
 
 type options struct {
@@ -49,6 +53,7 @@ type options struct {
 	expiry           time.Duration
 	expiryScan       time.Duration
 	exclusiveReads   bool
+	sessionKey       SessionKeyFunc // nil if sessions are not enabled
 	logger           *slog.Logger
 	deniedCounter    webapp.CounterInc // validation failed, e.g. due to invalid signature
 	relayedCounter   webapp.CounterInc // successfully relayed to FIFO
@@ -199,12 +204,17 @@ func NewRelay(ctx context.Context, validator Validator, opts ...Option) *Relay {
 	if options.exclusiveReads {
 		readSlot = make(chan struct{}, 1)
 	}
-	return &Relay{
+	r := &Relay{
+		ctx:       ctx,
 		fifo:      patterns.NewFIFO(ctx, int(options.size), expiryScan(options)...),
 		validator: validator,
 		opts:      options,
 		readSlot:  readSlot,
 	}
+	if options.sessionKey != nil {
+		r.sessions = newSessions()
+	}
+	return r
 }
 
 // expiryScan returns the FIFO options that implement delivery expiry, or nil
@@ -269,8 +279,24 @@ func (r *Relay) ServeWebhook(w http.ResponseWriter, req *http.Request) {
 		r.opts.logger.Info("ServeWebhook: context already cancelled before send", "err", err)
 		return
 	}
+	d := delivery{header: r.forwardedHeaders(req.Header), body: payload, expiration: time.Now().Add(r.opts.expiry)}
+	if r.sessions != nil {
+		d.session, d.last = r.opts.sessionKey(req.Header, payload)
+	}
+	if d.session != "" {
+		if routed, err := r.sessions.route(req.Context(), r.ctx, d); routed {
+			if err != nil {
+				r.opts.logger.Info("ServeWebhook: context cancelled while trying to send payload to a session", "session", d.session, "err", err)
+				return
+			}
+			r.opts.logger.Info("ServeWebhook: received payload and sent to a session", "size", len(payload), "session", d.session)
+			r.opts.relayedCounter(req.Context())
+			w.WriteHeader(http.StatusAccepted)
+			return
+		}
+	}
 	select {
-	case r.fifo.In() <- delivery{header: r.forwardedHeaders(req.Header), body: payload, expiration: time.Now().Add(r.opts.expiry)}:
+	case r.fifo.In() <- d:
 		r.opts.logger.Info("ServeWebhook: received payload and sent to FIFO", "size", len(payload))
 		r.opts.relayedCounter(req.Context())
 	case <-req.Context().Done():
@@ -288,6 +314,11 @@ func (r *Relay) ServeWebhook(w http.ResponseWriter, req *http.Request) {
 // and returns without responding.
 // When exclusive reads are configured (see WithExclusiveReads) and another
 // reader is already waiting, it responds immediately with 409 Conflict.
+// When sessions are enabled, see WithSessions, a request with a session=1
+// query parameter is bound to the sessions that it is sent the first delivery
+// of, and is sent all of the deliveries of those sessions, as they arrive, one
+// JSON value per line, with any that are not part of a session, until it is
+// sent the last of its sessions.
 func (r *Relay) WaitForWebhook(w http.ResponseWriter, req *http.Request) {
 	if req.Method != http.MethodGet {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -302,6 +333,10 @@ func (r *Relay) WaitForWebhook(w http.ResponseWriter, req *http.Request) {
 			http.Error(w, "another long poll reader is active", http.StatusConflict)
 			return
 		}
+	}
+	if r.sessions != nil && wantsSession(req) {
+		r.serveSession(w, req)
+		return
 	}
 	select {
 	case job, ok := <-r.fifo.Out():
