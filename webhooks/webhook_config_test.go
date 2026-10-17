@@ -510,3 +510,20 @@ sessions: true
 		}
 	}
 }
+
+func TestConfigValidateSessions(t *testing.T) {
+	for _, tc := range []struct {
+		c  webhooks.Config
+		ok bool
+	}{
+		{webhooks.Config{Service: "github-workflow", Sessions: true}, true},
+		{webhooks.Config{Service: "github-workflow"}, true},
+		{webhooks.Config{Service: "github"}, true},
+		{webhooks.Config{Service: "github", Sessions: true}, false},
+		{webhooks.Config{Sessions: true}, false},
+	} {
+		if err := tc.c.Validate(); (err == nil) != tc.ok {
+			t.Errorf("%+v: got %v, want ok %v", tc.c, err, tc.ok)
+		}
+	}
+}

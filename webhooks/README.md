@@ -51,6 +51,12 @@ GitHub workflow run: the workflow_run and workflow_job events of a run have
 the same session, which is the run's id, and the workflow_run event with an
 action of completed is the last. All other events are not part of a session.
 
+### Func HashSessionPolicy
+```go
+func HashSessionPolicy(session string, n int) int
+```
+HashSessionPolicy is the default SessionPolicy: it hashes the session key.
+
 ### Func NoopValidator
 ```go
 func NoopValidator(req *http.Request) ([]byte, int)
@@ -87,6 +93,7 @@ type Config struct {
 	MaxQueueSize    int               `yaml:"max_queue_size" doc:"maximum number of payloads to hold in the queue for processing, leave empty for default"`
 	ExclusiveReads  bool              `yaml:"exclusive_reads" doc:"if true, at most one long poll reader is admitted at a time and concurrent readers are rejected with 409 Conflict"`
 	Sessions        bool              `yaml:"sessions,omitempty" doc:"if true, webhooks that are part of the same session are relayed to the same long poll reader"`
+	SessionTimeout  time.Duration     `yaml:"session_timeout,omitempty" doc:"if sessions are enabled, how long a session may go without a webhook before it is ended, leave empty for no timeout"`
 	Service         string            `yaml:"service" doc:"type of webhook to serve, e.g. github-workflow, etc."`
 	ServiceSpecific *cmdyaml.Deferred `yaml:"service_specific" doc:"additional details specific to the type of webhook being served, leave empty for default"`
 }
@@ -110,6 +117,23 @@ func (c *Config) UnmarshalYAML(node *yaml.Node) error
 ```
 
 
+```go
+func (c Config) Validate() error
+```
+Validate reports whether sessions are enabled for a service without them.
+
+
+
+
+### Type Delivery
+```go
+type Delivery struct {
+	// Headers are the forwarded headers, see WithForwardedHeaders.
+	Headers http.Header    `json:"headers,omitzero"`
+	Payload jsontext.Value `json:"payload"`
+}
+```
+Delivery is a webhook as it is sent to a reader, one per line.
 
 
 ### Type Option
@@ -183,16 +207,31 @@ When the buffer is full the oldest payload is dropped.
 
 
 ```go
+func WithSessionPolicy(p SessionPolicy) Option
+```
+WithSessionPolicy sets the policy that binds sessions to readers, replacing
+HashSessionPolicy. It has no effect without WithSessions.
+
+
+```go
+func WithSessionTimeout(timeout time.Duration) Option
+```
+WithSessionTimeout ends a session that has had no delivery for longer than
+timeout, for sessions whose last delivery never arrives. A later delivery
+for it starts a new session. Expiry is checked as deliveries arrive and
+readers finish. A timeout <= 0, the default, disables it.
+
+
+```go
 func WithSessions(key SessionKeyFunc) Option
 ```
-WithSessions configures the relay to keep the deliveries of a session, as
-identified by key, together: a long polling reader that asks for sessions,
-see Relay.WaitForWebhook, is given its own queue, and each session is bound,
-when its first delivery arrives, to the queue of the reader with the fewest
-sessions, which is sent all of its deliveries from then on. Deliveries that
-are not part of a session are relayed as they are without sessions, to any
-reader. If no such reader is waiting when the first delivery of a session
-arrives, it is relayed to any reader, as is the rest of that session.
+WithSessions keeps the deliveries of a session, as identified by key,
+together. A reader that asks for sessions, see Relay.WaitForWebhook, gets
+its own queue. A session is bound to a reader, chosen by the SessionPolicy,
+when its first delivery arrives, and all of its deliveries go to that
+reader. Deliveries that are not part of a session go to any reader.
+If no session reader is waiting, deliveries are relayed as if sessions were
+not enabled.
 
 
 
@@ -255,7 +294,7 @@ ServeWebhook handles incoming webhook requests, validates them using the
 provided Validator, and relays the payload to the FIFO for processing.
 If the internal buffer is full the oldest payload is dropped to make room.
 It responds with appropriate HTTP status codes based on the validation
-outcome.
+outcome, and rejects, with 400, a payload that is not valid JSON.
 
 
 ```go
@@ -268,17 +307,17 @@ exits or ctx is cancelled.
 ```go
 func (r *Relay) WaitForWebhook(w http.ResponseWriter, req *http.Request)
 ```
-WaitForWebhook waits for a payload to be received on the FIFO and responds
-with the payload as JSON. It is intended to support long polling by blocking
-until a webhook payload is available. If the request context is cancelled
+WaitForWebhook waits for a webhook to be received and responds with it as
+a Delivery on a line of its own. It is intended to support long polling by
+blocking until a webhook is available. If the request context is cancelled
 while waiting, it logs the cancellation and returns without responding.
 When exclusive reads are configured (see WithExclusiveReads) and another
 reader is already waiting, it responds immediately with 409 Conflict.
-When sessions are enabled, see WithSessions, a request with a session=1
-query parameter is bound to the sessions that it is sent the first delivery
-of, and is sent all of the deliveries of those sessions, as they arrive,
-one JSON value per line, with any that are not part of a session, until it
-is sent the last of its sessions.
+When sessions are enabled, all webhooks that are considered part of the same
+session are routed to the same long polling reader. A reader identifies
+itself as being a candidate for sessions by setting the session=1 query
+parameter. When a sessions is identified, it is bound to a reader according
+to the policy set by WithSessionPolicy.
 
 
 
@@ -330,12 +369,21 @@ func (sc *SecretsConfig) UnmarshalYAML(node *yaml.Node) error
 type SessionKeyFunc func(header http.Header, body []byte) (key string, last bool)
 ```
 SessionKeyFunc identifies the session, if any, that a webhook delivery
-belongs to, so that all of the deliveries of a session, for example all of
-the webhooks for a GitHub workflow run, are relayed to the same long polling
-reader. header is the header of the delivery request and body its payload,
-both of which have been validated. It returns an empty key for a delivery
-that is not part of a session, which can be relayed to any reader. last is
-true if the delivery is the last of its session.
+belongs to. The only requirement is that it returns the same, non-empty
+key for all deliveries of the same session and it returns true for the last
+delivery of the session. Return an empty key indicates that the delivery
+does not belong to any session. header is the header of the delivery
+request and body its payload. The webhook delivery itself has already been
+validated.
+
+
+### Type SessionPolicy
+```go
+type SessionPolicy func(session string, n int) int
+```
+SessionPolicy chooses which of n > 0 session readers a new session is bound
+to, returning an index in [0, n). It is called once per session, when its
+first delivery arrives, and the session stays with that reader.
 
 
 ### Type Validator

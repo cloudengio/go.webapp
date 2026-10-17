@@ -7,7 +7,7 @@ package webhooks_test
 import (
 	"bufio"
 	"context"
-	"encoding/json"
+	"encoding/json/v2"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -19,13 +19,17 @@ import (
 	"cloudeng.io/webapp/webhooks"
 )
 
-// sessionLine is a line sent to the reader of a session.
+// sessionLine is a line sent to a reader, with the session that it is part of
+// and whether it is the last, as GitHubWorkflowSessionKey finds them.
 type sessionLine struct {
-	Headers http.Header     `json:"headers"`
-	Session string          `json:"session"`
-	Last    bool            `json:"last"`
-	Payload json.RawMessage `json:"payload"`
-	Body    string          `json:"body"`
+	webhooks.Delivery
+	Session string
+	Last    bool
+}
+
+func newLine(d webhooks.Delivery) sessionLine {
+	key, last := webhooks.GitHubWorkflowSessionKey(d.Headers, d.Payload)
+	return sessionLine{Delivery: d, Session: key, Last: last}
 }
 
 // sessionServer is a relay, with sessions, that is served over HTTP, since the
@@ -115,12 +119,12 @@ func (s *sessionServer) session() *reader {
 		sc := bufio.NewScanner(resp.Body)
 		sc.Buffer(nil, 1<<20)
 		for sc.Scan() {
-			var l sessionLine
-			if err := json.Unmarshal(sc.Bytes(), &l); err != nil {
+			var d webhooks.Delivery
+			if err := json.Unmarshal(sc.Bytes(), &d); err != nil {
 				s.t.Errorf("bad line %q: %v", sc.Bytes(), err)
 				return
 			}
-			rd.lines <- l
+			rd.lines <- newLine(d)
 		}
 	}()
 	return rd
@@ -158,11 +162,13 @@ func (r *reader) ended(t *testing.T) {
 	}
 }
 
-func (l sessionLine) name(t *testing.T) string {
+func lineName(t *testing.T, l sessionLine) string {
 	t.Helper()
 	var p struct {
-		WorkflowJob struct{ Name string } `json:"workflow_job"`
-		Zen         string                `json:"zen"`
+		WorkflowJob struct {
+			Name string `json:"name"`
+		} `json:"workflow_job"`
+		Zen string `json:"zen"`
 	}
 	if err := json.Unmarshal(l.Payload, &p); err != nil {
 		t.Fatal(err)
@@ -197,7 +203,7 @@ func TestSessionsSameRunSameReader(t *testing.T) {
 	for _, r := range []*reader{a, b} {
 		for range 5 {
 			l := r.next(t)
-			got[r] = append(got[r], l.name(t))
+			got[r] = append(got[r], lineName(t, l))
 			if sessions[r] == "" {
 				sessions[r] = l.Session
 			} else if sessions[r] != l.Session {
@@ -211,7 +217,7 @@ func TestSessionsSameRunSameReader(t *testing.T) {
 	}
 	for r, names := range got {
 		prefix := "a"
-		if sessions[r] == "run:2" {
+		if sessions[r] == "2" {
 			prefix = "b"
 		}
 		for i, n := range names {
@@ -261,7 +267,7 @@ func TestSessionsUnkeyedToAnyReader(t *testing.T) {
 	// Whichever is given run 1 is bound to it.
 	s.job(1, "a1")
 	a, l := firstOf(t, x, y)
-	if l.Session != "run:1" {
+	if l.Session != "1" {
 		t.Fatalf("got %+v", l)
 	}
 	b := y
@@ -280,7 +286,7 @@ func TestSessionsUnkeyedToAnyReader(t *testing.T) {
 		if l.Session != "" {
 			t.Errorf("a reader was sent %+v for no session", l)
 		}
-		pings[l.name(t)]++
+		pings[lineName(t, l)]++
 		byReader[r]++
 	}
 	if len(pings) != pingCount {
@@ -296,14 +302,16 @@ func TestSessionsUnkeyedToAnyReader(t *testing.T) {
 	got := map[string]*reader{}
 	for range 2 {
 		r, l := firstOf(t, a, b)
-		got[l.name(t)] = r
+		got[lineName(t, l)] = r
 	}
 	if got["a2"] != a || got["b1"] == a {
 		t.Errorf("a2 went to the reader of run 1: %v, b1 did not: %v", got["a2"] == a, got["b1"] != a)
 	}
 }
 
-func TestSessionsOneShotUnchanged(t *testing.T) {
+// TestSessionsOneShot checks that a reader that does not ask for sessions is
+// sent a single delivery, in the same format.
+func TestSessionsOneShot(t *testing.T) {
 	s := newSessionServer(t, webhooks.WithForwardedHeaders("X-GitHub-Event"))
 	s.job(1, "a1")
 	s.ping(1)
@@ -312,33 +320,42 @@ func TestSessionsOneShotUnchanged(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		var l sessionLine
-		l.Headers = resp.Header
-		var payload json.RawMessage
-		if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil {
+		var d webhooks.Delivery
+		err = json.UnmarshalRead(resp.Body, &d)
+		resp.Body.Close()
+		if err != nil {
 			t.Fatal(err)
 		}
-		resp.Body.Close()
-		l.Payload = payload
-		if got := resp.Header.Get("X-GitHub-Event"); got != want.event || l.name(t) != want.name {
-			t.Errorf("got %q %q, want %q %q", got, l.name(t), want.event, want.name)
+		l := newLine(d)
+		if got := l.Headers.Get("X-GitHub-Event"); got != want.event || lineName(t, l) != want.name {
+			t.Errorf("got %q %q, want %q %q", got, lineName(t, l), want.event, want.name)
 		}
 	}
 }
 
-func TestSessionsNotJSON(t *testing.T) {
+func TestSessionsPayloadFormat(t *testing.T) {
 	s := newSessionServer(t)
 	a := s.session()
 	waitForReaders(t)
 	s.post("ping", "{\n  \"zen\": \"pretty\",\n  \"n\": 1\n}\n")
 	l := a.next(t)
-	if string(l.Payload) == "" || l.name(t) != "pretty" {
+	if string(l.Payload) == "" || lineName(t, l) != "pretty" {
 		t.Errorf("got %+v", l)
 	}
-	s.post("ping", "not json")
-	if l := a.next(t); l.Body != "not json" || len(l.Payload) != 0 {
-		t.Errorf("got %+v", l)
+	req, err := http.NewRequest(http.MethodPost, s.srv.URL+"/api/webhook", strings.NewReader("not json"))
+	if err != nil {
+		t.Fatal(err)
 	}
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Errorf("got %v, want %v", resp.StatusCode, http.StatusBadRequest)
+	}
+	a.none(t)
 }
 
 func TestSessionsExclusiveReads(t *testing.T) {
@@ -388,8 +405,8 @@ func TestSessionsConcurrent(t *testing.T) {
 			}
 			if !l.Last {
 				var run, i int
-				if _, err := fmt.Sscanf(l.name(t), "r%d-%d", &run, &i); err != nil || session != fmt.Sprintf("run:%d", run) || i != next {
-					t.Fatalf("got %q for %q, want delivery %d", l.name(t), session, next)
+				if _, err := fmt.Sscanf(lineName(t, l), "r%d-%d", &run, &i); err != nil || session != fmt.Sprint(run) || i != next {
+					t.Fatalf("got %q for %q, want delivery %d", lineName(t, l), session, next)
 				}
 				next++
 				continue
@@ -413,11 +430,11 @@ func TestGitHubWorkflowSessionKey(t *testing.T) {
 		key               string
 		last              bool
 	}{
-		{"run", "workflow_run", `{"action":"requested","workflow_run":{"id":42}}`, "run:42", false},
-		{"run completed", "workflow_run", `{"action":"completed","workflow_run":{"id":42}}`, "run:42", true},
-		{"job", "workflow_job", `{"action":"queued","workflow_job":{"run_id":42,"id":7}}`, "run:42", false},
-		{"job completed is not the last", "workflow_job", `{"action":"completed","workflow_job":{"run_id":42}}`, "run:42", false},
-		{"same run for both", "workflow_job", `{"workflow_job":{"run_id":42}}`, "run:42", false},
+		{"run", "workflow_run", `{"action":"requested","workflow_run":{"id":42}}`, "42", false},
+		{"run completed", "workflow_run", `{"action":"completed","workflow_run":{"id":42}}`, "42", true},
+		{"job", "workflow_job", `{"action":"queued","workflow_job":{"run_id":42,"id":7}}`, "42", false},
+		{"job completed is not the last", "workflow_job", `{"action":"completed","workflow_job":{"run_id":42}}`, "42", false},
+		{"same run for both", "workflow_job", `{"workflow_job":{"run_id":42}}`, "42", false},
 		{"other event", "ping", `{"zen":"x"}`, "", false},
 		{"push", "push", `{"workflow_run":{"id":42}}`, "", false},
 		{"no id", "workflow_run", `{"action":"completed","workflow_run":{}}`, "", false},
@@ -450,14 +467,14 @@ func TestSessionsNoReader(t *testing.T) {
 	a := s.session()
 	var names []string
 	for range 4 {
-		names = append(names, a.next(t).name(t))
+		names = append(names, lineName(t, a.next(t)))
 	}
 	if got := strings.Join(names, ","); got != "a1,b1,a2,ping 1" {
 		t.Errorf("got %v", got)
 	}
 	// From now on there is a reader, to which a session is bound.
 	s.job(3, "c1")
-	if l := a.next(t); l.Session != "run:3" {
+	if l := a.next(t); l.Session != "3" {
 		t.Errorf("got %+v", l)
 	}
 }
@@ -478,11 +495,11 @@ func TestSessionsLeavingReader(t *testing.T) {
 	// what follows.
 	s.job(1, "a2")
 	b := s.session()
-	if l := b.next(t); l.name(t) != "a2" {
+	if l := b.next(t); lineName(t, l) != "a2" {
 		t.Errorf("got %+v", l)
 	}
 	s.job(1, "a3")
-	if l := b.next(t); l.name(t) != "a3" || l.Session != "run:1" {
+	if l := b.next(t); lineName(t, l) != "a3" || l.Session != "1" {
 		t.Errorf("got %+v", l)
 	}
 	s.completed(1)
@@ -492,33 +509,81 @@ func TestSessionsLeavingReader(t *testing.T) {
 	b.ended(t)
 }
 
-// TestSessionsSpread checks that sessions are bound to the readers that have
-// the fewest, and that a reader with more than one is sent all of them.
-func TestSessionsSpread(t *testing.T) {
-	s := newSessionServer(t)
+// TestSessionsPolicy checks that sessions are bound to the readers that the
+// policy chooses, and that a reader with more than one is sent all of them.
+func TestSessionsPolicy(t *testing.T) {
+	odd := func(session string, _ int) int { return int(session[len(session)-1]-'0') % 2 }
+	s := newSessionServer(t, webhooks.WithSessionPolicy(odd))
 	a, b := s.session(), s.session()
 	waitForReaders(t)
 	for run := 1; run <= 4; run++ {
 		s.job(run, fmt.Sprintf("r%d", run))
 	}
-	counts := map[*reader]int{}
+	got := map[string]*reader{}
 	for _, r := range []*reader{a, b} {
 		for range 2 {
-			r.next(t)
-			counts[r]++
+			got[lineName(t, r.next(t))] = r
 		}
 	}
-	if counts[a] != 2 || counts[b] != 2 {
-		t.Errorf("the readers were sent %d and %d, want 2 each", counts[a], counts[b])
+	if got["r1"] != got["r3"] || got["r2"] != got["r4"] || got["r1"] == got["r2"] {
+		t.Errorf("sessions were not bound as the policy chose: %v", got)
 	}
 	// A reader that has more than one session ends when it is sent the last of all of them.
-	s.completed(1)
-	s.completed(2)
-	s.completed(3)
-	s.completed(4)
+	for run := 1; run <= 4; run++ {
+		s.completed(run)
+	}
 	for _, r := range []*reader{a, b} {
 		r.next(t)
 		r.next(t)
 		r.ended(t)
+	}
+}
+
+func TestHashSessionPolicy(t *testing.T) {
+	seen := map[int]bool{}
+	for i := range 100 {
+		key := fmt.Sprintf("%d", i)
+		got := webhooks.HashSessionPolicy(key, 3)
+		if got < 0 || got >= 3 || got != webhooks.HashSessionPolicy(key, 3) {
+			t.Fatalf("%s: bad index %d", key, got)
+		}
+		seen[got] = true
+	}
+	if len(seen) != 3 {
+		t.Errorf("only used readers %v", seen)
+	}
+}
+
+// TestSessionsTimeout checks that a session that never completes does not keep
+// the response of its reader open once it has timed out, and that it does
+// without a timeout.
+func TestSessionsTimeout(t *testing.T) {
+	for _, tc := range []struct {
+		timeout time.Duration
+		ends    bool
+	}{
+		{0, false},
+		{200 * time.Millisecond, true},
+	} {
+		s := newSessionServer(t, webhooks.WithSessionTimeout(tc.timeout))
+		a := s.session()
+		waitForReaders(t)
+		s.job(1, "a1") // run 1 never completes
+		s.job(2, "b1")
+		a.next(t)
+		a.next(t)
+		time.Sleep(300 * time.Millisecond)
+		s.completed(2)
+		a.next(t)
+		select {
+		case <-a.done:
+			if !tc.ends {
+				t.Errorf("timeout %v: the response ended with a session in progress", tc.timeout)
+			}
+		case <-time.After(time.Second):
+			if tc.ends {
+				t.Errorf("timeout %v: the response did not end", tc.timeout)
+			}
+		}
 	}
 }

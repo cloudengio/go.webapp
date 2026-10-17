@@ -6,6 +6,7 @@ package webhooks
 
 import (
 	"context"
+	"encoding/json/jsontext"
 	"io"
 	"log/slog"
 	"net/http"
@@ -46,6 +47,17 @@ type delivery struct {
 	last       bool      // it is the last of its session
 }
 
+// Delivery is a webhook as it is sent to a reader, one per line.
+type Delivery struct {
+	// Headers are the forwarded headers, see WithForwardedHeaders.
+	Headers http.Header    `json:"headers,omitzero"`
+	Payload jsontext.Value `json:"payload"`
+}
+
+func newDelivery(d delivery) Delivery {
+	return Delivery{Headers: d.header, Payload: d.body}
+}
+
 type options struct {
 	size             int64
 	payloadLimit     int64
@@ -54,6 +66,8 @@ type options struct {
 	expiryScan       time.Duration
 	exclusiveReads   bool
 	sessionKey       SessionKeyFunc // nil if sessions are not enabled
+	sessionTimeout   time.Duration
+	sessionPolicy    SessionPolicy // nil for HashSessionPolicy
 	logger           *slog.Logger
 	deniedCounter    webapp.CounterInc // validation failed, e.g. due to invalid signature
 	relayedCounter   webapp.CounterInc // successfully relayed to FIFO
@@ -212,7 +226,7 @@ func NewRelay(ctx context.Context, validator Validator, opts ...Option) *Relay {
 		readSlot:  readSlot,
 	}
 	if options.sessionKey != nil {
-		r.sessions = newSessions()
+		r.sessions = newSessions(options.sessionTimeout, options.sessionPolicy)
 	}
 	return r
 }
@@ -244,10 +258,29 @@ func (r *Relay) Stop(ctx context.Context) {
 	r.fifo.Stop(ctx)
 }
 
+// validate validates req and returns its payload, or responds with an error and
+// reports false.
+func (r *Relay) validate(w http.ResponseWriter, req *http.Request) ([]byte, bool) {
+	payload, status := r.validator(req)
+	if status != http.StatusOK {
+		http.Error(w, "invalid payload", status)
+		if status >= http.StatusBadRequest && status < http.StatusInternalServerError {
+			r.opts.deniedCounter(req.Context())
+		}
+		return nil, false
+	}
+	if !jsontext.Value(payload).IsValid() {
+		http.Error(w, "payload is not valid JSON", http.StatusBadRequest)
+		return nil, false
+	}
+	return payload, true
+}
+
 // ServeWebhook handles incoming webhook requests, validates them using the
 // provided Validator, and relays the payload to the FIFO for processing.
 // If the internal buffer is full the oldest payload is dropped to make room.
-// It responds with appropriate HTTP status codes based on the validation outcome.
+// It responds with appropriate HTTP status codes based on the validation outcome,
+// and rejects, with 400, a payload that is not valid JSON.
 func (r *Relay) ServeWebhook(w http.ResponseWriter, req *http.Request) {
 	if req.ContentLength > r.opts.payloadLimit {
 		http.Error(w, "payload too large", http.StatusRequestEntityTooLarge)
@@ -267,12 +300,8 @@ func (r *Relay) ServeWebhook(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 	req.Body = http.MaxBytesReader(w, req.Body, r.opts.payloadLimit)
-	payload, status := r.validator(req)
-	if status != http.StatusOK {
-		http.Error(w, "invalid payload", status)
-		if status >= http.StatusBadRequest && status < http.StatusInternalServerError {
-			r.opts.deniedCounter(req.Context())
-		}
+	payload, ok := r.validate(w, req)
+	if !ok {
 		return
 	}
 	if err := req.Context().Err(); err != nil {
@@ -307,18 +336,18 @@ func (r *Relay) ServeWebhook(w http.ResponseWriter, req *http.Request) {
 	w.WriteHeader(http.StatusAccepted)
 }
 
-// WaitForWebhook waits for a payload to be received on the FIFO and responds
-// with the payload as JSON. It is intended to support long polling by
-// blocking until a webhook payload is available.
+// WaitForWebhook waits for a webhook to be received and responds with it as a
+// Delivery on a line of its own. It is intended to support long polling
+// by blocking until a webhook is available.
 // If the request context is cancelled while waiting, it logs the cancellation
 // and returns without responding.
 // When exclusive reads are configured (see WithExclusiveReads) and another
 // reader is already waiting, it responds immediately with 409 Conflict.
-// When sessions are enabled, see WithSessions, a request with a session=1
-// query parameter is bound to the sessions that it is sent the first delivery
-// of, and is sent all of the deliveries of those sessions, as they arrive, one
-// JSON value per line, with any that are not part of a session, until it is
-// sent the last of its sessions.
+// When sessions are enabled, all webhooks that are considered part of
+// the same session are routed to the same long polling reader. A reader
+// identifies itself as being a candidate for sessions by setting the
+// session=1 query parameter. When a sessions is identified, it is
+// bound to a reader according to the policy set by WithSessionPolicy.
 func (r *Relay) WaitForWebhook(w http.ResponseWriter, req *http.Request) {
 	if req.Method != http.MethodGet {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -343,13 +372,11 @@ func (r *Relay) WaitForWebhook(w http.ResponseWriter, req *http.Request) {
 		if !ok {
 			return
 		}
-		for name, values := range job.header {
-			for _, v := range values {
-				w.Header().Add(name, v)
-			}
-		}
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write(job.body)
+		if err := encodeDelivery(newDeliveryEncoder(w), job); err != nil {
+			r.opts.logger.Info("WaitForWebhook: failed to write to client", "err", err)
+			return
+		}
 		r.opts.logger.Info("WaitForWebhook: sent payload to client", "size", len(job.body))
 		r.opts.readCounter(req.Context())
 	case <-req.Context().Done():

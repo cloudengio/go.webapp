@@ -8,6 +8,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"time"
 
 	"cloudeng.io/cmdutil/cmdyaml"
 	"cloudeng.io/cmdutil/keys"
@@ -22,6 +23,7 @@ type Config struct {
 	MaxQueueSize    int               `yaml:"max_queue_size" doc:"maximum number of payloads to hold in the queue for processing, leave empty for default"`
 	ExclusiveReads  bool              `yaml:"exclusive_reads" doc:"if true, at most one long poll reader is admitted at a time and concurrent readers are rejected with 409 Conflict"`
 	Sessions        bool              `yaml:"sessions,omitempty" doc:"if true, webhooks that are part of the same session are relayed to the same long poll reader"`
+	SessionTimeout  time.Duration     `yaml:"session_timeout,omitempty" doc:"if sessions are enabled, how long a session may go without a webhook before it is ended, leave empty for no timeout"`
 	Service         string            `yaml:"service" doc:"type of webhook to serve, e.g. github-workflow, etc."`
 	ServiceSpecific *cmdyaml.Deferred `yaml:"service_specific" doc:"additional details specific to the type of webhook being served, leave empty for default"`
 }
@@ -70,10 +72,18 @@ func (c Config) Options() []Option {
 	}
 	if c.Sessions {
 		if key := sessionKeyFor(c.Service); key != nil {
-			opts = append(opts, WithSessions(key))
+			opts = append(opts, WithSessions(key), WithSessionTimeout(c.SessionTimeout))
 		}
 	}
 	return opts
+}
+
+// Validate reports whether sessions are enabled for a service without them.
+func (c Config) Validate() error {
+	if c.Sessions && sessionKeyFor(c.Service) == nil {
+		return fmt.Errorf("sessions are not supported by service %q", c.Service)
+	}
+	return nil
 }
 
 // sessionKeyFor returns the SessionKeyFunc for a service, or nil if it has none.

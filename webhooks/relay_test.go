@@ -7,6 +7,7 @@ package webhooks_test
 import (
 	"bytes"
 	"context"
+	"encoding/json/v2"
 	"errors"
 	"io"
 	"log/slog"
@@ -58,7 +59,20 @@ func pollWebhook(t *testing.T, handler func(http.ResponseWriter, *http.Request))
 	req := httptest.NewRequest(http.MethodGet, "/api/wait", nil)
 	w := httptest.NewRecorder()
 	handler(w, req)
-	return w.Body.Bytes()
+	return payloadOf(t, w.Body.Bytes())
+}
+
+// payloadOf returns the payload of the delivery in body, or nil if it is empty.
+func payloadOf(t *testing.T, body []byte) []byte {
+	t.Helper()
+	if len(body) == 0 {
+		return nil
+	}
+	var d webhooks.Delivery
+	if err := json.Unmarshal(body, &d); err != nil {
+		t.Fatalf("%s: %v", body, err)
+	}
+	return d.Payload
 }
 
 func TestRelayForwardsHeaders(t *testing.T) {
@@ -84,19 +98,23 @@ func TestRelayForwardsHeaders(t *testing.T) {
 	w := httptest.NewRecorder()
 	handler(w, waitReq)
 
-	if got := w.Header().Get("X-GitHub-Event"); got != "workflow_run" {
+	var d webhooks.Delivery
+	if err := json.Unmarshal(w.Body.Bytes(), &d); err != nil {
+		t.Fatal(err)
+	}
+	if got := d.Headers.Get("X-GitHub-Event"); got != "workflow_run" {
 		t.Errorf("X-GitHub-Event: got %q, want %q", got, "workflow_run")
 	}
-	if got := w.Header().Get("X-GitHub-Delivery"); got != "12345" {
+	if got := d.Headers.Get("X-GitHub-Delivery"); got != "12345" {
 		t.Errorf("X-GitHub-Delivery: got %q, want %q", got, "12345")
 	}
 	// Non-forwarded headers, including the already-verified signature, must not
 	// be leaked to the client.
-	if got := w.Header().Get("X-Hub-Signature-256"); got != "" {
+	if got := d.Headers.Get("X-Hub-Signature-256"); got != "" {
 		t.Errorf("X-Hub-Signature-256: got %q, want it dropped", got)
 	}
-	if !bytes.Equal(w.Body.Bytes(), payload) {
-		t.Errorf("body: got %s, want %s", w.Body.Bytes(), payload)
+	if !bytes.Equal(d.Payload, payload) {
+		t.Errorf("body: got %s, want %s", d.Payload, payload)
 	}
 }
 
@@ -122,8 +140,8 @@ func TestRelayHappyPath(t *testing.T) {
 	if got := wWait.Header().Get("Content-Type"); got != "application/json" {
 		t.Errorf("content-type: got %q, want application/json", got)
 	}
-	if !bytes.Equal(wWait.Body.Bytes(), payload) {
-		t.Errorf("body: got %s, want %s", wWait.Body.Bytes(), payload)
+	if got := payloadOf(t, wWait.Body.Bytes()); !bytes.Equal(got, payload) {
+		t.Errorf("body: got %s, want %s", got, payload)
 	}
 }
 
@@ -290,8 +308,8 @@ func TestRelayExclusiveReads(t *testing.T) {
 	if got := w.Code; got != http.StatusOK {
 		t.Errorf("wait after release: got status %d, want %d", got, http.StatusOK)
 	}
-	if !bytes.Equal(w.Body.Bytes(), payload) {
-		t.Errorf("body: got %s, want %s", w.Body.Bytes(), payload)
+	if got := payloadOf(t, w.Body.Bytes()); !bytes.Equal(got, payload) {
+		t.Errorf("body: got %s, want %s", got, payload)
 	}
 }
 
