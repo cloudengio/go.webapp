@@ -610,3 +610,67 @@ func TestSessionsTimeout(t *testing.T) {
 		}
 	}
 }
+
+// TestSessionsStopWithQueuedDeliveries verifies that Relay.Stop shuts down
+// cleanly without hanging when session readers have unread deliveries queued
+// and the root context passed to NewRelay was not cancelled.
+func TestSessionsStopWithQueuedDeliveries(t *testing.T) {
+	ctx := context.Background()
+	relay := webhooks.NewRelay(ctx, webhooks.NoopValidator,
+		webhooks.WithSessions(webhooks.GitHubWorkflowSessionKey),
+	)
+	srv := httptest.NewServer(http.HandlerFunc(relay.Handler("/api/webhook", "/api/wait")))
+	defer srv.Close()
+
+	// Connect a streaming session reader.
+	req, err := http.NewRequest(http.MethodGet, srv.URL+"/api/wait?stream=1", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+
+	// Wait briefly for the reader to join.
+	waitForReaders(t)
+
+	// Post multiple deliveries for a session.
+	for i := range 5 {
+		postReq, err := http.NewRequest(http.MethodPost, srv.URL+"/api/webhook",
+			strings.NewReader(fmt.Sprintf(`{"action":"in_progress","workflow_job":{"run_id":42,"name":"job%d"}}`, i)),
+		)
+		if err != nil {
+			t.Fatal(err)
+		}
+		postReq.Header.Set("Content-Type", "application/json")
+		postReq.Header.Set("X-GitHub-Event", "workflow_job")
+		postResp, err := http.DefaultClient.Do(postReq)
+		if err != nil {
+			t.Fatal(err)
+		}
+		postResp.Body.Close()
+	}
+
+	// Read only 1 delivery, leaving the remaining deliveries buffered in the session reader queue.
+	sc := bufio.NewScanner(resp.Body)
+	if !sc.Scan() {
+		t.Fatal("expected at least one delivery")
+	}
+
+	// Shut down the relay using Stop with an uncancelled root context.
+	// This must unblock cleanly and not deadlock in requeue / leave.
+	stopDone := make(chan struct{})
+	go func() {
+		relay.Stop(context.Background())
+		close(stopDone)
+	}()
+
+	select {
+	case <-stopDone:
+		// Succeeded cleanly without hang.
+	case <-time.After(3 * time.Second):
+		t.Fatal("relay.Stop hung with queued session deliveries")
+	}
+}

@@ -58,19 +58,20 @@ func newDelivery(d delivery) Delivery {
 }
 
 type options struct {
-	size             int64
-	payloadLimit     int64
-	forwardedHeaders []string
-	expiry           time.Duration
-	expiryScan       time.Duration
-	exclusiveReads   bool
-	sessionKey       SessionKeyFunc // nil if sessions are not enabled
-	sessionTimeout   time.Duration
-	sessionPolicy    SessionPolicy // nil for HashSessionPolicy
-	logger           *slog.Logger
-	deniedCounter    webapp.CounterInc // validation failed, e.g. due to invalid signature
-	relayedCounter   webapp.CounterInc // successfully relayed to FIFO
-	readCounter      webapp.CounterInc // successfully read from FIFO and sent to client
+	size                   int64
+	payloadLimit           int64
+	forwardedHeaders       []string
+	expiry                 time.Duration
+	expiryScan             time.Duration
+	exclusiveReads         bool
+	sessionKey             SessionKeyFunc // nil if sessions are not enabled
+	sessionTimeout         time.Duration
+	sessionPolicy          SessionPolicy // nil for HashSessionPolicy
+	logger                 *slog.Logger
+	deniedCounter          webapp.CounterInc // validation failed, e.g. due to invalid signature
+	relayedCounter         webapp.CounterInc // successfully relayed to FIFO
+	readCounter            webapp.CounterInc // successfully read from FIFO and sent to client
+	jsonSyntaxErrorCounter webapp.CounterInc // incoming payload failed JSON syntax validation
 }
 
 const (
@@ -167,6 +168,14 @@ func WithCounters(deniedCounter, relayedCounter, readCounter webapp.CounterInc) 
 	}
 }
 
+// WithJSONSyntaxErrorCounter sets the counter incremented when an incoming
+// webhook payload fails JSON syntax validation.
+func WithJSONSyntaxErrorCounter(counter webapp.CounterInc) Option {
+	return func(opts *options) {
+		opts.jsonSyntaxErrorCounter = counter
+	}
+}
+
 func noopCounter(context.Context) {}
 
 // Validator is called to validate and extract the webhook payload
@@ -212,6 +221,9 @@ func NewRelay(ctx context.Context, validator Validator, opts ...Option) *Relay {
 	if options.readCounter == nil {
 		options.readCounter = noopCounter
 	}
+	if options.jsonSyntaxErrorCounter == nil {
+		options.jsonSyntaxErrorCounter = noopCounter
+	}
 	options.logger = options.logger.With("component", "webhooks.Relay")
 	var readSlot chan struct{}
 	if options.exclusiveReads {
@@ -251,7 +263,7 @@ func expiryScan(opts options) []patterns.Option[delivery] {
 // Stop shuts down the internal FIFO goroutine. It blocks until the goroutine
 // exits or ctx is cancelled.
 func (r *Relay) Stop(ctx context.Context) {
-	r.router.shared.Stop(ctx)
+	r.router.Stop(ctx)
 }
 
 // validate validates req and returns its payload, or responds with an error and
@@ -266,6 +278,7 @@ func (r *Relay) validate(w http.ResponseWriter, req *http.Request) ([]byte, bool
 		return nil, false
 	}
 	if !jsontext.Value(payload).IsValid() {
+		r.opts.jsonSyntaxErrorCounter(req.Context())
 		http.Error(w, "payload is not valid JSON", http.StatusBadRequest)
 		return nil, false
 	}

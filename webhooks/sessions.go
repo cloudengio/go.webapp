@@ -115,6 +115,7 @@ type sessionReader struct {
 // queue of that reader.
 type router struct {
 	ctx     context.Context
+	cancel  context.CancelFunc
 	opts    options
 	shared  *patterns.FIFO[delivery]
 	mu      sync.Mutex
@@ -135,13 +136,20 @@ func newRouter(ctx context.Context, opts options) *router {
 	if policy == nil {
 		policy = HashSessionPolicy
 	}
+	ctx, cancel := context.WithCancel(ctx)
 	return &router{
 		ctx:    ctx,
+		cancel: cancel,
 		opts:   opts,
 		shared: patterns.NewFIFO(ctx, int(opts.size), expiryScan(opts)...),
 		policy: policy,
 		bound:  map[string]*binding{},
 	}
+}
+
+func (rt *router) Stop(ctx context.Context) {
+	rt.cancel()
+	rt.shared.Stop(ctx)
 }
 
 // expire unbinds the sessions that have had no delivery for the timeout. The
@@ -222,6 +230,9 @@ func (rt *router) join() *sessionReader {
 
 // finished reports whether r has no sessions left.
 func (rt *router) finished(r *sessionReader) bool {
+	if r == nil {
+		return true
+	}
 	rt.mu.Lock()
 	defer rt.mu.Unlock()
 	rt.expire(time.Now())
@@ -302,6 +313,22 @@ func writeRaw(w http.ResponseWriter, d delivery) error {
 	return err
 }
 
+// sendDelivery writes d to the client and updates metrics/logging. It returns false
+// if the write failed and the delivery was requeued.
+func (r *Relay) sendDelivery(ctx context.Context, w http.ResponseWriter, enc *jsontext.Encoder, d delivery, stream bool, flusher http.Flusher) bool {
+	if err := write(w, enc, d, stream); err != nil {
+		r.opts.logger.Info("WaitForWebhook: failed to write to client", "session", d.session, "err", err)
+		r.router.requeue(d)
+		return false
+	}
+	if stream {
+		flusher.Flush()
+	}
+	r.opts.logger.Info("WaitForWebhook: sent payload to client", "size", len(d.body), "session", d.session, "last", d.last)
+	r.opts.readCounter(ctx)
+	return true
+}
+
 // serve sends a reader its deliveries: from its own queue, if sessions are
 // enabled, and the shared queue. A reader that streams is sent them as they
 // arrive, as Deliveries, until the last of its sessions or the request ends.
@@ -337,20 +364,15 @@ func (r *Relay) serve(w http.ResponseWriter, req *http.Request, stream bool) {
 		case <-req.Context().Done():
 			r.opts.logger.Info("WaitForWebhook: request context cancelled while waiting for a delivery", "err", req.Context().Err())
 			return
+		case <-r.router.ctx.Done():
+			return
 		}
 		if !ok {
 			return
 		}
-		if err := write(w, enc, d, stream); err != nil {
-			r.opts.logger.Info("WaitForWebhook: failed to write to client", "session", d.session, "err", err)
-			r.router.requeue(d)
+		if !r.sendDelivery(req.Context(), w, enc, d, stream, flusher) {
 			return
 		}
-		if stream {
-			flusher.Flush()
-		}
-		r.opts.logger.Info("WaitForWebhook: sent payload to client", "size", len(d.body), "session", d.session, "last", d.last)
-		r.opts.readCounter(req.Context())
 		if !stream || (d.last && r.router.finished(own)) {
 			return
 		}

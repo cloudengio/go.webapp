@@ -187,6 +187,13 @@ matching is case-insensitive and absent headers are skipped.
 
 
 ```go
+func WithJSONSyntaxErrorCounter(counter webapp.CounterInc) Option
+```
+WithJSONSyntaxErrorCounter sets the counter incremented when an incoming
+webhook payload fails JSON syntax validation.
+
+
+```go
 func WithLogger(logger *slog.Logger) Option
 ```
 WithLogger sets the logger for the Relay.

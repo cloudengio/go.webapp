@@ -403,6 +403,49 @@ func TestRelayCounterDenied(t *testing.T) {
 	}
 }
 
+func TestRelayCounterJSONSyntaxError(t *testing.T) {
+	denied, deniedN := makeCounter()
+	relayed, relayedN := makeCounter()
+	read, readN := makeCounter()
+	jsonErr, jsonErrN := makeCounter()
+
+	handler, _ := newTestRelay(t,
+		webhooks.WithCounters(denied, relayed, read),
+		webhooks.WithJSONSyntaxErrorCounter(jsonErr),
+	)
+
+	// Post invalid JSON.
+	req := httptest.NewRequest(http.MethodPost, "/api/webhook", strings.NewReader("not a valid json {"))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	handler(w, req)
+
+	if got := w.Code; got != http.StatusBadRequest {
+		t.Errorf("got status %d, want %d", got, http.StatusBadRequest)
+	}
+	if got := jsonErrN(); got != 1 {
+		t.Errorf("jsonErr: got %d, want 1", got)
+	}
+	if got := deniedN(); got != 0 {
+		t.Errorf("denied: got %d, want 0", got)
+	}
+	if got := relayedN(); got != 0 {
+		t.Errorf("relayed: got %d, want 0", got)
+	}
+	if got := readN(); got != 0 {
+		t.Errorf("read: got %d, want 0", got)
+	}
+
+	// Post valid JSON, counter should not increment again.
+	postWebhook(t, handler, []byte(`"valid json"`))
+	if got := jsonErrN(); got != 1 {
+		t.Errorf("jsonErr: got %d, want 1", got)
+	}
+	if got := relayedN(); got != 1 {
+		t.Errorf("relayed: got %d, want 1", got)
+	}
+}
+
 func TestRelayCounterRead(t *testing.T) {
 	denied, deniedN := makeCounter()
 	relayed, relayedN := makeCounter()
