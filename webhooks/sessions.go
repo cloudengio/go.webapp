@@ -59,11 +59,11 @@ func GitHubWorkflowSessionKey(header http.Header, body []byte) (string, bool) {
 }
 
 // WithSessions keeps the deliveries of a session, as identified by key, together.
-// A reader that asks for sessions, see Relay.WaitForWebhook, gets its own queue.
+// Readers must stream, see Relay.WaitForWebhook, and each gets its own queue.
 // A session is bound to a reader, chosen by the SessionPolicy, when its first
 // delivery arrives, and all of its deliveries go to that reader. Deliveries that
 // are not part of a session go to any reader. If no session reader is waiting,
-// deliveries are relayed as if sessions were not enabled.
+// the delivery waits for any reader.
 func WithSessions(key SessionKeyFunc) Option {
 	return func(opts *options) {
 		opts.sessionKey = key
@@ -109,11 +109,15 @@ type sessionReader struct {
 	n     int
 }
 
-// sessions is the readers that ask for sessions, and which of them each
-// session is bound to.
-type sessions struct {
+// router relays deliveries to readers. Deliveries go to the shared queue, which
+// any reader takes from, unless sessions are enabled, the delivery is part of a
+// session and there is a reader to bind it to, in which case they go to the
+// queue of that reader.
+type router struct {
+	ctx     context.Context
+	opts    options
+	shared  *patterns.FIFO[delivery]
 	mu      sync.Mutex
-	timeout time.Duration // how long a session may go without a delivery, or <= 0
 	policy  SessionPolicy
 	readers []*sessionReader
 	bound   map[string]*binding // session to its reader
@@ -126,113 +130,142 @@ type binding struct {
 	last   time.Time
 }
 
-func newSessions(timeout time.Duration, policy SessionPolicy) *sessions {
+func newRouter(ctx context.Context, opts options) *router {
+	policy := opts.sessionPolicy
 	if policy == nil {
 		policy = HashSessionPolicy
 	}
-	return &sessions{timeout: timeout, policy: policy, bound: map[string]*binding{}}
+	return &router{
+		ctx:    ctx,
+		opts:   opts,
+		shared: patterns.NewFIFO(ctx, int(opts.size), expiryScan(opts)...),
+		policy: policy,
+		bound:  map[string]*binding{},
+	}
 }
 
 // expire unbinds the sessions that have had no delivery for the timeout. The
-// caller holds s.mu.
-func (s *sessions) expire(now time.Time) {
-	if s.timeout <= 0 {
+// caller holds rt.mu.
+func (rt *router) expire(now time.Time) {
+	if rt.opts.sessionTimeout <= 0 {
 		return
 	}
-	for key, b := range s.bound {
-		if now.Sub(b.last) > s.timeout {
-			delete(s.bound, key)
+	for key, b := range rt.bound {
+		if now.Sub(b.last) > rt.opts.sessionTimeout {
+			delete(rt.bound, key)
 			b.reader.n--
 		}
 	}
 }
 
-// route sends d, which is part of a session, to the reader that its session is
-// bound to, binding it using the policy if it is not. It reports false if there
-// is no reader, in which case the delivery is for the caller to queue, and
-// otherwise the error, if any, is that ctx or the relay's ctx ended before it
-// could be sent.
-func (s *sessions) route(ctx, relayCtx context.Context, d delivery) (bool, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	now := time.Now()
-	s.expire(now)
-	b := s.bound[d.session]
-	if b == nil {
-		if len(s.readers) == 0 {
-			return false, nil
+// route relays d, returning the error, if any, if ctx or the relay's ctx ended
+// before it could be queued.
+func (rt *router) route(ctx context.Context, d delivery) error {
+	if d.session != "" {
+		rt.mu.Lock()
+		if q := rt.bind(d); q != nil {
+			// Sent under the lock, so that the queue is not closed by its reader leaving.
+			defer rt.mu.Unlock()
+			return rt.send(ctx, q, d)
 		}
-		n := len(s.readers)
-		r := s.readers[(s.policy(d.session, n)%n+n)%n]
+		rt.mu.Unlock()
+	}
+	return rt.send(ctx, rt.shared, d)
+}
+
+// send queues d, which a queue always accepts, dropping its oldest delivery if
+// it is full.
+func (rt *router) send(ctx context.Context, q *patterns.FIFO[delivery], d delivery) error {
+	select {
+	case q.In() <- d:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-rt.ctx.Done():
+		return rt.ctx.Err()
+	}
+}
+
+// bind returns the queue of the reader that d, which is part of a session, is
+// bound to, binding it using the policy if it is not. It returns nil if there
+// is no reader. The caller holds rt.mu.
+func (rt *router) bind(d delivery) *patterns.FIFO[delivery] {
+	now := time.Now()
+	rt.expire(now)
+	b := rt.bound[d.session]
+	if b == nil {
+		n := len(rt.readers)
+		if n == 0 {
+			return nil
+		}
+		r := rt.readers[(rt.policy(d.session, n)%n+n)%n]
 		b = &binding{reader: r}
-		s.bound[d.session] = b
+		rt.bound[d.session] = b
 		r.n++
 	}
 	b.last = now
 	if d.last {
-		delete(s.bound, d.session)
+		delete(rt.bound, d.session)
 		b.reader.n--
 	}
-	// Sent under the lock, so that the queue is not closed by its reader leaving.
-	// The queue always accepts, dropping its oldest delivery if it is full.
-	select {
-	case b.reader.queue.In() <- d:
-		return true, nil
-	case <-ctx.Done():
-		return true, ctx.Err()
-	case <-relayCtx.Done():
-		return true, relayCtx.Err()
-	}
+	return b.reader.queue
 }
 
-// join adds a reader that asks for sessions.
-func (s *sessions) join(f *patterns.FIFO[delivery]) *sessionReader {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	r := &sessionReader{queue: f}
-	s.readers = append(s.readers, r)
+// join adds a reader, with a queue of its own for its sessions.
+func (rt *router) join() *sessionReader {
+	rt.mu.Lock()
+	defer rt.mu.Unlock()
+	r := &sessionReader{queue: patterns.NewFIFO(rt.ctx, int(rt.opts.size), expiryScan(rt.opts)...)}
+	rt.readers = append(rt.readers, r)
 	return r
 }
 
 // finished reports whether r has no sessions left.
-func (s *sessions) finished(r *sessionReader) bool {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.expire(time.Now())
+func (rt *router) finished(r *sessionReader) bool {
+	rt.mu.Lock()
+	defer rt.mu.Unlock()
+	rt.expire(time.Now())
 	return r.n == 0
 }
 
-// leave removes a reader that is gone, and returns what it had not been sent,
-// in order, for the caller to relay to another.
-func (s *sessions) leave(relayCtx context.Context, r *sessionReader) []delivery {
-	s.mu.Lock()
-	s.readers = slices.DeleteFunc(s.readers, func(x *sessionReader) bool { return x == r })
-	for key, b := range s.bound {
+// leave removes a reader that is gone, and relays what it had not been sent to
+// the shared queue, for another reader.
+func (rt *router) leave(r *sessionReader) {
+	rt.mu.Lock()
+	rt.readers = slices.DeleteFunc(rt.readers, func(x *sessionReader) bool { return x == r })
+	for key, b := range rt.bound {
 		if b.reader == r {
-			delete(s.bound, key)
+			delete(rt.bound, key)
 		}
 	}
-	s.mu.Unlock()
+	rt.mu.Unlock()
 	// Nothing is sent to it now, so that it can be closed, which flushes it.
 	close(r.queue.In())
-	var unsent []delivery
 	for {
 		select {
 		case d, ok := <-r.queue.Out():
 			if !ok {
-				return unsent
+				return
 			}
-			unsent = append(unsent, d)
-		case <-relayCtx.Done():
-			return unsent
+			rt.requeue(d)
+		case <-rt.ctx.Done():
+			return
 		}
 	}
 }
 
-// wantsSession reports whether a long polling request asks to be sent the
-// deliveries of sessions, using the session query parameter.
-func wantsSession(req *http.Request) bool {
-	switch req.URL.Query().Get("session") {
+// requeue relays a delivery that was not sent, for another reader.
+func (rt *router) requeue(d delivery) {
+	select {
+	case rt.shared.In() <- d:
+	case <-rt.ctx.Done():
+	}
+}
+
+// wantsStream reports whether a long polling request asks to be streamed
+// deliveries, using the stream query parameter.
+func wantsStream(req *http.Request) bool {
+	switch req.URL.Query().Get("stream") {
 	case "1", "true":
 		return true
 	}
@@ -249,53 +282,76 @@ func encodeDelivery(enc *jsontext.Encoder, d delivery) error {
 	return json.MarshalEncode(enc, newDelivery(d), json.Deterministic(true))
 }
 
-// serveSession sends a reader that asked for sessions its deliveries, as they
-// arrive, from its own queue, and those that are not part of a session, from the
-// relay's, until the last of its sessions, or the request ends.
-func (r *Relay) serveSession(w http.ResponseWriter, req *http.Request) {
-	flusher, ok := w.(http.Flusher)
-	if !ok {
-		http.Error(w, "sessions are not supported: the response cannot be flushed", http.StatusInternalServerError)
-		return
+// write sends d as a line of the stream, or as it was received.
+func write(w http.ResponseWriter, enc *jsontext.Encoder, d delivery, stream bool) error {
+	if stream {
+		return encodeDelivery(enc, d)
 	}
-	own := patterns.NewFIFO(r.ctx, int(r.opts.size), expiryScan(r.opts)...)
-	sr := r.sessions.join(own)
-	defer func() {
-		// What was not sent, because of a reader that is gone, is for another.
-		for _, d := range r.sessions.leave(r.ctx, sr) {
-			select {
-			case r.fifo.In() <- d:
-			case <-r.ctx.Done():
-				return
-			}
+	return writeRaw(w, d)
+}
+
+// writeRaw relays a delivery as it was received: the payload as the body and
+// the forwarded headers as headers.
+func writeRaw(w http.ResponseWriter, d delivery) error {
+	for name, values := range d.header {
+		for _, v := range values {
+			w.Header().Add(name, v)
 		}
-	}()
+	}
+	_, err := w.Write(d.body)
+	return err
+}
+
+// serve sends a reader its deliveries: from its own queue, if sessions are
+// enabled, and the shared queue. A reader that streams is sent them as they
+// arrive, as Deliveries, until the last of its sessions or the request ends.
+// Otherwise it is sent one, as it was received.
+func (r *Relay) serve(w http.ResponseWriter, req *http.Request, stream bool) {
+	var flusher http.Flusher
+	if stream {
+		var ok bool
+		if flusher, ok = w.(http.Flusher); !ok {
+			http.Error(w, "streaming is not supported: the response cannot be flushed", http.StatusInternalServerError)
+			return
+		}
+	}
+	var own *sessionReader
+	var ownOut <-chan delivery
+	if r.opts.sessionKey != nil {
+		own = r.router.join()
+		ownOut = own.queue.Out()
+		defer r.router.leave(own)
+	}
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
-	flusher.Flush()
+	if stream {
+		w.WriteHeader(http.StatusOK)
+		flusher.Flush()
+	}
 	enc := newDeliveryEncoder(w)
 	for {
 		var d delivery
+		var ok bool
 		select {
-		case d = <-own.Out():
-		case d = <-r.fifo.Out():
+		case d, ok = <-ownOut:
+		case d, ok = <-r.router.shared.Out():
 		case <-req.Context().Done():
-			r.opts.logger.Info("WaitForWebhook: request context cancelled while serving sessions", "err", req.Context().Err())
+			r.opts.logger.Info("WaitForWebhook: request context cancelled while waiting for a delivery", "err", req.Context().Err())
 			return
 		}
-		if err := encodeDelivery(enc, d); err != nil {
+		if !ok {
+			return
+		}
+		if err := write(w, enc, d, stream); err != nil {
 			r.opts.logger.Info("WaitForWebhook: failed to write to client", "session", d.session, "err", err)
-			// It was not sent: for another reader.
-			select {
-			case r.fifo.In() <- d:
-			case <-r.ctx.Done():
-			}
+			r.router.requeue(d)
 			return
 		}
-		flusher.Flush()
+		if stream {
+			flusher.Flush()
+		}
 		r.opts.logger.Info("WaitForWebhook: sent payload to client", "size", len(d.body), "session", d.session, "last", d.last)
 		r.opts.readCounter(req.Context())
-		if d.last && r.sessions.finished(sr) {
+		if !stream || (d.last && r.router.finished(own)) {
 			return
 		}
 	}

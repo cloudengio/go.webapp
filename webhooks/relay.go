@@ -28,8 +28,7 @@ import (
 // room for the new one.
 type Relay struct {
 	ctx       context.Context
-	fifo      *patterns.FIFO[delivery]
-	sessions  *sessions // nil unless sessions are enabled, see WithSessions
+	router    *router
 	validator Validator
 	opts      options
 	// readSlot serialises long-poll readers when exclusive reads are
@@ -220,13 +219,10 @@ func NewRelay(ctx context.Context, validator Validator, opts ...Option) *Relay {
 	}
 	r := &Relay{
 		ctx:       ctx,
-		fifo:      patterns.NewFIFO(ctx, int(options.size), expiryScan(options)...),
+		router:    newRouter(ctx, options),
 		validator: validator,
 		opts:      options,
 		readSlot:  readSlot,
-	}
-	if options.sessionKey != nil {
-		r.sessions = newSessions(options.sessionTimeout, options.sessionPolicy)
 	}
 	return r
 }
@@ -255,7 +251,7 @@ func expiryScan(opts options) []patterns.Option[delivery] {
 // Stop shuts down the internal FIFO goroutine. It blocks until the goroutine
 // exits or ctx is cancelled.
 func (r *Relay) Stop(ctx context.Context) {
-	r.fifo.Stop(ctx)
+	r.router.shared.Stop(ctx)
 }
 
 // validate validates req and returns its payload, or responds with an error and
@@ -309,45 +305,30 @@ func (r *Relay) ServeWebhook(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 	d := delivery{header: r.forwardedHeaders(req.Header), body: payload, expiration: time.Now().Add(r.opts.expiry)}
-	if r.sessions != nil {
+	if r.opts.sessionKey != nil {
 		d.session, d.last = r.opts.sessionKey(req.Header, payload)
 	}
-	if d.session != "" {
-		if routed, err := r.sessions.route(req.Context(), r.ctx, d); routed {
-			if err != nil {
-				r.opts.logger.Info("ServeWebhook: context cancelled while trying to send payload to a session", "session", d.session, "err", err)
-				return
-			}
-			r.opts.logger.Info("ServeWebhook: received payload and sent to a session", "size", len(payload), "session", d.session)
-			r.opts.relayedCounter(req.Context())
-			w.WriteHeader(http.StatusAccepted)
-			return
-		}
-	}
-	select {
-	case r.fifo.In() <- d:
-		r.opts.logger.Info("ServeWebhook: received payload and sent to FIFO", "size", len(payload))
-		r.opts.relayedCounter(req.Context())
-	case <-req.Context().Done():
-		err := req.Context().Err()
-		r.opts.logger.Info("ServeWebhook: context cancelled while trying to send payload to FIFO", "err", err)
+	if err := r.router.route(req.Context(), d); err != nil {
+		r.opts.logger.Info("ServeWebhook: context cancelled while trying to relay payload", "session", d.session, "err", err)
 		return
 	}
+	r.opts.logger.Info("ServeWebhook: received payload and relayed it", "size", len(payload), "session", d.session)
+	r.opts.relayedCounter(req.Context())
 	w.WriteHeader(http.StatusAccepted)
 }
 
-// WaitForWebhook waits for a webhook to be received and responds with it as a
-// Delivery on a line of its own. It is intended to support long polling
-// by blocking until a webhook is available.
+// WaitForWebhook responds to a long polling request with webhooks. By default it
+// waits for a webhook and responds with it as it was received: the payload is the
+// body and the forwarded headers are headers. With the stream=1 query parameter
+// it streams webhooks as they arrive, each as a Delivery on a line of its own,
+// until the request ends. If sessions are enabled, see WithSessions, the
+// request must stream, and is sent all of the webhooks of the sessions bound to
+// it, ending after the last of them, as well as those that are not part of
+// a session. Otherwise it is rejected with 400 Bad Request.
 // If the request context is cancelled while waiting, it logs the cancellation
 // and returns without responding.
 // When exclusive reads are configured (see WithExclusiveReads) and another
 // reader is already waiting, it responds immediately with 409 Conflict.
-// When sessions are enabled, all webhooks that are considered part of
-// the same session are routed to the same long polling reader. A reader
-// identifies itself as being a candidate for sessions by setting the
-// session=1 query parameter. When a sessions is identified, it is
-// bound to a reader according to the policy set by WithSessionPolicy.
 func (r *Relay) WaitForWebhook(w http.ResponseWriter, req *http.Request) {
 	if req.Method != http.MethodGet {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -363,26 +344,12 @@ func (r *Relay) WaitForWebhook(w http.ResponseWriter, req *http.Request) {
 			return
 		}
 	}
-	if r.sessions != nil && wantsSession(req) {
-		r.serveSession(w, req)
+	stream := wantsStream(req)
+	if r.opts.sessionKey != nil && !stream {
+		http.Error(w, "sessions are enabled: the stream=1 query parameter is required", http.StatusBadRequest)
 		return
 	}
-	select {
-	case job, ok := <-r.fifo.Out():
-		if !ok {
-			return
-		}
-		w.Header().Set("Content-Type", "application/json")
-		if err := encodeDelivery(newDeliveryEncoder(w), job); err != nil {
-			r.opts.logger.Info("WaitForWebhook: failed to write to client", "err", err)
-			return
-		}
-		r.opts.logger.Info("WaitForWebhook: sent payload to client", "size", len(job.body))
-		r.opts.readCounter(req.Context())
-	case <-req.Context().Done():
-		err := req.Context().Err()
-		r.opts.logger.Info("WaitForWebhook: request context cancelled while waiting for payload from FIFO", "err", err)
-	}
+	r.serve(w, req, stream)
 }
 
 // forwardedHeaders returns a copy of the configured subset of src, or nil if no

@@ -226,12 +226,11 @@ readers finish. A timeout <= 0, the default, disables it.
 func WithSessions(key SessionKeyFunc) Option
 ```
 WithSessions keeps the deliveries of a session, as identified by key,
-together. A reader that asks for sessions, see Relay.WaitForWebhook, gets
-its own queue. A session is bound to a reader, chosen by the SessionPolicy,
-when its first delivery arrives, and all of its deliveries go to that
-reader. Deliveries that are not part of a session go to any reader.
-If no session reader is waiting, deliveries are relayed as if sessions were
-not enabled.
+together. Readers must stream, see Relay.WaitForWebhook, and each gets its
+own queue. A session is bound to a reader, chosen by the SessionPolicy, when
+its first delivery arrives, and all of its deliveries go to that reader.
+Deliveries that are not part of a session go to any reader. If no session
+reader is waiting, the delivery waits for any reader.
 
 
 
@@ -307,17 +306,18 @@ exits or ctx is cancelled.
 ```go
 func (r *Relay) WaitForWebhook(w http.ResponseWriter, req *http.Request)
 ```
-WaitForWebhook waits for a webhook to be received and responds with it as
-a Delivery on a line of its own. It is intended to support long polling by
-blocking until a webhook is available. If the request context is cancelled
-while waiting, it logs the cancellation and returns without responding.
-When exclusive reads are configured (see WithExclusiveReads) and another
-reader is already waiting, it responds immediately with 409 Conflict.
-When sessions are enabled, all webhooks that are considered part of the same
-session are routed to the same long polling reader. A reader identifies
-itself as being a candidate for sessions by setting the session=1 query
-parameter. When a sessions is identified, it is bound to a reader according
-to the policy set by WithSessionPolicy.
+WaitForWebhook responds to a long polling request with webhooks.
+By default it waits for a webhook and responds with it as it was received:
+the payload is the body and the forwarded headers are headers.
+With the stream=1 query parameter it streams webhooks as they arrive,
+each as a Delivery on a line of its own, until the request ends. If sessions
+are enabled, see WithSessions, the request must stream, and is sent all of
+the webhooks of the sessions bound to it, ending after the last of them,
+as well as those that are not part of a session. Otherwise it is rejected
+with 400 Bad Request. If the request context is cancelled while waiting,
+it logs the cancellation and returns without responding. When exclusive
+reads are configured (see WithExclusiveReads) and another reader is already
+waiting, it responds immediately with 409 Conflict.
 
 
 

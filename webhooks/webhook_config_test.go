@@ -475,10 +475,9 @@ sessions: true
 		t.Fatalf("got %+v", c)
 	}
 
-	// A request for sessions is answered, with an empty body that is flushed,
-	// as soon as it is made, if sessions are enabled for the service, and not
-	// until there is a delivery if they are not.
-	answered := func(c webhooks.Config) bool {
+	// A request that does not stream is rejected as soon as it is made if
+	// sessions are enabled, and otherwise waits for a delivery.
+	status := func(c webhooks.Config) int {
 		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
 		relay := webhooks.NewRelay(ctx, webhooks.NoopValidator, c.Options()...)
@@ -487,26 +486,26 @@ sessions: true
 		defer srv.Close()
 		reqCtx, reqCancel := context.WithTimeout(ctx, 300*time.Millisecond)
 		defer reqCancel()
-		req, err := http.NewRequestWithContext(reqCtx, http.MethodGet, srv.URL+"/wait?session=1", nil)
+		req, err := http.NewRequestWithContext(reqCtx, http.MethodGet, srv.URL+"/wait", nil)
 		if err != nil {
 			t.Fatal(err)
 		}
 		resp, err := http.DefaultClient.Do(req)
 		if err != nil {
-			return false
+			return 0
 		}
 		resp.Body.Close()
-		return resp.StatusCode == http.StatusOK
+		return resp.StatusCode
 	}
-	if !answered(c) {
-		t.Errorf("sessions are not enabled by %+v", c)
+	if got := status(c); got != http.StatusBadRequest {
+		t.Errorf("sessions are not enabled by %+v: got status %v", c, got)
 	}
 	for _, c := range []webhooks.Config{
 		{Service: "github-workflow"},
 		{Service: "other", Sessions: true},
 	} {
-		if answered(c) {
-			t.Errorf("sessions are enabled by %+v", c)
+		if got := status(c); got != 0 {
+			t.Errorf("sessions are enabled by %+v: got status %v", c, got)
 		}
 	}
 }

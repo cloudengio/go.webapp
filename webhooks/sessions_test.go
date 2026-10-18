@@ -7,6 +7,7 @@ package webhooks_test
 import (
 	"bufio"
 	"context"
+	"encoding/json/jsontext"
 	"encoding/json/v2"
 	"fmt"
 	"net/http"
@@ -100,7 +101,7 @@ type reader struct {
 func (s *sessionServer) session() *reader {
 	s.t.Helper()
 	ctx, cancel := context.WithCancel(context.Background())
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, s.srv.URL+"/api/wait?session=1", nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, s.srv.URL+"/api/wait?stream=1", nil)
 	if err != nil {
 		s.t.Fatal(err)
 	}
@@ -309,10 +310,21 @@ func TestSessionsUnkeyedToAnyReader(t *testing.T) {
 	}
 }
 
-// TestSessionsOneShot checks that a reader that does not ask for sessions is
-// sent a single delivery, in the same format.
+// TestSessionsOneShot checks that a reader that does not stream is rejected if
+// sessions are enabled, and is otherwise sent a single delivery as it was received.
 func TestSessionsOneShot(t *testing.T) {
-	s := newSessionServer(t, webhooks.WithForwardedHeaders("X-GitHub-Event"))
+	s := newSessionServer(t)
+	resp, err := http.Get(s.srv.URL + "/api/wait")
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Errorf("got %v, want %v", resp.StatusCode, http.StatusBadRequest)
+	}
+
+	// Without sessions every delivery is relayed as it arrives.
+	s = newSessionServer(t, webhooks.WithSessions(nil), webhooks.WithForwardedHeaders("X-GitHub-Event"))
 	s.job(1, "a1")
 	s.ping(1)
 	for _, want := range []struct{ event, name string }{{"workflow_job", "a1"}, {"ping", "ping 1"}} {
@@ -320,17 +332,28 @@ func TestSessionsOneShot(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		var d webhooks.Delivery
-		err = json.UnmarshalRead(resp.Body, &d)
+		var payload jsontext.Value
+		err = json.UnmarshalRead(resp.Body, &payload)
 		resp.Body.Close()
 		if err != nil {
 			t.Fatal(err)
 		}
-		l := newLine(d)
-		if got := l.Headers.Get("X-GitHub-Event"); got != want.event || lineName(t, l) != want.name {
+		l := sessionLine{Delivery: webhooks.Delivery{Headers: resp.Header, Payload: payload}}
+		if got := resp.Header.Get("X-GitHub-Event"); got != want.event || lineName(t, l) != want.name {
 			t.Errorf("got %q %q, want %q %q", got, lineName(t, l), want.event, want.name)
 		}
 	}
+
+	// And a reader that streams is sent them all.
+	s.job(2, "b1")
+	s.ping(2)
+	a := s.session()
+	for _, want := range []string{"b1", "ping 2"} {
+		if got := lineName(t, a.next(t)); got != want {
+			t.Errorf("got %q, want %q", got, want)
+		}
+	}
+	a.none(t)
 }
 
 func TestSessionsPayloadFormat(t *testing.T) {
@@ -362,7 +385,7 @@ func TestSessionsExclusiveReads(t *testing.T) {
 	s := newSessionServer(t, webhooks.WithExclusiveReads(true))
 	a := s.session()
 	waitForReaders(t)
-	resp, err := http.Get(s.srv.URL + "/api/wait?session=1")
+	resp, err := http.Get(s.srv.URL + "/api/wait?stream=1")
 	if err != nil {
 		t.Fatal(err)
 	}
