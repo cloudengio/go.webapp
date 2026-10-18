@@ -8,6 +8,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"time"
 
 	"cloudeng.io/cmdutil/cmdyaml"
 	"cloudeng.io/cmdutil/keys"
@@ -21,7 +22,9 @@ type Config struct {
 	MaxPayloadSize  cmdyaml.ByteSize  `yaml:"max_payload_size" doc:"maximum allowed payload size for incoming webhook requests in bytes, e.g. 1048576 for 1MB"`
 	MaxQueueSize    int               `yaml:"max_queue_size" doc:"maximum number of payloads to hold in the queue for processing, leave empty for default"`
 	ExclusiveReads  bool              `yaml:"exclusive_reads" doc:"if true, at most one long poll reader is admitted at a time and concurrent readers are rejected with 409 Conflict"`
-	Service         string            `yaml:"service" doc:"type of webhook to serve, e.g. github, etc."`
+	Sessions        bool              `yaml:"sessions,omitempty" doc:"if true, webhooks that are part of the same session are relayed to the same long poll reader"`
+	SessionTimeout  time.Duration     `yaml:"session_timeout,omitempty" doc:"if sessions are enabled, how long a session may go without a webhook before it is ended, leave empty for no timeout"`
+	Service         string            `yaml:"service" doc:"type of webhook to serve, e.g. github-workflow, etc."`
 	ServiceSpecific *cmdyaml.Deferred `yaml:"service_specific" doc:"additional details specific to the type of webhook being served, leave empty for default"`
 }
 
@@ -67,7 +70,28 @@ func (c Config) Options() []Option {
 		WithMaxPayloadSize(int64(c.MaxPayloadSize)),
 		WithExclusiveReads(c.ExclusiveReads),
 	}
+	if c.Sessions {
+		if key := sessionKeyFor(c.Service); key != nil {
+			opts = append(opts, WithSessions(key), WithSessionTimeout(c.SessionTimeout))
+		}
+	}
 	return opts
+}
+
+// Validate reports whether sessions are enabled for a service without them.
+func (c Config) Validate() error {
+	if c.Sessions && sessionKeyFor(c.Service) == nil {
+		return fmt.Errorf("sessions are not supported by service %q", c.Service)
+	}
+	return nil
+}
+
+// sessionKeyFor returns the SessionKeyFunc for a service, or nil if it has none.
+func sessionKeyFor(service string) SessionKeyFunc {
+	if service == "github-workflow" {
+		return GitHubWorkflowSessionKey
+	}
+	return nil
 }
 
 // SecretsConfig represents the secrets used to validate incoming webhooks.

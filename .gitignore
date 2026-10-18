@@ -38,3 +38,7 @@ webauth/webauthn/passkeys/mkcert-ca
 .gograph/
 graphify-out/
 code_review.md
+.agents
+CLAUDE.md
+GEMINI.md
+.mcp.json

@@ -6,6 +6,7 @@ package webhooks
 
 import (
 	"context"
+	"encoding/json/jsontext"
 	"io"
 	"log/slog"
 	"net/http"
@@ -26,7 +27,8 @@ import (
 // When the internal buffer is full the oldest webhook is dropped to make
 // room for the new one.
 type Relay struct {
-	fifo      *patterns.FIFO[delivery]
+	ctx       context.Context
+	router    *router
 	validator Validator
 	opts      options
 	// readSlot serialises long-poll readers when exclusive reads are
@@ -40,19 +42,36 @@ type delivery struct {
 	header     http.Header
 	body       []byte
 	expiration time.Time // when the webhook expires
+	session    string    // the session that it is part of, or empty
+	last       bool      // it is the last of its session
+}
+
+// Delivery is a webhook as it is sent to a reader, one per line.
+type Delivery struct {
+	// Headers are the forwarded headers, see WithForwardedHeaders.
+	Headers http.Header    `json:"headers,omitzero"`
+	Payload jsontext.Value `json:"payload"`
+}
+
+func newDelivery(d delivery) Delivery {
+	return Delivery{Headers: d.header, Payload: d.body}
 }
 
 type options struct {
-	size             int64
-	payloadLimit     int64
-	forwardedHeaders []string
-	expiry           time.Duration
-	expiryScan       time.Duration
-	exclusiveReads   bool
-	logger           *slog.Logger
-	deniedCounter    webapp.CounterInc // validation failed, e.g. due to invalid signature
-	relayedCounter   webapp.CounterInc // successfully relayed to FIFO
-	readCounter      webapp.CounterInc // successfully read from FIFO and sent to client
+	size                   int64
+	payloadLimit           int64
+	forwardedHeaders       []string
+	expiry                 time.Duration
+	expiryScan             time.Duration
+	exclusiveReads         bool
+	sessionKey             SessionKeyFunc // nil if sessions are not enabled
+	sessionTimeout         time.Duration
+	sessionPolicy          SessionPolicy // nil for HashSessionPolicy
+	logger                 *slog.Logger
+	deniedCounter          webapp.CounterInc // validation failed, e.g. due to invalid signature
+	relayedCounter         webapp.CounterInc // successfully relayed to FIFO
+	readCounter            webapp.CounterInc // successfully read from FIFO and sent to client
+	jsonSyntaxErrorCounter webapp.CounterInc // incoming payload failed JSON syntax validation
 }
 
 const (
@@ -149,6 +168,14 @@ func WithCounters(deniedCounter, relayedCounter, readCounter webapp.CounterInc) 
 	}
 }
 
+// WithJSONSyntaxErrorCounter sets the counter incremented when an incoming
+// webhook payload fails JSON syntax validation.
+func WithJSONSyntaxErrorCounter(counter webapp.CounterInc) Option {
+	return func(opts *options) {
+		opts.jsonSyntaxErrorCounter = counter
+	}
+}
+
 func noopCounter(context.Context) {}
 
 // Validator is called to validate and extract the webhook payload
@@ -194,17 +221,22 @@ func NewRelay(ctx context.Context, validator Validator, opts ...Option) *Relay {
 	if options.readCounter == nil {
 		options.readCounter = noopCounter
 	}
+	if options.jsonSyntaxErrorCounter == nil {
+		options.jsonSyntaxErrorCounter = noopCounter
+	}
 	options.logger = options.logger.With("component", "webhooks.Relay")
 	var readSlot chan struct{}
 	if options.exclusiveReads {
 		readSlot = make(chan struct{}, 1)
 	}
-	return &Relay{
-		fifo:      patterns.NewFIFO(ctx, int(options.size), expiryScan(options)...),
+	r := &Relay{
+		ctx:       ctx,
+		router:    newRouter(ctx, options),
 		validator: validator,
 		opts:      options,
 		readSlot:  readSlot,
 	}
+	return r
 }
 
 // expiryScan returns the FIFO options that implement delivery expiry, or nil
@@ -231,13 +263,33 @@ func expiryScan(opts options) []patterns.Option[delivery] {
 // Stop shuts down the internal FIFO goroutine. It blocks until the goroutine
 // exits or ctx is cancelled.
 func (r *Relay) Stop(ctx context.Context) {
-	r.fifo.Stop(ctx)
+	r.router.Stop(ctx)
+}
+
+// validate validates req and returns its payload, or responds with an error and
+// reports false.
+func (r *Relay) validate(w http.ResponseWriter, req *http.Request) ([]byte, bool) {
+	payload, status := r.validator(req)
+	if status != http.StatusOK {
+		http.Error(w, "invalid payload", status)
+		if status >= http.StatusBadRequest && status < http.StatusInternalServerError {
+			r.opts.deniedCounter(req.Context())
+		}
+		return nil, false
+	}
+	if !jsontext.Value(payload).IsValid() {
+		r.opts.jsonSyntaxErrorCounter(req.Context())
+		http.Error(w, "payload is not valid JSON", http.StatusBadRequest)
+		return nil, false
+	}
+	return payload, true
 }
 
 // ServeWebhook handles incoming webhook requests, validates them using the
 // provided Validator, and relays the payload to the FIFO for processing.
 // If the internal buffer is full the oldest payload is dropped to make room.
-// It responds with appropriate HTTP status codes based on the validation outcome.
+// It responds with appropriate HTTP status codes based on the validation outcome,
+// and rejects, with 400, a payload that is not valid JSON.
 func (r *Relay) ServeWebhook(w http.ResponseWriter, req *http.Request) {
 	if req.ContentLength > r.opts.payloadLimit {
 		http.Error(w, "payload too large", http.StatusRequestEntityTooLarge)
@@ -257,33 +309,35 @@ func (r *Relay) ServeWebhook(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 	req.Body = http.MaxBytesReader(w, req.Body, r.opts.payloadLimit)
-	payload, status := r.validator(req)
-	if status != http.StatusOK {
-		http.Error(w, "invalid payload", status)
-		if status >= http.StatusBadRequest && status < http.StatusInternalServerError {
-			r.opts.deniedCounter(req.Context())
-		}
+	payload, ok := r.validate(w, req)
+	if !ok {
 		return
 	}
 	if err := req.Context().Err(); err != nil {
 		r.opts.logger.Info("ServeWebhook: context already cancelled before send", "err", err)
 		return
 	}
-	select {
-	case r.fifo.In() <- delivery{header: r.forwardedHeaders(req.Header), body: payload, expiration: time.Now().Add(r.opts.expiry)}:
-		r.opts.logger.Info("ServeWebhook: received payload and sent to FIFO", "size", len(payload))
-		r.opts.relayedCounter(req.Context())
-	case <-req.Context().Done():
-		err := req.Context().Err()
-		r.opts.logger.Info("ServeWebhook: context cancelled while trying to send payload to FIFO", "err", err)
+	d := delivery{header: r.forwardedHeaders(req.Header), body: payload, expiration: time.Now().Add(r.opts.expiry)}
+	if r.opts.sessionKey != nil {
+		d.session, d.last = r.opts.sessionKey(req.Header, payload)
+	}
+	if err := r.router.route(req.Context(), d); err != nil {
+		r.opts.logger.Info("ServeWebhook: context cancelled while trying to relay payload", "session", d.session, "err", err)
 		return
 	}
+	r.opts.logger.Info("ServeWebhook: received payload and relayed it", "size", len(payload), "session", d.session)
+	r.opts.relayedCounter(req.Context())
 	w.WriteHeader(http.StatusAccepted)
 }
 
-// WaitForWebhook waits for a payload to be received on the FIFO and responds
-// with the payload as JSON. It is intended to support long polling by
-// blocking until a webhook payload is available.
+// WaitForWebhook responds to a long polling request with webhooks. By default it
+// waits for a webhook and responds with it as it was received: the payload is the
+// body and the forwarded headers are headers. With the stream=1 query parameter
+// it streams webhooks as they arrive, each as a Delivery on a line of its own,
+// until the request ends. If sessions are enabled, see WithSessions, the
+// request must stream, and is sent all of the webhooks of the sessions bound to
+// it, ending after the last of them, as well as those that are not part of
+// a session. Otherwise it is rejected with 400 Bad Request.
 // If the request context is cancelled while waiting, it logs the cancellation
 // and returns without responding.
 // When exclusive reads are configured (see WithExclusiveReads) and another
@@ -303,24 +357,12 @@ func (r *Relay) WaitForWebhook(w http.ResponseWriter, req *http.Request) {
 			return
 		}
 	}
-	select {
-	case job, ok := <-r.fifo.Out():
-		if !ok {
-			return
-		}
-		for name, values := range job.header {
-			for _, v := range values {
-				w.Header().Add(name, v)
-			}
-		}
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write(job.body)
-		r.opts.logger.Info("WaitForWebhook: sent payload to client", "size", len(job.body))
-		r.opts.readCounter(req.Context())
-	case <-req.Context().Done():
-		err := req.Context().Err()
-		r.opts.logger.Info("WaitForWebhook: request context cancelled while waiting for payload from FIFO", "err", err)
+	stream := wantsStream(req)
+	if r.opts.sessionKey != nil && !stream {
+		http.Error(w, "sessions are enabled: the stream=1 query parameter is required", http.StatusBadRequest)
+		return
 	}
+	r.serve(w, req, stream)
 }
 
 // forwardedHeaders returns a copy of the configured subset of src, or nil if no

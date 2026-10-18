@@ -6,9 +6,12 @@ package webhooks_test
 
 import (
 	"context"
+	"net/http"
+	"net/http/httptest"
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"cloudeng.io/cmdutil/cmdyaml"
 	"cloudeng.io/cmdutil/keys"
@@ -19,7 +22,7 @@ import (
 const githubConfigYAML = `
 delivery_path: "/webhook"
 relay_path: "/relay"
-service: "github"
+service: "github-workflow"
 max_payload_size: 1MiB
 service_specific:
   myuser:
@@ -33,8 +36,8 @@ func TestConfigSecretsConfig(t *testing.T) {
 	if err := yaml.Unmarshal([]byte(githubConfigYAML), &cfg); err != nil {
 		t.Fatalf("unmarshal: %v", err)
 	}
-	if cfg.Service != "github" {
-		t.Errorf("Service: got %q, want %q", cfg.Service, "github")
+	if cfg.Service != "github-workflow" {
+		t.Errorf("Service: got %q, want %q", cfg.Service, "github-workflow")
 	}
 	if cfg.DeliveryPath != "/webhook" {
 		t.Errorf("DeliveryPath: got %q, want %q", cfg.DeliveryPath, "/webhook")
@@ -69,7 +72,7 @@ func TestConfigSecretsConfig(t *testing.T) {
 }
 
 func TestConfigNilSpecific(t *testing.T) {
-	cfg := webhooks.Config{Service: "github", ServiceSpecific: nil}
+	cfg := webhooks.Config{Service: "github-workflow", ServiceSpecific: nil}
 	_, err := webhooks.ParseSpecific[webhooks.SecretsConfig](cfg)
 	if err == nil {
 		t.Fatalf("expected error for nil ServiceSpecific")
@@ -80,7 +83,7 @@ func TestConfigMarshalYAML_Defaults(t *testing.T) {
 	cfg := webhooks.Config{
 		DeliveryPath: "/webhook",
 		RelayPath:    "/relay",
-		Service:      "github",
+		Service:      "github-workflow",
 	}
 	data, err := yaml.Marshal(cfg)
 	if err != nil {
@@ -102,8 +105,8 @@ func TestConfigMarshalYAML_Defaults(t *testing.T) {
 	if got.RelayPath != "/relay" {
 		t.Errorf("RelayPath: got %q, want %q", got.RelayPath, "/relay")
 	}
-	if got.Service != "github" {
-		t.Errorf("Service: got %q, want %q", got.Service, "github")
+	if got.Service != "github-workflow" {
+		t.Errorf("Service: got %q, want %q", got.Service, "github-workflow")
 	}
 }
 
@@ -176,7 +179,7 @@ func TestTokensFromContext(t *testing.T) {
 func TestConfigUnmarshalDefaults(t *testing.T) {
 	const input = `
 delivery_path: "/hook"
-service: "github"
+service: "github-workflow"
 `
 	var cfg webhooks.Config
 	if err := yaml.Unmarshal([]byte(input), &cfg); err != nil {
@@ -197,7 +200,7 @@ func TestConfigUnmarshalNamedFields(t *testing.T) {
 	const input = `
 delivery_path: "/hook"
 relay_path: "/relay"
-service: "github"
+service: "github-workflow"
 max_queue_size: 5
 max_payload_size: 512
 exclusive_reads: true
@@ -215,8 +218,8 @@ exclusive_reads: true
 	if cfg.RelayPath != "/relay" {
 		t.Errorf("RelayPath: got %q, want %q", cfg.RelayPath, "/relay")
 	}
-	if cfg.Service != "github" {
-		t.Errorf("Service: got %q, want %q", cfg.Service, "github")
+	if cfg.Service != "github-workflow" {
+		t.Errorf("Service: got %q, want %q", cfg.Service, "github-workflow")
 	}
 	if cfg.MaxQueueSize != 5 {
 		t.Errorf("MaxQueueSize: got %d, want 5", cfg.MaxQueueSize)
@@ -240,7 +243,7 @@ func TestConfigInOuterStruct(t *testing.T) {
 config:
   delivery_path: "/hook"
   relay_path: "/relay"
-  service: "github"
+  service: "github-workflow"
   service_specific:
     alice:
       - my-secret
@@ -250,8 +253,8 @@ extra_flag: true
 	if err := yaml.Unmarshal([]byte(input), &entry); err != nil {
 		t.Fatalf("Unmarshal: %v", err)
 	}
-	if entry.Config.Service != "github" {
-		t.Errorf("Config.Service: got %q, want %q", entry.Config.Service, "github")
+	if entry.Config.Service != "github-workflow" {
+		t.Errorf("Config.Service: got %q, want %q", entry.Config.Service, "github-workflow")
 	}
 	if entry.Config.DeliveryPath != "/hook" {
 		t.Errorf("Config.DeliveryPath: got %q, want %q", entry.Config.DeliveryPath, "/hook")
@@ -277,7 +280,7 @@ func TestConfigStrictParsing(t *testing.T) {
 		const input = `
 delivery_path: "/hook"
 relay_path: "/relay"
-service: "github"
+service: "github-workflow"
 `
 		var cfg webhooks.Config
 		if err := cmdyaml.ParseConfigsStrict(&cfg, []byte(input)); err != nil {
@@ -288,7 +291,7 @@ service: "github"
 	t.Run("service_specific block accepted", func(t *testing.T) {
 		const input = `
 delivery_path: "/hook"
-service: "github"
+service: "github-workflow"
 service_specific:
   alice:
     - tok
@@ -455,4 +458,71 @@ bob:
 			t.Errorf("SecretSpecs: got %v, want empty", rt.SecretSpecs)
 		}
 	})
+}
+
+func TestConfigSessions(t *testing.T) {
+	const cfg = `
+delivery_path: /hook
+relay_path: /wait
+service: github-workflow
+sessions: true
+`
+	var c webhooks.Config
+	if err := yaml.Unmarshal([]byte(cfg), &c); err != nil {
+		t.Fatal(err)
+	}
+	if !c.Sessions {
+		t.Fatalf("got %+v", c)
+	}
+
+	// A request that does not stream is rejected as soon as it is made if
+	// sessions are enabled, and otherwise waits for a delivery.
+	status := func(c webhooks.Config) int {
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+		relay := webhooks.NewRelay(ctx, webhooks.NoopValidator, c.Options()...)
+		defer relay.Stop(context.Background())
+		srv := httptest.NewServer(http.HandlerFunc(relay.Handler("/hook", "/wait")))
+		defer srv.Close()
+		reqCtx, reqCancel := context.WithTimeout(ctx, 300*time.Millisecond)
+		defer reqCancel()
+		req, err := http.NewRequestWithContext(reqCtx, http.MethodGet, srv.URL+"/wait", nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			return 0
+		}
+		resp.Body.Close()
+		return resp.StatusCode
+	}
+	if got := status(c); got != http.StatusBadRequest {
+		t.Errorf("sessions are not enabled by %+v: got status %v", c, got)
+	}
+	for _, c := range []webhooks.Config{
+		{Service: "github-workflow"},
+		{Service: "other", Sessions: true},
+	} {
+		if got := status(c); got != 0 {
+			t.Errorf("sessions are enabled by %+v: got status %v", c, got)
+		}
+	}
+}
+
+func TestConfigValidateSessions(t *testing.T) {
+	for _, tc := range []struct {
+		c  webhooks.Config
+		ok bool
+	}{
+		{webhooks.Config{Service: "github-workflow", Sessions: true}, true},
+		{webhooks.Config{Service: "github-workflow"}, true},
+		{webhooks.Config{Service: "github"}, true},
+		{webhooks.Config{Service: "github", Sessions: true}, false},
+		{webhooks.Config{Sessions: true}, false},
+	} {
+		if err := tc.c.Validate(); (err == nil) != tc.ok {
+			t.Errorf("%+v: got %v, want ok %v", tc.c, err, tc.ok)
+		}
+	}
 }

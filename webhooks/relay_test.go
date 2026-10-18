@@ -122,8 +122,8 @@ func TestRelayHappyPath(t *testing.T) {
 	if got := wWait.Header().Get("Content-Type"); got != "application/json" {
 		t.Errorf("content-type: got %q, want application/json", got)
 	}
-	if !bytes.Equal(wWait.Body.Bytes(), payload) {
-		t.Errorf("body: got %s, want %s", wWait.Body.Bytes(), payload)
+	if got := wWait.Body.Bytes(); !bytes.Equal(got, payload) {
+		t.Errorf("body: got %s, want %s", got, payload)
 	}
 }
 
@@ -290,8 +290,8 @@ func TestRelayExclusiveReads(t *testing.T) {
 	if got := w.Code; got != http.StatusOK {
 		t.Errorf("wait after release: got status %d, want %d", got, http.StatusOK)
 	}
-	if !bytes.Equal(w.Body.Bytes(), payload) {
-		t.Errorf("body: got %s, want %s", w.Body.Bytes(), payload)
+	if got := w.Body.Bytes(); !bytes.Equal(got, payload) {
+		t.Errorf("body: got %s, want %s", got, payload)
 	}
 }
 
@@ -400,6 +400,49 @@ func TestRelayCounterDenied(t *testing.T) {
 	}
 	if got := readN(); got != 0 {
 		t.Errorf("read: got %d, want 0", got)
+	}
+}
+
+func TestRelayCounterJSONSyntaxError(t *testing.T) {
+	denied, deniedN := makeCounter()
+	relayed, relayedN := makeCounter()
+	read, readN := makeCounter()
+	jsonErr, jsonErrN := makeCounter()
+
+	handler, _ := newTestRelay(t,
+		webhooks.WithCounters(denied, relayed, read),
+		webhooks.WithJSONSyntaxErrorCounter(jsonErr),
+	)
+
+	// Post invalid JSON.
+	req := httptest.NewRequest(http.MethodPost, "/api/webhook", strings.NewReader("not a valid json {"))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	handler(w, req)
+
+	if got := w.Code; got != http.StatusBadRequest {
+		t.Errorf("got status %d, want %d", got, http.StatusBadRequest)
+	}
+	if got := jsonErrN(); got != 1 {
+		t.Errorf("jsonErr: got %d, want 1", got)
+	}
+	if got := deniedN(); got != 0 {
+		t.Errorf("denied: got %d, want 0", got)
+	}
+	if got := relayedN(); got != 0 {
+		t.Errorf("relayed: got %d, want 0", got)
+	}
+	if got := readN(); got != 0 {
+		t.Errorf("read: got %d, want 0", got)
+	}
+
+	// Post valid JSON, counter should not increment again.
+	postWebhook(t, handler, []byte(`"valid json"`))
+	if got := jsonErrN(); got != 1 {
+		t.Errorf("jsonErr: got %d, want 1", got)
+	}
+	if got := relayedN(); got != 1 {
+		t.Errorf("relayed: got %d, want 1", got)
 	}
 }
 
