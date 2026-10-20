@@ -285,7 +285,7 @@ WithExecAllocatorOptions appends options to the Chrome allocator.
 
 
 ```go
-func WithSelectorActions(selector string, actions ...chromedp.Action) NavigateOption
+func WithSelectorActions(selector string, actions ...chromedp.Action[chromedp.Void]) NavigateOption
 ```
 WithSelectorActions registers chromedp actions to run after WaitVisible
 for the given selector. If no actions are registered for a selector, only

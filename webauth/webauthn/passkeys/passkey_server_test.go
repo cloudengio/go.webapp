@@ -24,9 +24,10 @@ import (
 	"cloudeng.io/webapp/devtest/chromedputil"
 	"cloudeng.io/webapp/webauth/jwtutil"
 	"cloudeng.io/webapp/webauth/webauthn/passkeys"
+	"github.com/chromedp/cdproto/cdp"
 	"github.com/chromedp/cdproto/page"
 	browserWebauthn "github.com/chromedp/cdproto/webauthn"
-	"github.com/cloudengio/chromedp"
+	"github.com/chromedp/chromedp"
 	"github.com/go-webauthn/webauthn/protocol"
 	"github.com/go-webauthn/webauthn/webauthn"
 )
@@ -134,13 +135,12 @@ func TestPasskeysServer(t *testing.T) {
 
 	ctx, cancel, authenticatorID := setupBrowser(t)
 	defer cancel()
-	defer chromedp.Run(ctx, browserWebauthn.RemoveVirtualAuthenticator(authenticatorID)) //nolint:errcheck
+	defer chromedp.Call(ctx, browserWebauthn.RemoveVirtualAuthenticator, browserWebauthn.RemoveVirtualAuthenticatorParams{AuthenticatorID: authenticatorID}) //nolint:errcheck
 
 	listenCh := chromedputil.RunLoggingListener(ctx, logger,
 		chromedputil.WithNetworkLogging(),
 		chromedputil.WithConsoleLogging(),
 		chromedputil.WithExceptionLogging(),
-		chromedputil.WithAnyEventLogging(),
 	)
 
 	// Run tests for registration and login.
@@ -173,7 +173,7 @@ func TestPasskeysServer(t *testing.T) {
 		t.Errorf("Public key ID does not match: got %v, want %v", got, want)
 	}
 
-	if err := chromedp.Run(ctx, browserWebauthn.RemoveVirtualAuthenticator(authenticatorID)); err != nil {
+	if _, err := chromedp.Call(ctx, browserWebauthn.RemoveVirtualAuthenticator, browserWebauthn.RemoveVirtualAuthenticatorParams{AuthenticatorID: authenticatorID}); err != nil {
 		t.Errorf("Failed to remove virtual authenticator: %v", err)
 	}
 	cancel()       // Stop the browser context.
@@ -203,23 +203,21 @@ func setupBrowser(t *testing.T) (context.Context, context.CancelFunc, browserWeb
 		AutomaticPresenceSimulation: true,
 	}
 
-	var authenticatorID browserWebauthn.AuthenticatorID
-	if err := chromedp.Run(ctx,
-		browserWebauthn.Enable(),
-		chromedp.ActionFunc(func(ctx context.Context) error {
-			var err error
-			authenticatorID, err = browserWebauthn.AddVirtualAuthenticator(authOptions).Do(ctx)
-			if err != nil {
-				t.Logf("Failed to add virtual authenticator: %v\n", err)
-			}
-			return err
-		}),
-	); err != nil {
+	if _, err := chromedp.Call(ctx, browserWebauthn.Enable, browserWebauthn.EnableParams{}); err != nil {
+		cancel()
+		t.Fatalf("Failed to enable webauthn: %v", err)
+	}
+	authRes, err := chromedp.Call(ctx, browserWebauthn.AddVirtualAuthenticator, browserWebauthn.AddVirtualAuthenticatorParams{
+		Options: authOptions,
+	})
+	if err != nil {
+		t.Logf("Failed to add virtual authenticator: %v\n", err)
 		cancel()
 		t.Fatalf("Failed to set up virtual authenticator: %v", err)
 	}
+	authenticatorID := authRes.AuthenticatorID
 
-	err := chromedp.Run(ctx, chromedp.Navigate(serverURL.String()))
+	err = chromedp.Do(ctx, chromedp.Navigate(serverURL.String()))
 	if err != nil {
 		cancel()
 		t.Fatalf("Failed to navigate to server URL: %v, %v", serverURL.String(), err)
@@ -241,18 +239,17 @@ type registrationResult struct {
 }
 
 func testPasskeyRegistration(ctx context.Context, t *testing.T) registrationResult {
-	var result registrationResult
-	err := chromedp.Run(ctx,
-		// Bring the page to the front.
-		chromedp.ActionFunc(func(ctx context.Context) error {
-			return page.BringToFront().Do(ctx)
-		}),
-
-		// Force the window to gain focus via JS
-		chromedp.Evaluate(`window.focus();`, nil),
-
-		// Call the registration function from the script.
-		chromedp.Evaluate(`createPasskey('test@example.com', 'Test User').then((result) => { return result; });`, &result, chromedputil.WaitForPromise),
+	// Bring the page to the front.
+	if _, err := chromedp.Call(ctx, page.BringToFront, cdp.Empty{}); err != nil {
+		t.Fatalf("Passkey registration test failed: %v", err)
+	}
+	// Force the window to gain focus via JS
+	if err := chromedp.Do(ctx, chromedp.Evaluate[chromedp.Void](`window.focus();`)); err != nil {
+		t.Fatalf("Passkey registration test failed: %v", err)
+	}
+	// Call the registration function from the script.
+	result, err := chromedp.Run(ctx,
+		chromedp.Evaluate[registrationResult](`createPasskey('test@example.com', 'Test User').then((result) => { return result; });`, chromedputil.WaitForPromise),
 	)
 	if err != nil {
 		t.Fatalf("Passkey registration test failed: %v", err)
@@ -277,10 +274,9 @@ type loginResult struct {
 }
 
 func testPasskeyLogin(ctx context.Context, t *testing.T) loginResult {
-	var result loginResult
-	err := chromedp.Run(ctx,
-		// Call the login function from the script.
-		chromedp.Evaluate(`usePasskey();`, &result, chromedputil.WaitForPromise),
+	// Call the login function from the script.
+	result, err := chromedp.Run(ctx,
+		chromedp.Evaluate[loginResult](`usePasskey();`, chromedputil.WaitForPromise),
 	)
 	if err != nil {
 		t.Fatalf("Passkey login test failed: %v", err)

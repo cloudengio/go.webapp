@@ -25,7 +25,7 @@ import (
 	"cloudeng.io/cicd"
 	"cloudeng.io/logging/ctxlog"
 	"github.com/chromedp/cdproto/runtime"
-	"github.com/cloudengio/chromedp"
+	"github.com/chromedp/chromedp"
 	"github.com/go-json-experiment/json"
 	"github.com/go-json-experiment/json/jsontext"
 )
@@ -36,19 +36,15 @@ var javascriptFunctions string
 // ListGlobalFunctions returns a list of all global function names defined in the
 // current context.
 func ListGlobalFunctions(ctx context.Context) ([]string, error) {
-	var defined []string
-	if err := chromedp.Run(ctx,
-		chromedp.Evaluate(`Object.getOwnPropertyNames(window).filter(
+	return chromedp.Run(ctx,
+		chromedp.Evaluate[[]string](`Object.getOwnPropertyNames(window).filter(
 			key => typeof window[key] === 'function'
-		);`, &defined)); err != nil {
-		return nil, err
-	}
-	return defined, nil
+		);`))
 }
 
 // WaitForPromise waits for a promise to resolve in the given evaluate parameters.
-func WaitForPromise(p *runtime.EvaluateParams) *runtime.EvaluateParams {
-	return p.WithAwaitPromise(true)
+func WaitForPromise(p *runtime.EvaluateParams) {
+	chromedp.EvalAwaitPromise(p)
 }
 
 var loadTpl = template.Must(template.New("loadJS").Parse(`
@@ -60,10 +56,10 @@ var loadTpl = template.Must(template.New("loadJS").Parse(`
 
 // SourceScript loads a JavaScript script into the current page.
 func SourceScript(ctx context.Context, script string) error {
-	result := struct {
+	type loadResult struct {
 		Success bool   `json:"success"`
 		Error   string `json:"error"`
-	}{}
+	}
 	scr := strings.Builder{}
 	data := struct {
 		Script string
@@ -74,10 +70,10 @@ func SourceScript(ctx context.Context, script string) error {
 	if err != nil {
 		return fmt.Errorf("failed to execute load template: %w", err)
 	}
-	err = chromedp.Run(ctx,
-		chromedp.Evaluate(javascriptFunctions, nil),
-		chromedp.Evaluate(scr.String(), &result, WaitForPromise),
-	)
+	if err := chromedp.Do(ctx, chromedp.Evaluate[chromedp.Void](javascriptFunctions)); err != nil {
+		return fmt.Errorf("failed to evaluate load script %s: %w", script, err)
+	}
+	result, err := chromedp.Run(ctx, chromedp.Evaluate[loadResult](scr.String(), WaitForPromise))
 	if err != nil {
 		return fmt.Errorf("failed to evaluate load script %s: %w", script, err)
 	}
@@ -87,63 +83,44 @@ func SourceScript(ctx context.Context, script string) error {
 	return nil
 }
 
-func evaluate(ctx context.Context, expr string) (*runtime.RemoteObject, error) {
-	ro, exp, err := runtime.Evaluate(expr).
-		WithSilent(true).
-		Do(ctx)
-	if err != nil {
-		return nil, err
-	}
-	if exp != nil {
-		return nil, fmt.Errorf("javascript exception: %v", exp)
-	}
-	if ro == nil {
-		return nil, fmt.Errorf("failed to get remote object: %s", expr)
-	}
-	return ro, nil
-}
-
 // GetRemoteObjectRef retrieves a remote object's metadata, ie.
 // type, object id etc (but not it's value).
 func GetRemoteObjectRef(ctx context.Context, name string) (*runtime.RemoteObject, error) {
-	var obj *runtime.RemoteObject
-	err := chromedp.Run(ctx,
-		chromedp.ActionFunc(func(ctx context.Context) error {
-			ro, err := evaluate(ctx, name)
-			if err != nil {
-				return err
-			}
-			obj = ro
-			return nil
-		}))
+	ro, err := chromedp.Run(ctx, chromedp.Evaluate[*runtime.RemoteObject](name, func(p *runtime.EvaluateParams) {
+		p.Silent = new(true)
+	}))
 	if err != nil {
 		return nil, fmt.Errorf("failed to evaluate %s: %w", name, err)
 	}
-	return obj, nil
+	if ro == nil {
+		return nil, fmt.Errorf("failed to get remote object: %s", name)
+	}
+	return ro, nil
 }
 
 func callon(ctx context.Context, fn string, objectID runtime.RemoteObjectID, deep bool) (*runtime.RemoteObject, error) {
 	if objectID == "" {
 		return nil, fmt.Errorf("missing objectID")
 	}
-	var res *runtime.RemoteObject
-	cp := runtime.CallFunctionOn(fn).
-		WithObjectID(objectID)
-	if deep {
-		cp = cp.WithSerializationOptions(&runtime.SerializationOptions{
-			Serialization: runtime.SerializationOptionsSerializationDeep,
-		})
-	} else {
-		cp = cp.WithReturnByValue(true)
+	params := runtime.CallFunctionOnParams{
+		FunctionDeclaration: fn,
+		ObjectID:            objectID,
 	}
-	res, exp, err := cp.Do(ctx)
+	if deep {
+		params.SerializationOptions = &runtime.SerializationOptions{
+			Serialization: runtime.SerializationOptionsSerializationDeep,
+		}
+	} else {
+		params.ReturnByValue = new(true)
+	}
+	res, err := chromedp.Call(ctx, runtime.CallFunctionOn, params)
 	if err != nil {
 		return nil, fmt.Errorf("failed to call function %s on object %s: %w", fn, objectID, err)
 	}
-	if exp != nil {
-		return nil, fmt.Errorf("javascript exception: %v (%+v)", exp.Text, exp)
+	if res.ExceptionDetails != nil {
+		return nil, fmt.Errorf("javascript exception: %w", &chromedp.ExceptionError{ExceptionDetails: res.ExceptionDetails})
 	}
-	return res, nil
+	return res.Result, nil
 }
 
 // GetRemoteObjectValueJSON retrieves a remote object's (using ObjectID)
@@ -178,17 +155,10 @@ func IsPlatformObjectError(err error) bool {
 // safeClone uses the javascript safeClone method to attempt to summarize/capture
 // platform object details.
 func safeClone(ctx context.Context, objectID runtime.RemoteObjectID) (*runtime.RemoteObject, jsontext.Value, error) {
-	var obj *runtime.RemoteObject
-	err := chromedp.Run(ctx,
-		chromedp.Evaluate(javascriptFunctions, nil),
-		chromedp.ActionFunc(func(ctx context.Context) error {
-			ro, err := callon(ctx, `function() { return chromedp_utils.safeClone(this); }`, objectID, false)
-			if err != nil {
-				return err
-			}
-			obj = ro
-			return nil
-		}))
+	if err := chromedp.Do(ctx, chromedp.Evaluate[chromedp.Void](javascriptFunctions)); err != nil {
+		return nil, nil, err
+	}
+	obj, err := callon(ctx, `function() { return chromedp_utils.safeClone(this); }`, objectID, false)
 	if err != nil {
 		return nil, nil, err
 	}

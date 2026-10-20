@@ -15,7 +15,7 @@ import (
 	"cloudeng.io/logging/ctxlog"
 	"cloudeng.io/sync/errgroup"
 	"cloudeng.io/webapp/devtest/chromedputil"
-	"github.com/cloudengio/chromedp"
+	"github.com/chromedp/chromedp"
 	"gopkg.in/yaml.v3"
 )
 
@@ -58,12 +58,12 @@ func (a *SelectorAction) UnmarshalYAML(value *yaml.Node) error {
 	}
 }
 
-func (a SelectorAction) chromedpActions(selector string) []chromedp.Action {
+func (a SelectorAction) chromedpActions(selector string) []chromedp.Action[chromedp.Void] {
 	switch a {
 	case SelectorActionClick:
-		return []chromedp.Action{chromedp.Click(selector)}
+		return []chromedp.Action[chromedp.Void]{chromedp.Click(selector)}
 	case SelectorActionDoubleClick:
-		return []chromedp.Action{chromedp.DoubleClick(selector)}
+		return []chromedp.Action[chromedp.Void]{chromedp.DoubleClick(selector)}
 	default:
 		return nil
 	}
@@ -104,7 +104,7 @@ type navigateTestOptions struct {
 	extraExecAllocOpts []chromedp.ExecAllocatorOption
 	ctxOpts            []chromedp.ContextOption
 	userDataDir        string
-	selectorActions    map[string][]chromedp.Action
+	selectorActions    map[string][]chromedp.Action[chromedp.Void]
 }
 
 // NavigateOption represents options to configure NavigationTest.
@@ -157,10 +157,10 @@ func WithSuppressedCertErrorsFor(certs ...*x509.Certificate) NavigateOption {
 // the given selector. If no actions are registered for a selector, only
 // WaitVisible is performed. Call this option once per selector that requires
 // additional interaction (e.g. chromedp.Click).
-func WithSelectorActions(selector string, actions ...chromedp.Action) NavigateOption {
+func WithSelectorActions(selector string, actions ...chromedp.Action[chromedp.Void]) NavigateOption {
 	return func(o *navigateTestOptions) {
 		if o.selectorActions == nil {
-			o.selectorActions = make(map[string][]chromedp.Action)
+			o.selectorActions = make(map[string][]chromedp.Action[chromedp.Void])
 		}
 		o.selectorActions[selector] = actions
 	}
@@ -230,7 +230,7 @@ func (c *NavigationTest) verify(ctx context.Context, spec NavigationSpec) (err e
 
 	// Navigate to the URL first.
 	ctxlog.Info(chromeCtx, "navigation-test: navigating", "url", spec.URL)
-	if err := chromedp.Run(chromeCtx, chromedp.Navigate(spec.URL)); err != nil {
+	if err := chromedp.Do(chromeCtx, chromedp.Navigate(spec.URL)); err != nil {
 		return fmt.Errorf("failed to navigate to %s: %w: %w", spec.URL, err, ErrNavigateUnexpectedError)
 	}
 
@@ -250,7 +250,7 @@ func (c *NavigationTest) verify(ctx context.Context, spec NavigationSpec) (err e
 }
 
 func (c *NavigationTest) runSelector(ctx context.Context, spec NavigationSpec, selector string) error {
-	actions := []chromedp.Action{chromedp.WaitVisible(selector)}
+	actions := []chromedp.Action[chromedp.Void]{chromedp.WaitVisible(selector)}
 	if extra, ok := c.opts.selectorActions[selector]; ok {
 		actions = append(actions, extra...)
 	} else if specActions := spec.Action.chromedpActions(selector); len(specActions) > 0 {
@@ -259,7 +259,7 @@ func (c *NavigationTest) runSelector(ctx context.Context, spec NavigationSpec, s
 	ctxlog.Info(ctx, "navigatetest: waiting for selector", "selector", selector, "num_actions", len(actions)-1)
 
 	stepCtx, stepCancel := context.WithTimeout(ctx, c.opts.elementTimeout)
-	err := chromedp.Run(stepCtx, actions...)
+	err := chromedp.Do(stepCtx, actions...)
 	stepCancel()
 
 	if err != nil {
