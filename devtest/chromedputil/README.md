@@ -151,11 +151,10 @@ the current context.
 
 ### Func Listen
 ```go
-func Listen(ctx context.Context, handlers ...func(ctx context.Context, ev any) bool)
+func Listen(ctx context.Context, handlers ...ListenHandler)
 ```
-Listen sets up a listener for Chrome DevTools Protocol events and calls
-each of the supplied handlers in turn when an event is received. The first
-handler to return true stops the event propagation.
+Listen sets up listeners for Chrome DevTools Protocol events by calling each
+of the supplied handlers.
 
 ### Func NativeMessagingHostsDir
 ```go
@@ -171,13 +170,6 @@ looks in UserDataNativeMessagingHostsDir(userDataDir) — prefer that one
 for anything launched via this package, and use this function only when the
 manifest must be visible to Chrome regardless of which profile it's launched
 against.
-
-### Func NewListenHandler
-```go
-func NewListenHandler[T any](ch chan<- T) func(ctx context.Context, ev any) bool
-```
-NewListenHandler returns a handler for a specific event type that forwards
-the event to the provided channel.
 
 ### Func RunLoggingListener
 ```go
@@ -224,7 +216,7 @@ NativeMessagingHostsDir guesses at.
 
 ### Func WaitForPromise
 ```go
-func WaitForPromise(p *runtime.EvaluateParams) *runtime.EvaluateParams
+func WaitForPromise(p *runtime.EvaluateParams)
 ```
 WaitForPromise waits for a promise to resolve in the given evaluate
 parameters.
@@ -249,6 +241,24 @@ The CI configuration may disable sandboxing for example.
 
 
 ## Types
+### Type ListenHandler
+```go
+type ListenHandler func(ctx context.Context)
+```
+ListenHandler represents an event handler that subscribes to Chrome DevTools
+Protocol events when invoked with a context.
+
+### Functions
+
+```go
+func NewListenHandler[T any](ev cdp.Event[T], ch chan<- *T) ListenHandler
+```
+NewListenHandler returns a handler for a specific CDP event that forwards
+received events to the provided channel.
+
+
+
+
 ### Type LoggingOption
 ```go
 type LoggingOption func(*loggingOptions)
@@ -256,13 +266,6 @@ type LoggingOption func(*loggingOptions)
 LoggingOption represents options to RunLoggingListener.
 
 ### Functions
-
-```go
-func WithAnyEventLogging() LoggingOption
-```
-WithAnyEventLogging enables logging for events of type 'any'. This is a
-catch all and should generally be the last handler in the list.
-
 
 ```go
 func WithConsoleLogging() LoggingOption
@@ -279,6 +282,12 @@ WithEventEntryLogging enables logging of events of type
 
 
 ```go
+func WithEventLogging[T any](ev cdp.Event[T]) LoggingOption
+```
+WithEventLogging enables logging for the specified CDP event.
+
+
+```go
 func WithExceptionLogging() LoggingOption
 ```
 WithExceptionLogging enables logging of events of type
@@ -289,7 +298,7 @@ WithExceptionLogging enables logging of events of type
 func WithNetworkLogging() LoggingOption
 ```
 WithNetworkLogging enables logging of events of type
-'network.EventResponseReceived'.
+'network.EventResponseReceived' and 'network.EventRequestWillBeSent'.
 
 
 

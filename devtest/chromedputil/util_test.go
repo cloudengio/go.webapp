@@ -20,7 +20,7 @@ import (
 
 	"cloudeng.io/webapp/devtest/chromedputil"
 	"github.com/chromedp/cdproto/runtime"
-	"github.com/cloudengio/chromedp"
+	"github.com/chromedp/chromedp"
 )
 
 // setupTestServer creates a simple HTTP server to serve test files.
@@ -54,7 +54,7 @@ func setupBrowser(t *testing.T, serverURL string) (context.Context, context.Canc
 	}
 	extraExecOpts := chromedputil.DebuggingExecOpts(2, true)
 	ctx, cancel := chromedputil.WithContextForCI(t.Context(), userdataDir, extraExecOpts)
-	if err := chromedp.Run(ctx, chromedp.Navigate(serverURL)); err != nil {
+	if err := chromedp.Do(ctx, chromedp.Navigate(serverURL)); err != nil {
 		t.Fatalf("failed to navigate to test server: %v", err)
 	}
 	return ctx, func() {
@@ -73,9 +73,9 @@ func TestListGlobalFunctions(t *testing.T) {
 	defer cancel()
 
 	// Define a new global function to ensure it's picked up.
-	if err := chromedp.Run(ctx, chromedp.Evaluate(`
+	if err := chromedp.Do(ctx, chromedp.Evaluate[chromedp.Void](`
         function aNewGlobalFunctionForTesting() {}
-    `, nil)); err != nil {
+    `)); err != nil {
 		cancel()
 		t.Fatalf("failed to define global function: %v", err)
 	}
@@ -109,12 +109,11 @@ func TestWaitForPromise(t *testing.T) {
 	ctx, cancel := setupBrowser(t, srv.URL)
 	defer cancel()
 
-	var result int
 	jsPromise := `new Promise(resolve => setTimeout(() => resolve(42), 50))`
 
 	// Evaluate the promise using the WaitForPromise helper.
-	err := chromedp.Run(ctx,
-		chromedp.Evaluate(jsPromise, &result, chromedputil.WaitForPromise),
+	result, err := chromedp.Run(ctx,
+		chromedp.Evaluate[int](jsPromise, chromedputil.WaitForPromise),
 	)
 
 	if err != nil {
@@ -135,10 +134,10 @@ func TestSourceScript(t *testing.T) {
 	ctx, cancel := setupBrowser(t, srv.URL)
 	defer cancel()
 
-	pageURL := ""
-	err := chromedp.Run(ctx,
-		chromedp.Navigate(srv.URL),
-		chromedp.Evaluate(`window.location.href`, &pageURL))
+	if err := chromedp.Do(ctx, chromedp.Navigate(srv.URL)); err != nil {
+		t.Fatalf("failed to navigate to page URL: %v", err)
+	}
+	pageURL, err := chromedp.Run(ctx, chromedp.Evaluate[string](`window.location.href`))
 	if err != nil {
 		t.Fatalf("failed to evaluate page URL: %v", err)
 	}
@@ -204,11 +203,11 @@ func TestGetRemoteObject(t *testing.T) {
 	defer cancel()
 
 	// Define a global object in the browser's context for testing.
-	err := chromedp.Run(ctx,
+	err := chromedp.Do(ctx,
 		chromedp.Navigate(srv.URL),
-		chromedp.Evaluate(`
+		chromedp.Evaluate[chromedp.Void](`
         const myTestObject = { key: "value" };
-    `, nil))
+    `))
 	if err != nil {
 		t.Fatalf("failed to define global object: %v", err)
 	}
@@ -253,9 +252,9 @@ func TestGetRemoteObjectValue(t *testing.T) {
 	// Define a global object to test against.
 	const testObjJS = `const myValueObject = { name: "test", id: 123, nested: { active: true } };`
 
-	err := chromedp.Run(ctx,
+	err := chromedp.Do(ctx,
 		chromedp.Navigate(srv.URL),
-		chromedp.Evaluate(testObjJS, nil))
+		chromedp.Evaluate[chromedp.Void](testObjJS))
 	if err != nil {
 		t.Fatalf("failed to define global object: %v", err)
 	}
@@ -358,13 +357,10 @@ func TestPlatformObjects(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			// Step 1: Get a handle to the platform object.
-			var handle *runtime.RemoteObject
-
-			err := chromedp.Run(ctx,
-				chromedp.Evaluate(tc.jsExpression, &handle,
-					func(p *runtime.EvaluateParams) *runtime.EvaluateParams {
-						p.AwaitPromise = tc.waitForPromise
-						return p
+			handle, err := chromedp.Run(ctx,
+				chromedp.Evaluate[*runtime.RemoteObject](tc.jsExpression,
+					func(p *runtime.EvaluateParams) {
+						p.AwaitPromise = new(tc.waitForPromise)
 					}))
 
 			if err != nil {

@@ -22,7 +22,7 @@ import (
 	"github.com/chromedp/cdproto/log"
 	"github.com/chromedp/cdproto/network"
 	"github.com/chromedp/cdproto/runtime"
-	"github.com/cloudengio/chromedp"
+	"github.com/chromedp/chromedp"
 )
 
 func setupTestEnvironment(t *testing.T) (context.Context, context.CancelFunc, string) {
@@ -90,14 +90,14 @@ func TestListen(t *testing.T) {
 
 	// Set up event handlers for console events and exceptions
 	chromedputil.Listen(ctx,
-		chromedputil.NewListenHandler(consoleCh),
-		chromedputil.NewListenHandler(exceptionCh),
+		chromedputil.NewListenHandler(runtime.ConsoleAPICalled, consoleCh),
+		chromedputil.NewListenHandler(runtime.ExceptionThrown, exceptionCh),
 	)
 
 	wctx, wcancel := context.WithTimeout(ctx, time.Minute)
 	defer wcancel()
 
-	if err := chromedp.Run(wctx,
+	if err := chromedp.Do(wctx,
 		chromedp.Navigate(serverURL),
 	); err != nil {
 		t.Fatalf("Failed to navigate: %v", err)
@@ -265,7 +265,7 @@ func TestConsoleArgsAsJSONGemini(t *testing.T) {
 	defer cancel()
 
 	consoleEventCh := make(chan *runtime.EventConsoleAPICalled, 1)
-	chromedputil.Listen(ctx, chromedputil.NewListenHandler(consoleEventCh))
+	chromedputil.Listen(ctx, chromedputil.NewListenHandler(runtime.ConsoleAPICalled, consoleEventCh))
 
 	// This JS will log a variety of object types to the console.
 	const jsLogComplexObjects = `
@@ -290,8 +290,8 @@ func TestConsoleArgsAsJSONGemini(t *testing.T) {
     `
 
 	// We need to wait for the console.log inside the promise to execute.
-	err := chromedp.Run(ctx,
-		chromedp.Evaluate(jsLogComplexObjects, nil, chromedputil.WaitForPromise),
+	err := chromedp.Do(ctx,
+		chromedp.Evaluate[chromedp.Void](jsLogComplexObjects, chromedputil.WaitForPromise),
 	)
 	if err != nil {
 		t.Fatalf("failed to execute logging script: %v", err)
@@ -332,12 +332,12 @@ func TestConsoleArgsAsJSONClaude(t *testing.T) {
 	consoleCh := make(chan *runtime.EventConsoleAPICalled, 10)
 
 	// Set up an event handler for console events
-	chromedputil.Listen(ctx, chromedputil.NewListenHandler(consoleCh))
+	chromedputil.Listen(ctx, chromedputil.NewListenHandler(runtime.ConsoleAPICalled, consoleCh))
 
 	// Execute JavaScript that logs various types of values
-	if err := chromedp.Run(ctx,
+	if err := chromedp.Do(ctx,
 		chromedp.Navigate("about:blank"),
-		chromedp.Evaluate(`
+		chromedp.Evaluate[chromedp.Void](`
             console.log(
                 "string value", 
                 123, 
@@ -345,7 +345,7 @@ func TestConsoleArgsAsJSONClaude(t *testing.T) {
                 {name: "test object", nested: {value: 42}},
                 ["array", "items"]
             );
-        `, nil),
+        `),
 	); err != nil {
 		t.Fatalf("Failed to execute JavaScript: %v", err)
 	}
@@ -401,7 +401,7 @@ func TestRunLoggingListenerClaude(t *testing.T) {
 		chromedputil.WithExceptionLogging(),
 		chromedputil.WithNetworkLogging(),
 		chromedputil.WithEventEntryLogging(),
-		chromedputil.WithAnyEventLogging(),
+		chromedputil.WithEventLogging(log.EntryAdded),
 	)
 
 	if err := webapp.WaitForURLs(ctx, nil, time.Second, serverURL); err != nil {
@@ -411,7 +411,7 @@ func TestRunLoggingListenerClaude(t *testing.T) {
 	// Navigate to the test page which will trigger various events
 	wctx, wcancel := context.WithTimeout(ctx, time.Minute)
 	defer wcancel()
-	if err := chromedp.Run(wctx, chromedp.Navigate(serverURL)); err != nil {
+	if err := chromedp.Do(wctx, chromedp.Navigate(serverURL)); err != nil {
 		t.Fatalf("Failed to navigate: %v", err)
 	}
 
@@ -461,119 +461,6 @@ func TestRunLoggingListenerClaude(t *testing.T) {
 
 }
 
-func testNewListenHandler(ctx context.Context, t *testing.T, event any, expected bool) { //nolint:gocyclo
-	t.Helper()
-
-	// Create a channel for the specific event type
-	switch evt := event.(type) {
-	case *runtime.EventConsoleAPICalled:
-		ch := make(chan *runtime.EventConsoleAPICalled, 1)
-		handler := chromedputil.NewListenHandler(ch)
-
-		// Call the handler with the event
-		result := handler(ctx, evt)
-		if result != expected {
-			t.Errorf("Handler returned %v, expected %v", result, expected)
-		}
-
-		if expected {
-			select {
-			case <-ch:
-				// Success - event was sent to channel
-			case <-time.After(100 * time.Millisecond):
-				t.Error("Event was not sent to channel")
-			}
-		}
-
-	case *runtime.EventExceptionThrown:
-		ch := make(chan *runtime.EventExceptionThrown, 1)
-		handler := chromedputil.NewListenHandler(ch)
-
-		// Call the handler with the event
-		result := handler(ctx, evt)
-		if result != expected {
-			t.Errorf("Handler returned %v, expected %v", result, expected)
-		}
-
-		if expected {
-			select {
-			case <-ch:
-				// Success - event was sent to channel
-			case <-time.After(100 * time.Millisecond):
-				t.Error("Event was not sent to channel")
-			}
-		}
-
-	case *log.EventEntryAdded:
-		ch := make(chan *log.EventEntryAdded, 1)
-		handler := chromedputil.NewListenHandler(ch)
-
-		// Call the handler with the event
-		result := handler(ctx, evt)
-		if result != expected {
-			t.Errorf("Handler returned %v, expected %v", result, expected)
-		}
-
-		if expected {
-			select {
-			case <-ch:
-				// Success - event was sent to channel
-			case <-time.After(100 * time.Millisecond):
-				t.Error("Event was not sent to channel")
-			}
-		}
-
-	case string:
-		ch := make(chan string, 1)
-		handler := chromedputil.NewListenHandler(ch)
-
-		// Call the handler with a mismatched event type
-		result := handler(ctx, &runtime.EventConsoleAPICalled{})
-		if result != false {
-			t.Error("Handler should return false for mismatched event types")
-		}
-	}
-}
-
-func TestNewListenHandler(t *testing.T) {
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-
-	// Test with different event types
-	testCases := []struct {
-		name     string
-		event    any
-		expected bool
-	}{
-		{
-			name:     "Console Event",
-			event:    &runtime.EventConsoleAPICalled{},
-			expected: true,
-		},
-		{
-			name:     "Exception Event",
-			event:    &runtime.EventExceptionThrown{},
-			expected: true,
-		},
-		{
-			name:     "Log Event",
-			event:    &log.EventEntryAdded{},
-			expected: true,
-		},
-		{
-			name:     "Wrong Event Type",
-			event:    "not an event",
-			expected: false,
-		},
-	}
-
-	for _, tc := range testCases {
-		t.Run(tc.name, func(t *testing.T) {
-			testNewListenHandler(ctx, t, tc.event, tc.expected)
-		})
-	}
-}
-
 // Test handling of network events specifically
 func TestNetworkEvents(t *testing.T) {
 	ctx, cancel, serverURL := setupTestEnvironment(t)
@@ -585,17 +472,17 @@ func TestNetworkEvents(t *testing.T) {
 
 	// Set up event handlers
 	chromedputil.Listen(ctx,
-		chromedputil.NewListenHandler(requestCh),
-		chromedputil.NewListenHandler(responseCh),
+		chromedputil.NewListenHandler(network.RequestWillBeSent, requestCh),
+		chromedputil.NewListenHandler(network.ResponseReceived, responseCh),
 	)
 
 	// Enable network event collection
-	if err := chromedp.Run(ctx, network.Enable()); err != nil {
+	if _, err := chromedp.Call(ctx, network.Enable, network.EnableParams{}); err != nil {
 		t.Fatalf("Failed to enable network: %v", err)
 	}
 
 	// Navigate to the test page
-	if err := chromedp.Run(ctx, chromedp.Navigate(serverURL)); err != nil {
+	if err := chromedp.Do(ctx, chromedp.Navigate(serverURL)); err != nil {
 		t.Fatalf("Failed to navigate: %v", err)
 	}
 
@@ -645,8 +532,8 @@ func TestRunLoggingListenerEvaluate(t *testing.T) {
 	)
 
 	// Generate a console log and an exception in the browser.
-	err := chromedp.Run(ctx,
-		chromedp.Evaluate(`console.log("hello from the test");`, nil),
+	err := chromedp.Do(ctx,
+		chromedp.Evaluate[chromedp.Void](`console.log("hello from the test");`),
 	)
 	// We expect an error from the second evaluate, so we don't fail the test on it.
 	if err != nil {

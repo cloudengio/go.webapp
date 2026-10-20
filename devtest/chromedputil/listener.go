@@ -10,40 +10,45 @@ import (
 	"log/slog"
 	"sync"
 
+	"github.com/chromedp/cdproto/cdp"
 	"github.com/chromedp/cdproto/log"
 	"github.com/chromedp/cdproto/network"
 	"github.com/chromedp/cdproto/runtime"
-	"github.com/cloudengio/chromedp"
+	"github.com/chromedp/chromedp"
 	"github.com/go-json-experiment/json"
 	"github.com/go-json-experiment/json/jsontext"
 )
 
-// Listen sets up a listener for Chrome DevTools Protocol events and calls each
-// of the supplied handlers in turn when an event is received. The first handler
-// to return true stops the event propagation.
-func Listen(ctx context.Context, handlers ...func(ctx context.Context, ev any) bool) {
-	chromedp.ListenTarget(ctx, func(ev any) {
-		for _, handler := range handlers {
-			if handler(ctx, ev) {
-				break
-			}
-		}
-	})
+// ListenHandler represents an event handler that subscribes to Chrome DevTools Protocol
+// events when invoked with a context.
+type ListenHandler func(ctx context.Context)
+
+// Listen sets up listeners for Chrome DevTools Protocol events by calling each
+// of the supplied handlers.
+func Listen(ctx context.Context, handlers ...ListenHandler) {
+	for _, handler := range handlers {
+		handler(ctx)
+	}
 }
 
-// NewListenHandler returns a handler for a specific event type that forwards
-// the event to the provided channel.
-func NewListenHandler[T any](ch chan<- T) func(ctx context.Context, ev any) bool {
-	return func(ctx context.Context, ev any) bool {
-		event, ok := ev.(T)
-		if !ok {
-			return false
-		}
-		select {
-		case ch <- event:
-		case <-ctx.Done():
-		}
-		return true
+// NewListenHandler returns a handler for a specific CDP event that forwards
+// received events to the provided channel.
+func NewListenHandler[T any](ev cdp.Event[T], ch chan<- *T) ListenHandler {
+	return func(ctx context.Context) {
+		seq := chromedp.Events(ctx, ev)
+		go func() {
+			for event, err := range seq {
+				if err != nil {
+					return
+				}
+				e := event
+				select {
+				case ch <- &e:
+				case <-ctx.Done():
+					return
+				}
+			}
+		}()
 	}
 }
 
@@ -72,15 +77,15 @@ type loggingOptions struct {
 	networkRrequestCh chan *network.EventRequestWillBeSent
 	eventCh           chan *log.EventEntryAdded
 	anyCh             chan any
-	handlers          []func(ctx context.Context, ev any) bool
+	handlers          []ListenHandler
 }
 
 // LoggingOption represents options to RunLoggingListener.
 type LoggingOption func(*loggingOptions)
 
-func handlerOption[T any](handlers []func(ctx context.Context, ev any) bool) (chan T, []func(ctx context.Context, ev any) bool) {
-	ch := make(chan T, 10)
-	return ch, append(handlers, NewListenHandler(ch))
+func handlerOption[T any](ev cdp.Event[T], handlers []ListenHandler) (chan *T, []ListenHandler) {
+	ch := make(chan *T, 10)
+	return ch, append(handlers, NewListenHandler(ev, ch))
 }
 
 func initCh[T any](ch chan T) chan T {
@@ -93,37 +98,52 @@ func initCh[T any](ch chan T) chan T {
 // WithConsoleLogging enables logging of events of type 'runtime.EventConsoleAPICalled'.
 func WithConsoleLogging() LoggingOption {
 	return func(opts *loggingOptions) {
-		opts.consoleCh, opts.handlers = handlerOption[*runtime.EventConsoleAPICalled](opts.handlers)
+		opts.consoleCh, opts.handlers = handlerOption(runtime.ConsoleAPICalled, opts.handlers)
 	}
 }
 
 // WithExceptionLogging enables logging of events of type 'runtime.EventExceptionThrown'.
 func WithExceptionLogging() LoggingOption {
 	return func(opts *loggingOptions) {
-		opts.exceptionCh, opts.handlers = handlerOption[*runtime.EventExceptionThrown](opts.handlers)
+		opts.exceptionCh, opts.handlers = handlerOption(runtime.ExceptionThrown, opts.handlers)
 	}
 }
 
 // WithEventEntryLogging enables logging of events of type 'log.EventEntryAdded'.
 func WithEventEntryLogging() LoggingOption {
 	return func(opts *loggingOptions) {
-		opts.eventCh, opts.handlers = handlerOption[*log.EventEntryAdded](opts.handlers)
+		opts.eventCh, opts.handlers = handlerOption(log.EntryAdded, opts.handlers)
 	}
 }
 
-// WithNetworkLogging enables logging of events of type 'network.EventResponseReceived'.
+// WithNetworkLogging enables logging of events of type 'network.EventResponseReceived'
+// and 'network.EventRequestWillBeSent'.
 func WithNetworkLogging() LoggingOption {
 	return func(opts *loggingOptions) {
-		opts.networkResponseCh, opts.handlers = handlerOption[*network.EventResponseReceived](opts.handlers)
-		opts.networkRrequestCh, opts.handlers = handlerOption[*network.EventRequestWillBeSent](opts.handlers)
+		opts.networkResponseCh, opts.handlers = handlerOption(network.ResponseReceived, opts.handlers)
+		opts.networkRrequestCh, opts.handlers = handlerOption(network.RequestWillBeSent, opts.handlers)
 	}
 }
 
-// WithAnyEventLogging enables logging for events of type 'any'.
-// This is a catch all and should generally be the last handler in the list.
-func WithAnyEventLogging() LoggingOption {
+// WithEventLogging enables logging for the specified CDP event.
+func WithEventLogging[T any](ev cdp.Event[T]) LoggingOption {
 	return func(opts *loggingOptions) {
-		opts.anyCh, opts.handlers = handlerOption[any](opts.handlers)
+		opts.anyCh = initCh(opts.anyCh)
+		opts.handlers = append(opts.handlers, func(ctx context.Context) {
+			seq := chromedp.Events(ctx, ev)
+			go func() {
+				for event, err := range seq {
+					if err != nil {
+						return
+					}
+					select {
+					case opts.anyCh <- event:
+					case <-ctx.Done():
+						return
+					}
+				}
+			}()
+		})
 	}
 }
 
