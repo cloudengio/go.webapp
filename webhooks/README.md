@@ -8,10 +8,10 @@ import cloudeng.io/webapp/webhooks
 ## Constants
 ### DefaultQueueSize, DefaultPayloadLimit
 ```go
-DefaultQueueSize = 100
-DefaultPayloadLimit = 1024 * 1024 // 1MB
-
-
+const (
+	DefaultQueueSize    = 100
+	DefaultPayloadLimit = 1024 * 1024 // 1MB
+)
 ```
 
 

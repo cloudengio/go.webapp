@@ -10,13 +10,14 @@ passkeys.
 ## Constants
 ### AuthenticationCookie, RegistrationCookie
 ```go
-// AuthenticationCookie is set during the login/authentication
-// webauthn flow (set in Begin and cleared in Finish).
-AuthenticationCookie = cookies.Secure("webauthn_authentication")
-// RegistrationCookie is set during the registration webauthn flow
-// (set in Begin and cleared in Finish).
-RegistrationCookie = cookies.Secure("webauthn_registration")
-
+const (
+	// AuthenticationCookie is set during the login/authentication
+	// webauthn flow (set in Begin and cleared in Finish).
+	AuthenticationCookie = cookies.Secure("webauthn_authentication")
+	// RegistrationCookie is set during the registration webauthn flow
+	// (set in Begin and cleared in Finish).
+	RegistrationCookie = cookies.Secure("webauthn_registration")
+)
 ```
 
 

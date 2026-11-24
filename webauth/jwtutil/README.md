@@ -12,8 +12,7 @@ process to allow for more convenient usage in web applications.
 ## Constants
 ### DefaultVerificationURLValidity
 ```go
-DefaultVerificationURLValidity = 5 * time.Minute
-
+const DefaultVerificationURLValidity = 5 * time.Minute
 ```
 
 

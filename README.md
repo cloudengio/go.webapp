@@ -21,21 +21,21 @@ An example/template can be found in cmd/webapp.
 ## Constants
 ### ACMEHTTP01Prefix, ACMEHTTP01HTTPPrefix, ACMEHTTP01ChiPrefix
 ```go
-// ACMEHTTP01Prefix is the well-known prefix for ACME HTTP-01 challenges.
-ACMEHTTP01Prefix = "/.well-known/acme-challenge/"
-// ACMEHTTP01HTTPPrefix is the well-known prefix for ACME HTTP-01 challenges
-// when used with http.ServeMux
-ACMEHTTP01HTTPPrefix = ACMEHTTP01Prefix
-// ACMEHTTP01ChiPrefix is the well-known prefix for ACME HTTP-01 challenges
-// when used with chi.Router
-ACMEHTTP01ChiPrefix = ACMEHTTP01Prefix + "*"
-
+const (
+	// ACMEHTTP01Prefix is the well-known prefix for ACME HTTP-01 challenges.
+	ACMEHTTP01Prefix = "/.well-known/acme-challenge/"
+	// ACMEHTTP01HTTPPrefix is the well-known prefix for ACME HTTP-01 challenges
+	// when used with http.ServeMux
+	ACMEHTTP01HTTPPrefix = ACMEHTTP01Prefix
+	// ACMEHTTP01ChiPrefix is the well-known prefix for ACME HTTP-01 challenges
+	// when used with chi.Router
+	ACMEHTTP01ChiPrefix = ACMEHTTP01Prefix + "*"
+)
 ```
 
 ### PreferredTLSMinVersion
 ```go
-PreferredTLSMinVersion = tls.VersionTLS13
-
+const PreferredTLSMinVersion = tls.VersionTLS13
 ```
 PreferredTLSMinVersion is the preferred minimum TLS version for tls.Config
 instances created by this package.
@@ -146,6 +146,14 @@ NewTLSServerOnly returns a new *http.Server whose address defaults to
 ":https" and with it's BaseContext set to the supplied context and TLSConfig
 set to the supplied config. ErrorLog is set to log errors via the ctxlog
 package.
+
+### Func OpenLink
+```go
+func OpenLink(link string) error
+```
+OpenLink opens link, which must be an http or https URL, in the user's
+default browser. It returns once the browser has been asked to open it,
+without waiting for the browser.
 
 ### Func ParseCertsPEM
 ```go
@@ -976,263 +984,5 @@ UnmarshalYAML implements yaml.Unmarshaler.
 ### [ExampleHTTPServerError](https://pkg.go.dev/cloudeng.io/webapp?tab=doc#example-HTTPServerError)
 
 
-
-
-## External Markdown Files Included Here
-
-### Code Review: `jwtutil-config` vs `main` (code_review.md)
-
-#### 1. Executive Summary
-
-This code review evaluates the complete git diff between branch `jwtutil-config` and `main` across all 27 modified files. The branch introduces a comprehensive cryptographic key management architecture (`keys.Info`/`keys.InMemoryKeyStore`-backed), configuration-driven signers and validators (`JWTSignerConfig`, `JWTValidatorConfig`, `JWTCookieSignerConfig`, `JWTCookieValidatorConfig`), cookie-based issuance and verification (`CookieSigner`, `CookieVerifier`), and refactored HTTP security integration in `websec` and `webauthn/passkeys`.
-
-All package test suites (`go test ./...`) pass and `golangci-lint` reports 0 issues. However, an in-depth review of the diff revealed **10 findings** across logic, performance, security, memory hygiene, and API ergonomics:
-- **1 High-Severity Finding**: `validator.Parse` in `jwt_validator.go` fails to pass `jwt.WithValidate(false)`, which prematurely validates tokens, silently ignores clock skew (`jwt.WithAcceptableSkew`) in `ParseAndValidate`, and doubles token validation latency on every request.
-- **2 Medium-Severity Findings**: Tokens issued by `CookieSigner` and `JWTSignerConfig.Builder` can lack an expiration claim (`exp`) because `JWTSignerConfig.Duration` has no default and is unvalidated; `JWTCookieConfig.Validate()` strictly forbids host-only cookies (empty domain) and empty paths, conflicting with standard cookie security practices and `SetDefaults`.
-- **7 Low / Advisory Findings**: Inconsistent `Verifier` vs `Validator` terminology in cookie APIs; backward compatibility breaks (`WithClaim` and `NewED25519Signer` removed); `kid` missing from `PublicKeyFromKeyInfo`; lack of public key derivation fallback from private keys; un-zeroed heap slice in `decodeBase64`; lost request context in `websec` logs; and accidental inclusion of `code_review.md` in root `README.md`.
-
-**No code fixes have been applied in this review step.**
-
----
-
-#### 2. Findings Matrix
-
-| ID | Category | Severity | File(s) & Lines | Status | Summary |
-|---|---|---|---|---|---|
-| **LOG-1** | Logic & Perf | **High** | [`jwt_validator.go:44-46`](file:///Users/cnicolaou/LocalOnly/dev/github.com/cloudengio/go.webapp/webauth/jwtutil/jwt_validator.go#L44-L46) | **Fixed** | `validator.Parse` omits `jwt.WithValidate(false)`, causing `ParseAndValidate` to ignore `WithAcceptableSkew` / `WithClock` and validating valid tokens twice. |
-| **SEC-1** | Security | **Medium** | [`jwt_config.go:40, 91-102`](file:///Users/cnicolaou/LocalOnly/dev/github.com/cloudengio/go.webapp/webauth/jwtutil/jwt_config.go#L40), [`config_signer.go:40-45`](file:///Users/cnicolaou/LocalOnly/dev/github.com/cloudengio/go.webapp/webauth/jwtutil/config_signer.go#L40-L45) | **Fixed** | `JWTSignerConfig.Duration` defaults to 0 and is unvalidated, issuing never-expiring JWTs when cookie duration is configured alone or duration is omitted. |
-| **LOG-2** | Logic & Security | **Medium** | [`jwt_config.go:20-34`](file:///Users/cnicolaou/LocalOnly/dev/github.com/cloudengio/go.webapp/webauth/jwtutil/jwt_config.go#L20-L34) | **Fixed** | `JWTCookieConfig.Validate()` requires `Domain != ""` and `Path != ""`, rejecting secure host-only cookies and contradicting `SetDefaults("", "/", 0)`. |
-| **API-1** | API Ergonomics | **Low** | [`config_cookies.go:99, 181, 189`](file:///Users/cnicolaou/LocalOnly/dev/github.com/cloudengio/go.webapp/webauth/jwtutil/config_cookies.go#L99) | **Fixed** | Mismatched naming convention: `JWTCookieValidatorConfig` has `NewCookieVerifier` returning `*CookieVerifier`, and `JWTCookieSignerConfig` has `VerifierConfig()`. |
-| **API-2** | Backward Compat | **Low** | [`jwt_issuer.go:100`](file:///Users/cnicolaou/LocalOnly/dev/github.com/cloudengio/go.webapp/webauth/jwtutil/jwt_issuer.go#L100) | Deferred | `WithClaim(key, value)` was removed in favor of `WithClaims(map)`, breaking existing callers setting single claims. |
-| **API-3** | Backward Compat | **Low** | [`signer.go:1-120`](file:///Users/cnicolaou/LocalOnly/dev/github.com/cloudengio/go.webapp/webauth/jwtutil/signer.go) (deleted) | Deferred | `NewED25519Signer(priv, id)` was removed, breaking external callers holding raw `ed25519.PrivateKey` instances. |
-| **ROB-1** | Robustness | **Low** | [`jwk_impl.go:74-110`](file:///Users/cnicolaou/LocalOnly/dev/github.com/cloudengio/go.webapp/webauth/jwtutil/jwk_impl.go#L74-L110) | **Fixed** | `ED25519.PublicKey` does not set `kid` on returned `jwk.Key`, causing verification failure if `PublicKeyFromKeyInfo` is added to a `jwk.Set` directly. |
-| **ROB-2** | Robustness | **Low** | [`jwk_impl.go:78-81`](file:///Users/cnicolaou/LocalOnly/dev/github.com/cloudengio/go.webapp/webauth/jwtutil/jwk_impl.go#L78-L81) | **Fixed** | `ED25519.PublicKey` errors if `extra.PublicKey == ""` even when `info.Token()` contains the 64-byte private key from which the public key is trivially derivable. |
-| **SEC-2** | Memory Hygiene | **Low** | [`key_registry.go:140-158`](file:///Users/cnicolaou/LocalOnly/dev/github.com/cloudengio/go.webapp/webauth/jwtutil/key_registry.go#L140-L158) | **Fixed** | `decodeBase64` leaves heap-allocated `trimmed` slice containing ASCII private key base64 data un-zeroed in memory after `cleanup()`. |
-| **OBS-1** | Observability | **Low** | [`websec/localhost.go:352, 355, 376`](file:///Users/cnicolaou/LocalOnly/dev/github.com/cloudengio/go.webapp/websec/localhost.go#L352) | Deferred | Logging calls inside HTTP handler dropped `r.Context()`, discarding request trace IDs and span IDs. |
-
----
-
-#### 3. Detailed Findings
-
-##### LOG-1: `validator.Parse` Omits `jwt.WithValidate(false)`, Breaking Clock Skew in `ParseAndValidate` and Doubling Validation Latency
-- **Location**: [`webauth/jwtutil/jwt_validator.go:44-46`](file:///Users/cnicolaou/LocalOnly/dev/github.com/cloudengio/go.webapp/webauth/jwtutil/jwt_validator.go#L44-L46)
-- **Problem**:
-  In `jwt_validator.go`:
-  ```go
-  func (v validator) Parse(_ context.Context, tokenBytes []byte) (jwt.Token, error) {
-      return jwt.Parse(tokenBytes, jwt.WithKeySet(v.set))
-  }
-  ```
-  In `jwx/v3/jwt`, `jwt.Parse` runs automatic validation by default (`jwt.Validate` against `time.Now()` with 0 clock skew).
-- **Failure Scenario**:
-  1. A caller invokes `validator.ParseAndValidate(ctx, tokenBytes, jwt.WithAcceptableSkew(time.Minute))`.
-  2. `v.ParseAndValidate` first calls `v.Parse(ctx, tokenBytes)`.
-  3. `v.Parse` runs `jwt.Parse` without `jwt.WithValidate(false)`. If the token expired 5 seconds ago, `v.Parse` immediately fails with `"exp" not satisfied: token is expired`.
-  4. Execution never reaches `v.Validate(ctx, token, validators...)`. The caller's `jwt.WithAcceptableSkew(time.Minute)` is completely ignored.
-  5. Furthermore, when a token is valid, `v.Parse` fully validates the claims once, and `v.Validate` validates them a second time, doubling token validation CPU cost on every request.
-- **Contrast**:
-  Both [`config_cookies.go:217-219`](file:///Users/cnicolaou/LocalOnly/dev/github.com/cloudengio/go.webapp/webauth/jwtutil/config_cookies.go#L217-L219) (`CookieVerifier.Parse`) and [`config_test.go:128-130`](file:///Users/cnicolaou/LocalOnly/dev/github.com/cloudengio/go.webapp/webauth/jwtutil/config_test.go#L128-L130) (`testVerifier.Parse`) explicitly pass `jwt.WithValidate(false)` and document:
-  *"Parse verifies the signature of token and returns it without validating any of its claims, which is left to Validate so that opts (including any allowance for clock skew) are applied instead of jwt.Parse's own defaults."*
-- **Recommended Fix**:
-  In [`jwt_validator.go:45`](file:///Users/cnicolaou/LocalOnly/dev/github.com/cloudengio/go.webapp/webauth/jwtutil/jwt_validator.go#L45), change to:
-  ```go
-  return jwt.Parse(tokenBytes, jwt.WithKeySet(v.set), jwt.WithValidate(false))
-  ```
-
----
-
-##### SEC-1: `JWTSignerConfig.Duration` Has No Default and Is Unvalidated, Issuing Never-Expiring JWTs
-- **Location**: [`webauth/jwtutil/jwt_config.go:40, 91-102`](file:///Users/cnicolaou/LocalOnly/dev/github.com/cloudengio/go.webapp/webauth/jwtutil/jwt_config.go#L40), [`config_signer.go:40-45`](file:///Users/cnicolaou/LocalOnly/dev/github.com/cloudengio/go.webapp/webauth/jwtutil/config_signer.go#L40-L45), [`config_cookies.go:129-130`](file:///Users/cnicolaou/LocalOnly/dev/github.com/cloudengio/go.webapp/webauth/jwtutil/config_cookies.go#L129-L130)
-- **Problem**:
-  In `JWTSignerConfig`:
-  ```go
-  Duration time.Duration `yaml:"jwt_duration" doc:"duration,24h,validity duration of the issued JWT"`
-  ```
-  The struct tag documentation indicates a 24h default, but YAML/Go unmarshaling does not apply default values from doc tags, and `JWTSignerConfig.Validate()` does not enforce `Duration > 0`.
-  In `JWTSignerConfig.Builder`:
-  ```go
-  if expiresIn <= 0 {
-      expiresIn = c.Duration
-  }
-  if expiresIn > 0 {
-      builder.Expiration(now.Add(expiresIn))
-  }
-  ```
-- **Failure Scenario**:
-  In `JWTCookieSignerConfig`, `JWTCookieConfig.Duration` (cookie `Max-Age`) is validated > 0, but `JWTSignerConfig.Duration` is not. In standard YAML configurations such as `ExampleJWTCookieSignerConfig`:
-  ```yaml
-  cookie:
-    name: session_token
-    duration: 8h
-  jwt_issuer: auth.example.com
-  jwt_audience: [app.example.com]
-  ```
-  `JWTSignerConfig.Duration` is 0. When `CookieSigner.Issue` is called, it calls `NewToken(subject, claims)` which executes `cs.cfg.Builder(0)`. Because `expiresIn` is 0 and `c.Duration` is 0, **no `exp` claim is added to the JWT**. The browser cookie expires in 8 hours, but the JWT itself never expires. If extracted from the cookie (or sent to API endpoints), it remains valid indefinitely.
-- **Recommended Fix**:
-  1. In `JWTCookieSignerConfig.NewCookieSigner`, if `c.JWTSignerConfig.Duration == 0`, default it to `c.JWTCookieConfig.Duration`.
-  2. In `JWTSignerConfig.Builder`, if `expiresIn <= 0` and `c.Duration <= 0`, default to `24 * time.Hour` (matching the documented default), or require `Duration > 0` in `JWTSignerConfig.Validate()`.
-
----
-
-##### LOG-2: `JWTCookieConfig.Validate()` Forbids Host-Only Cookies and Redundantly Requires Path
-- **Location**: [`webauth/jwtutil/jwt_config.go:20-34`](file:///Users/cnicolaou/LocalOnly/dev/github.com/cloudengio/go.webapp/webauth/jwtutil/jwt_config.go#L20-L34)
-- **Problem**:
-  `JWTCookieConfig.Validate()` enforces:
-  ```go
-  if c.Domain == "" {
-      return fmt.Errorf("cookie domain is required")
-  }
-  if c.Path == "" {
-      return fmt.Errorf("cookie path is required")
-  }
-  ```
-- **Failure Scenario**:
-  1. In RFC 6265, an omitted `Domain` attribute creates a "host-only" cookie (the cookie is never sent to subdomains). Host-only cookies are a security best practice for web applications to protect against subdomain takeover or cross-subdomain attacks. Requiring `Domain != ""` forces operators to expose cookies across all subdomains.
-  2. `NewCookieSigner` and `NewCookieVerifier` both call `c.ScopeAndDuration = c.SetDefaults("", "/", 0)`, which automatically defaults `Path` to `"/"`. Requiring `Path != ""` prior to `SetDefaults` prevents relying on standard default behavior.
-  3. Because `JWTCookieConfig.Validate()` has these flaws, neither `JWTCookieSignerConfig.Validate()` nor `JWTCookieValidatorConfig.Validate()` call `c.JWTCookieConfig.Validate()`, leading to inconsistent validation paths.
-- **Recommended Fix**:
-  Update `JWTCookieConfig.Validate()`:
-  - Remove `if c.Domain == ""` check to allow host-only cookies.
-  - Allow empty `Path` (defaulting to `"/"` via `SetDefaults`) or require it only when `SetDefaults` is not used.
-  - Have `JWTCookieSignerConfig.Validate()` and `JWTCookieValidatorConfig.Validate()` invoke `c.JWTCookieConfig.Validate()`.
-
----
-
-##### API-1: Mismatched `Verifier` vs `Validator` Terminology
-- **Location**: [`webauth/jwtutil/config_cookies.go:99, 181, 189`](file:///Users/cnicolaou/LocalOnly/dev/github.com/cloudengio/go.webapp/webauth/jwtutil/config_cookies.go#L99), [`jwt_config.go:106`](file:///Users/cnicolaou/LocalOnly/dev/github.com/cloudengio/go.webapp/webauth/jwtutil/jwt_config.go#L106)
-- **Problem**:
-  Branch `jwtutil-config` renamed `JWTVerifierConfig` -> `JWTValidatorConfig`, `NewVerifier` -> `NewValidator`, and `VerifierForKeys` -> `ValidatorForKeys` to standardize on `Validator`.
-  However, in `config_cookies.go`:
-  - Struct is `JWTCookieValidatorConfig`, but its constructor is `NewCookieVerifier`.
-  - Type returned is `*CookieVerifier`.
-  - Helper method on `JWTCookieSignerConfig` is `VerifierConfig()`, but its return type is `JWTCookieValidatorConfig`.
-- **Recommended Fix**:
-  - Add type alias `type CookieValidator = CookieVerifier`.
-  - Add constructor `func (c JWTCookieValidatorConfig) NewCookieValidator(...) (*CookieValidator, error)`.
-  - Add method `func (c JWTCookieSignerConfig) ValidatorConfig() JWTCookieValidatorConfig`.
-  - Retain `CookieVerifier`, `NewCookieVerifier`, and `VerifierConfig` for compatibility.
-
----
-
-##### API-2: Removal of `WithClaim(key, value)`
-- **Location**: [`webauth/jwtutil/jwt_issuer.go:100`](file:///Users/cnicolaou/LocalOnly/dev/github.com/cloudengio/go.webapp/webauth/jwtutil/jwt_issuer.go#L100)
-- **Problem**:
-  `WithClaim(key string, value any)` was removed in commit `1d5c4b0`, leaving only `WithClaims(map[string]any)`. Setting a single claim is the most frequent use case (e.g. `jwtutil.WithClaim("role", "admin")`). Removing it breaks existing call sites.
-- **Recommended Fix**:
-  Restore `WithClaim` as a convenience wrapper:
-  ```go
-  // WithClaim adds or replaces a custom claim in issued tokens. If key is a
-  // reserved standard JWT claim, NewJWTIssuer returns ErrReservedClaim.
-  func WithClaim(key string, value any) JWTIssuerOption {
-      return WithClaims(map[string]any{key: value})
-  }
-  ```
-
----
-
-##### API-3: Removal of `NewED25519Signer(priv, id)`
-- **Location**: [`webauth/jwtutil/signer.go`](file:///Users/cnicolaou/LocalOnly/dev/github.com/cloudengio/go.webapp/webauth/jwtutil/signer.go) (deleted)
-- **Problem**:
-  Deleting `signer.go` dropped `NewED25519Signer(priv ed25519.PrivateKey, id string) (Signer, error)` from the public API. Callers possessing raw `ed25519.PrivateKey` objects (e.g. from KMS or secret stores) cannot easily construct a `Signer` without synthetic `keys.Info` overhead.
-- **Recommended Fix**:
-  Add `NewED25519Signer` to [`jwt_signer.go`](file:///Users/cnicolaou/LocalOnly/dev/github.com/cloudengio/go.webapp/webauth/jwtutil/jwt_signer.go):
-  ```go
-  func NewED25519Signer(priv ed25519.PrivateKey, id string) (Signer, error) {
-      jwkKey, err := jwk.Import(priv)
-      if err != nil {
-          return nil, err
-      }
-      return NewSigner(jwkKey, id, jwa.EdDSA())
-  }
-  ```
-
----
-
-##### ROB-1: `PublicKeyFromKeyInfo` Does Not Set `kid` on `jwk.Key`
-- **Location**: [`webauth/jwtutil/jwk_impl.go:74-110`](file:///Users/cnicolaou/LocalOnly/dev/github.com/cloudengio/go.webapp/webauth/jwtutil/jwk_impl.go#L74-L110), [`key_registry.go:98-104`](file:///Users/cnicolaou/LocalOnly/dev/github.com/cloudengio/go.webapp/webauth/jwtutil/key_registry.go#L98-L104)
-- **Problem**:
-  `ED25519.Signer` sets `jwk.KeyIDKey` from `info.KeySpec().ID`. `ED25519.PublicKey` does not set `KeyIDKey`, relying on `KeySetForKeys` to set it.
-  If a caller uses `PublicKeyFromKeyInfo(ctx, info)` directly and adds it to a `jwk.Set`, JWT verification fails because the public key lacks a `kid` matching the token header.
-- **Recommended Fix**:
-  In `ED25519.PublicKey`, if `info.KeySpec().ID != ""`, set `jwkKey.Set(jwk.KeyIDKey, info.KeySpec().ID)`.
-
----
-
-##### ROB-2: `ED25519.PublicKey` Errors When `extra.PublicKey` Is Empty Even if Private Key Is Present
-- **Location**: [`webauth/jwtutil/jwk_impl.go:78-81`](file:///Users/cnicolaou/LocalOnly/dev/github.com/cloudengio/go.webapp/webauth/jwtutil/jwk_impl.go#L78-L81)
-- **Problem**:
-  An Ed25519 private key is 64 bytes and inherently contains the 32-byte public key. If `extra.PublicKey` is empty in `keys.Info`, `ED25519.PublicKey` immediately returns an error rather than extracting the public key from the private key token.
-- **Recommended Fix**:
-  If `extra.PublicKey == ""` and `info.Token()` contains 64 bytes of private key material, extract `ed25519.PrivateKey(decoded).Public()` as a fallback before returning an error.
-
----
-
-##### SEC-2: Un-zeroed Heap Slice in `decodeBase64`
-- **Location**: [`webauth/jwtutil/key_registry.go:140-158`](file:///Users/cnicolaou/LocalOnly/dev/github.com/cloudengio/go.webapp/webauth/jwtutil/key_registry.go#L140-L158)
-- **Problem**:
-  `decodeBase64` allocates `trimmed := bytes.Map(...)` on the heap to filter whitespace. While `cleanup()` zeroes `decoded`, `trimmed` (which contains ASCII base64 private key data) remains un-zeroed in memory until garbage collected.
-- **Recommended Fix**:
-  In `cleanup()`, also zero `trimmed`:
-  ```go
-  cleanup := func() {
-      for i := range decoded {
-          decoded[i] = 0
-      }
-      for i := range trimmed {
-          trimmed[i] = 0
-      }
-  }
-  ```
-
----
-
-##### OBS-1: Context Dropped From Logging in `websec/localhost.go`
-- **Location**: [`websec/localhost.go:352, 355, 376`](file:///Users/cnicolaou/LocalOnly/dev/github.com/cloudengio/go.webapp/websec/localhost.go#L352)
-- **Problem**:
-  Logging calls inside HTTP request processing were switched from `WarnContext(r.Context(), ...)` to `Warn(...)`. This discards contextual trace IDs and request metadata from log entries.
-- **Recommended Fix**:
-  Revert to `h.opts.logger.WarnContext(r.Context(), ...)` in `verifyJWT` and `denyWithStatus`.
-
----
-
-#### 4. Step-by-Step Remediation Plan
-
-##### Step 1: Fix Core Validator Parsing & Skew Handling (LOG-1)
-1. In [`webauth/jwtutil/jwt_validator.go`](file:///Users/cnicolaou/LocalOnly/dev/github.com/cloudengio/go.webapp/webauth/jwtutil/jwt_validator.go#L44-L46), add `jwt.WithValidate(false)` to `jwt.Parse` call in `validator.Parse`.
-2. Add a test case in `jwtutil_test.go` verifying that `Validator.ParseAndValidate` correctly honors `jwt.WithAcceptableSkew` on expired tokens.
-
-##### Step 2: Prevent Never-Expiring Tokens (SEC-1)
-1. In [`webauth/jwtutil/config_cookies.go:76-89`](file:///Users/cnicolaou/LocalOnly/dev/github.com/cloudengio/go.webapp/webauth/jwtutil/config_cookies.go#L76-L89), in `NewCookieSigner`, if `c.JWTSignerConfig.Duration == 0`, default it to `c.JWTCookieConfig.Duration`.
-2. In [`webauth/jwtutil/config_signer.go:40-45`](file:///Users/cnicolaou/LocalOnly/dev/github.com/cloudengio/go.webapp/webauth/jwtutil/config_signer.go#L40-L45), in `JWTSignerConfig.Builder`, if `expiresIn <= 0` and `c.Duration <= 0`, default `expiresIn = 24 * time.Hour`.
-3. Add a unit test verifying that `CookieSigner.Issue` with only `cookie.duration` sets the `exp` claim on the generated token.
-
-##### Step 3: Correct Cookie Configuration Validation (LOG-2)
-1. In [`webauth/jwtutil/jwt_config.go:20-34`](file:///Users/cnicolaou/LocalOnly/dev/github.com/cloudengio/go.webapp/webauth/jwtutil/jwt_config.go#L20-L34), remove `c.Domain == ""` check and allow empty `c.Path` (delegating to `SetDefaults`).
-2. Update `JWTCookieSignerConfig.Validate()` and `JWTCookieValidatorConfig.Validate()` to call `c.JWTCookieConfig.Validate()`.
-3. Update `TestJWTCookieConfigValidate` in `config_test.go` to verify that empty domain produces valid host-only cookies.
-
-##### Step 4: Harmonize Naming Across Cookie and Validator APIs (API-1)
-1. In [`webauth/jwtutil/config_cookies.go`](file:///Users/cnicolaou/LocalOnly/dev/github.com/cloudengio/go.webapp/webauth/jwtutil/config_cookies.go), define `type CookieValidator = CookieVerifier`.
-2. Add `func (c JWTCookieValidatorConfig) NewCookieValidator(...) (*CookieValidator, error)`.
-3. Add `func (c JWTCookieSignerConfig) ValidatorConfig() JWTCookieValidatorConfig`.
-4. Keep `CookieVerifier`, `NewCookieVerifier`, and `VerifierConfig` for backward compatibility.
-
-##### Step 5: Restore Backward-Compatible Convenience APIs (API-2, API-3)
-1. In [`webauth/jwtutil/jwt_issuer.go`](file:///Users/cnicolaou/LocalOnly/dev/github.com/cloudengio/go.webapp/webauth/jwtutil/jwt_issuer.go), restore `WithClaim(key string, value any) JWTIssuerOption`.
-2. In [`webauth/jwtutil/jwt_signer.go`](file:///Users/cnicolaou/LocalOnly/dev/github.com/cloudengio/go.webapp/webauth/jwtutil/jwt_signer.go), restore `NewED25519Signer(priv ed25519.PrivateKey, id string) (Signer, error)`.
-3. Add tests verifying both functions.
-
-##### Step 6: Harden Key Management (ROB-1, ROB-2, SEC-2)
-1. In [`webauth/jwtutil/jwk_impl.go`](file:///Users/cnicolaou/LocalOnly/dev/github.com/cloudengio/go.webapp/webauth/jwtutil/jwk_impl.go), set `jwk.KeyIDKey` in `ED25519.PublicKey` when `info.KeySpec().ID != ""`.
-2. In `ED25519.PublicKey`, if `extra.PublicKey == ""` but `info.Token()` contains private key bytes, derive public key from private key.
-3. In [`webauth/jwtutil/key_registry.go:148-154`](file:///Users/cnicolaou/LocalOnly/dev/github.com/cloudengio/go.webapp/webauth/jwtutil/key_registry.go#L148-L154), zero `trimmed` in `cleanup()`.
-
-##### Step 7: Fix Request Context in Logger (OBS-1)
-1. In [`websec/localhost.go`](file:///Users/cnicolaou/LocalOnly/dev/github.com/cloudengio/go.webapp/websec/localhost.go), change `h.opts.logger.Warn` back to `h.opts.logger.WarnContext(r.Context(), ...)`.
-
-##### Step 8: Regenerate Documentation and Verify
-1. Run `gomarkdown --overwrite ./webauth/jwtutil`.
-2. Run `go test -v -count=1 ./...` across all packages.
-3. Run `golangci-lint run -E gocyclo -E gocognit ./...`.
 
 

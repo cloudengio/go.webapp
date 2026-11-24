@@ -434,14 +434,15 @@ covered by this enum (e.g. right-click via MouseClickNode).
 ### Constants
 ### SelectorActionNone, SelectorActionClick, SelectorActionDoubleClick
 ```go
-// SelectorActionNone waits for the element to be visible but performs no
-// further action. This is the default when no action is specified.
-SelectorActionNone SelectorAction = ""
-// SelectorActionClick performs a single left click on the element.
-SelectorActionClick SelectorAction = "click"
-// SelectorActionDoubleClick performs a double left click on the element.
-SelectorActionDoubleClick SelectorAction = "double_click"
-
+const (
+	// SelectorActionNone waits for the element to be visible but performs no
+	// further action. This is the default when no action is specified.
+	SelectorActionNone SelectorAction = ""
+	// SelectorActionClick performs a single left click on the element.
+	SelectorActionClick SelectorAction = "click"
+	// SelectorActionDoubleClick performs a double left click on the element.
+	SelectorActionDoubleClick SelectorAction = "double_click"
+)
 ```
 
 
