@@ -10,12 +10,13 @@ as letsencrypt.org.
 ## Constants
 ### LetsEncryptStaging, LetsEncryptProduction
 ```go
-// LetsEncryptStaging is the URL for the letsencrypt.org staging service
-// and is used as the default by this package.
-LetsEncryptStaging = "https://acme-staging-v02.api.letsencrypt.org/directory"
-// LetsEncryptProduction is the URL for the letsencrypt.org production service.
-LetsEncryptProduction = acme.LetsEncryptURL
-
+const (
+	// LetsEncryptStaging is the URL for the letsencrypt.org staging service
+	// and is used as the default by this package.
+	LetsEncryptStaging = "https://acme-staging-v02.api.letsencrypt.org/directory"
+	// LetsEncryptProduction is the URL for the letsencrypt.org production service.
+	LetsEncryptProduction = acme.LetsEncryptURL
+)
 ```
 
 

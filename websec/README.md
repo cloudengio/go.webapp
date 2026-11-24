@@ -13,11 +13,12 @@ requests, and framing/MIME-sniffing vulnerabilities.
 ## Constants
 ### DenialNonLoopback, DenialInvalidHost, DenialCrossSite, DenialInvalidJWT
 ```go
-DenialNonLoopback = "non-loopback"
-DenialInvalidHost = "invalid-host"
-DenialCrossSite = "cross-site"
-DenialInvalidJWT = "invalid-jwt"
-
+const (
+	DenialNonLoopback = "non-loopback"
+	DenialInvalidHost = "invalid-host"
+	DenialCrossSite   = "cross-site"
+	DenialInvalidJWT  = "invalid-jwt"
+)
 ```
 Denial reason constants used as label values for the denial metric.
 
